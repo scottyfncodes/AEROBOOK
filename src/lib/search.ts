@@ -1,0 +1,157 @@
+/**
+ * Global search.
+ *
+ * One index over everything, built from a handful of searchable strings per
+ * record. Queries are tokenised and every token must match somewhere (AND), so
+ * "heine sr22" narrows instead of widening. Tail numbers are matched on their
+ * normalised form, which is why "n917jh", "917JH" and "N917JH" all land.
+ */
+import type { Aircraft, Contact, Database, Opportunity } from '../data/types';
+import { normalizeTail } from './tail';
+import { normalizePhone } from './phone';
+import { displayName } from './names';
+
+export type ResultKind = 'contact' | 'aircraft' | 'opportunity';
+
+export interface SearchResult {
+  kind: ResultKind;
+  id: string;
+  title: string;
+  subtitle: string;
+  detail: string;
+  score: number;
+}
+
+interface IndexEntry {
+  kind: ResultKind;
+  id: string;
+  title: string;
+  subtitle: string;
+  detail: string;
+  /** Lowercase haystack of every searchable value. */
+  haystack: string;
+  /** Values a query should match from the start for a big score bump. */
+  prefixes: string[];
+}
+
+function norm(v: unknown): string {
+  return String(v ?? '').toLowerCase().trim();
+}
+
+export function buildIndex(db: Pick<Database, 'contacts' | 'aircraft' | 'opportunities'>): IndexEntry[] {
+  const entries: IndexEntry[] = [];
+  const contactsById = new Map(db.contacts.map((c) => [c.id, c]));
+
+  for (const c of db.contacts) {
+    const name = displayName(c);
+    const location = [c.city, c.state].filter(Boolean).join(', ');
+    const owned = db.aircraft
+      .filter((a) => a.ownerships.some((o) => o.contactId === c.id && !o.endedAt))
+      .map((a) => `${a.tailNumber} ${normalizeTail(a.tailNumber)} ${a.year} ${a.make} ${a.model}`)
+      .join(' ');
+    entries.push({
+      kind: 'contact',
+      id: c.id,
+      title: name,
+      subtitle: [c.company, location].filter(Boolean).join(' · '),
+      detail: [c.status, c.prospectStatus].filter(Boolean).join(' · '),
+      haystack: norm(
+        [name, c.rawName, c.company, c.email, c.phone, normalizePhone(c.phone), c.address, c.city, c.state, c.zip, c.notes, c.status, c.prospectStatus, owned].join(' '),
+      ),
+      prefixes: [norm(name), norm(c.lastName), norm(c.firstName), norm(c.company), norm(c.email)],
+    });
+  }
+
+  for (const a of db.aircraft) {
+    const ownerId = a.ownerships.find((o) => !o.endedAt)?.contactId;
+    const owner = ownerId ? contactsById.get(ownerId) : undefined;
+    const ownerName = owner ? displayName(owner) : '';
+    entries.push({
+      kind: 'aircraft',
+      id: a.id,
+      title: a.tailNumber,
+      subtitle: [a.year, a.make, a.model].filter(Boolean).join(' '),
+      detail: ownerName ? `Owner: ${ownerName}` : a.status,
+      haystack: norm(
+        [a.tailNumber, normalizeTail(a.tailNumber), a.year, a.make, a.model, a.serial, a.status, a.notes, ownerName, owner?.city, owner?.state, a.listingStatus].join(' '),
+      ),
+      prefixes: [norm(a.tailNumber), normalizeTail(a.tailNumber).toLowerCase(), norm(a.model), norm(a.make)],
+    });
+  }
+
+  for (const o of db.opportunities) {
+    const contact = o.contactId ? contactsById.get(o.contactId) : undefined;
+    const aircraft = o.aircraftId ? db.aircraft.find((a) => a.id === o.aircraftId) : undefined;
+    entries.push({
+      kind: 'opportunity',
+      id: o.id,
+      title: o.title || `${o.type} opportunity`,
+      subtitle: [contact ? displayName(contact) : '', aircraft?.tailNumber].filter(Boolean).join(' · '),
+      detail: `${o.type} · ${o.status}`,
+      haystack: norm(
+        [o.title, o.type, o.status, o.notes, contact ? displayName(contact) : '', aircraft?.tailNumber, aircraft ? normalizeTail(aircraft.tailNumber) : '', o.insurance?.carrier, o.insurance?.currentInsurer, o.insurance?.policyNumber, o.insurance?.coverageNotes, o.estimatedValue].join(' '),
+      ),
+      prefixes: [norm(o.title), norm(o.type)],
+    });
+  }
+
+  return entries;
+}
+
+export function tokenize(query: string): string[] {
+  return query.toLowerCase().split(/\s+/).map((t) => t.trim()).filter(Boolean);
+}
+
+/** A tail-shaped query also matches on its normalised form. */
+function expand(token: string): string[] {
+  const out = [token];
+  const tail = normalizeTail(token).toLowerCase();
+  if (tail && tail !== token) out.push(tail);
+  const digits = token.replace(/\D/g, '');
+  if (digits.length >= 7) out.push(digits);
+  return out;
+}
+
+export function searchIndex(entries: IndexEntry[], query: string, limit = 50): SearchResult[] {
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return [];
+
+  const results: SearchResult[] = [];
+  for (const entry of entries) {
+    let score = 0;
+    let matchedAll = true;
+    for (const token of tokens) {
+      const variants = expand(token);
+      const hit = variants.some((v) => entry.haystack.includes(v));
+      if (!hit) {
+        matchedAll = false;
+        break;
+      }
+      if (variants.some((v) => entry.prefixes.some((p) => p === v))) score += 12;
+      else if (variants.some((v) => entry.prefixes.some((p) => p.startsWith(v)))) score += 6;
+      else if (variants.some((v) => new RegExp(`\\b${escapeRe(v)}`).test(entry.haystack))) score += 3;
+      else score += 1;
+    }
+    if (!matchedAll) continue;
+    // A short query should surface aircraft before the long tail of notes.
+    if (entry.kind === 'aircraft') score += 1;
+    results.push({ kind: entry.kind, id: entry.id, title: entry.title, subtitle: entry.subtitle, detail: entry.detail, score });
+  }
+
+  results.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+  return results.slice(0, limit);
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function search(
+  db: Pick<Database, 'contacts' | 'aircraft' | 'opportunities'>,
+  query: string,
+  limit?: number,
+): SearchResult[] {
+  return searchIndex(buildIndex(db), query, limit);
+}
+
+export type { Contact, Aircraft, Opportunity };
