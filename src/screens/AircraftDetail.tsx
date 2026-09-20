@@ -3,24 +3,25 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
 import {
-  IconCalendar, IconEdit, IconMail, IconNote, IconPhone, IconPlus, IconTarget,
+  IconCalendar, IconEdit, IconMail, IconNote, IconPhone, IconPlus, IconShield, IconTarget,
 } from '../components/Icons';
 import {
   ActivitySheet, ExternalLinkList, FilesSection, FollowUpList, FollowUpSheet, Timeline,
 } from '../components/detail';
+import { InsuranceSection } from '../components/insurance';
+import { NewOpportunitySheet } from '../components/opportunity';
 import { EmailComposer } from '../components/EmailComposer';
 import {
   Banner, Chip, ConfirmButton, EmptyState, KeyValue, SelectField, Sheet, TextArea, TextField, useToast,
 } from '../components/ui';
 import { useDatabase } from '../data/useStore';
-import {
-  createOpportunity, deleteActivity, deleteAircraft, setAircraftOwner, updateAircraft,
-} from '../data/store';
-import { AIRCRAFT_STATUSES, type AircraftStatus, type FollowUp } from '../data/types';
-import { opportunitiesFor, ownerOf, previousOwners, timelineFor } from '../lib/selectors';
+import { deleteActivity, deleteAircraft, setAircraftOwner, updateAircraft } from '../data/store';
+import { AIRCRAFT_STATUSES, type AircraftStatus, type FollowUp, type InsurancePolicy } from '../data/types';
+import { isOpen, nextMove, opportunitiesFor, ownerOf, previousOwners, timelineFor } from '../lib/selectors';
+import { policiesFor, policyState } from '../lib/insurance';
 import { displayName } from '../lib/names';
 import { formatPhone } from '../lib/phone';
-import { formatDate } from '../lib/dates';
+import { formatDate, relativeDue } from '../lib/dates';
 import { faaRegistryLink, marketLinks, telLink, webSearchLink, type ExternalLink } from '../lib/links';
 import { OpportunityRow } from '../components/records';
 
@@ -35,6 +36,8 @@ export default function AircraftDetail() {
 
   const [sheet, setSheet] = useState<'email' | 'activity' | 'followUp' | 'edit' | 'opportunity' | null>(null);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
+  const [followUpNote, setFollowUpNote] = useState('');
+  const [followUpPolicyId, setFollowUpPolicyId] = useState<string | null>(null);
 
   const timeline = useMemo(
     () => (aircraft ? timelineFor(db, { aircraftId: aircraft.id }) : { activities: [], followUps: [] }),
@@ -68,9 +71,24 @@ export default function AircraftDetail() {
   }
 
   const opportunities = opportunitiesFor(db, { aircraftId: aircraft.id });
+  const openOpportunity = opportunities.find(isOpen);
+  const policies = policiesFor(db, { aircraftId: aircraft.id });
+  const primaryPolicy = policies[0];
+  const move = nextMove(db, { aircraftId: aircraft.id });
   const files = db.files.filter((f) => f.aircraftId === aircraft.id);
   const history = previousOwners(db, aircraft);
   const description = [aircraft.year, aircraft.make, aircraft.model].filter(Boolean).join(' ');
+
+  const openFollowUp = (note: string, policy?: InsurancePolicy) => {
+    setEditingFollowUp(undefined);
+    setFollowUpNote(note);
+    setFollowUpPolicyId(policy?.id ?? null);
+    setSheet('followUp');
+  };
+
+  const renewalNote = primaryPolicy
+    ? `Insurance renewal — ${aircraft.tailNumber}${primaryPolicy.carrier ? ` (${primaryPolicy.carrier})` : ''}`
+    : '';
 
   return (
     <>
@@ -89,6 +107,81 @@ export default function AircraftDetail() {
           <div className="secondary">{description || 'Aircraft details unknown'}</div>
           <div className="row row--wrap" style={{ gap: 6 }}>
             <Chip tone={aircraft.status === 'For Sale' ? 'accent' : undefined}>{aircraft.status}</Chip>
+            {aircraft.baseAirport ? <Chip>Based {aircraft.baseAirport}</Chip> : null}
+            {aircraft.serial ? <Chip>S/N {aircraft.serial}</Chip> : null}
+          </div>
+        </section>
+
+        {/* Who owns it, what is happening with it, what is the next move. */}
+        <section className="glance" aria-label="At a glance">
+          {owner ? (
+            <Link className="glance__cell" to={`/contacts/${owner.id}`}>
+              <span className="glance__label">Owner</span>
+              <span className="glance__value strong truncate">{displayName(owner)}</span>
+              <span className="xsmall muted truncate">
+                {[formatPhone(owner.phone), owner.email].filter(Boolean).join(' · ') || 'No contact details'}
+              </span>
+            </Link>
+          ) : (
+            <div className="glance__cell">
+              <span className="glance__label">Owner</span>
+              <span className="glance__value muted">Not on record</span>
+            </div>
+          )}
+
+          <div className="glance__cell">
+            <span className="glance__label">Insurance</span>
+            {primaryPolicy ? (
+              <>
+                <span className="glance__value strong truncate">
+                  {policyState(primaryPolicy).countdown || policyState(primaryPolicy).status}
+                </span>
+                <span className="xsmall muted truncate">
+                  {[primaryPolicy.carrier, primaryPolicy.hullValue ? `Hull ${primaryPolicy.hullValue}` : '']
+                    .filter(Boolean)
+                    .join(' · ') || 'No carrier recorded'}
+                </span>
+              </>
+            ) : (
+              <span className="glance__value muted">Nothing on record</span>
+            )}
+          </div>
+
+          <div className="glance__cell">
+            <span className="glance__label">Brokerage</span>
+            <span className="glance__value truncate">
+              {aircraft.status === 'For Sale'
+                ? aircraft.askingPrice || 'For sale — no asking price'
+                : aircraft.status === 'Purchase Prospect'
+                  ? 'Purchase prospect'
+                  : openOpportunity
+                    ? openOpportunity.type
+                    : 'No active listing'}
+            </span>
+            <span className="xsmall muted truncate">
+              {openOpportunity ? `${openOpportunity.status} · ${openOpportunity.title || openOpportunity.type}` : '—'}
+            </span>
+          </div>
+
+          <div className="glance__cell">
+            <span className="glance__label">Next move</span>
+            {move ? (
+              <>
+                <span className="glance__value strong truncate">{move.text}</span>
+                <span className="xsmall muted">{move.dueDate ? relativeDue(move.dueDate) : 'No date set'}</span>
+              </>
+            ) : (
+              <>
+                <span className="glance__value muted">Nothing scheduled</span>
+                <button
+                  className="xsmall"
+                  style={{ background: 'none', border: 0, padding: 0, color: 'var(--accent)', cursor: 'pointer', textAlign: 'left' }}
+                  onClick={() => openFollowUp(`Follow up on ${aircraft.tailNumber}`)}
+                >
+                  Set a follow-up
+                </button>
+              </>
+            )}
           </div>
         </section>
 
@@ -107,13 +200,30 @@ export default function AircraftDetail() {
           <button className="btn" onClick={() => setSheet('activity')}>
             <IconNote /> Add note
           </button>
-          <button className="btn" onClick={() => { setEditingFollowUp(undefined); setSheet('followUp'); }}>
+          <button className="btn" onClick={() => openFollowUp(`Follow up on ${aircraft.tailNumber}`)}>
             <IconCalendar /> Follow up
           </button>
           <button className="btn" onClick={() => setSheet('opportunity')}>
             <IconTarget /> Add opportunity
           </button>
+          {primaryPolicy ? (
+            <button className="btn" onClick={() => openFollowUp(renewalNote, primaryPolicy)}>
+              <IconShield /> Renewal task
+            </button>
+          ) : null}
         </section>
+
+        <InsuranceSection
+          policies={policies}
+          links={{ aircraftId: aircraft.id, contactId: owner?.id ?? null }}
+          emptyBody="No insurance on record for this aircraft. Add the carrier and the expiration date and AEROBOOK will count the renewal down for you."
+          onFollowUp={(policy) =>
+            openFollowUp(
+              `Insurance renewal — ${aircraft.tailNumber}${policy.carrier ? ` (${policy.carrier})` : ''}`,
+              policy,
+            )
+          }
+        />
 
         <section className="stack stack--sm">
           <h2 className="section-title">Owner</h2>
@@ -195,6 +305,7 @@ export default function AircraftDetail() {
             {aircraft.make ? <KeyValue k="Make">{aircraft.make}</KeyValue> : null}
             {aircraft.model ? <KeyValue k="Model">{aircraft.model}</KeyValue> : null}
             {aircraft.serial ? <KeyValue k="Serial">{aircraft.serial}</KeyValue> : null}
+            {aircraft.baseAirport ? <KeyValue k="Base airport">{aircraft.baseAirport}</KeyValue> : null}
             {aircraft.askingPrice ? <KeyValue k="Asking price">{aircraft.askingPrice}</KeyValue> : null}
             {aircraft.targetPrice ? <KeyValue k="Target price">{aircraft.targetPrice}</KeyValue> : null}
             {aircraft.listingStatus ? <KeyValue k="Listing">{aircraft.listingStatus}</KeyValue> : null}
@@ -214,8 +325,8 @@ export default function AircraftDetail() {
         </section>
 
         <section className="stack stack--sm">
-          <h2 className="section-title">Files</h2>
-          <FilesSection files={files} links={{ aircraftId: aircraft.id }} />
+          <h2 className="section-title">Documents</h2>
+          <FilesSection files={files} links={{ aircraftId: aircraft.id }} defaultCategory="Aircraft" />
         </section>
 
         <ExternalLinkList links={links} title="Links" />
@@ -246,10 +357,15 @@ export default function AircraftDetail() {
       ) : null}
       {sheet === 'followUp' ? (
         <FollowUpSheet
-          links={{ aircraftId: aircraft.id, contactId: owner?.id ?? null }}
+          links={{
+            aircraftId: aircraft.id,
+            contactId: owner?.id ?? null,
+            opportunityId: openOpportunity?.id ?? null,
+            insurancePolicyId: followUpPolicyId,
+          }}
           existing={editingFollowUp}
-          defaultNote={`Follow up on ${aircraft.tailNumber}`}
-          onClose={() => { setSheet(null); setEditingFollowUp(undefined); }}
+          defaultNote={followUpNote || `Follow up on ${aircraft.tailNumber}`}
+          onClose={() => { setSheet(null); setEditingFollowUp(undefined); setFollowUpPolicyId(null); }}
         />
       ) : null}
       {sheet === 'edit' ? <EditAircraftSheet id={aircraft.id} onClose={() => setSheet(null)} /> : null}
@@ -302,6 +418,7 @@ function EditAircraftSheet({ id, onClose }: { id: string; onClose: () => void })
   const [make, setMake] = useState(aircraft.make);
   const [model, setModel] = useState(aircraft.model);
   const [serial, setSerial] = useState(aircraft.serial ?? '');
+  const [baseAirport, setBaseAirport] = useState(aircraft.baseAirport ?? '');
   const [status, setStatus] = useState<AircraftStatus>(aircraft.status);
   const [notes, setNotes] = useState(aircraft.notes);
   const [askingPrice, setAskingPrice] = useState(aircraft.askingPrice ?? '');
@@ -322,6 +439,7 @@ function EditAircraftSheet({ id, onClose }: { id: string; onClose: () => void })
   const save = () => {
     updateAircraft(id, {
       tailNumber, year: year.trim(), make: make.trim(), model: model.trim(), serial: serial.trim(),
+      baseAirport: baseAirport.trim().toUpperCase(),
       status, notes, askingPrice: askingPrice.trim(), targetPrice: targetPrice.trim(),
       listingStatus: listingStatus.trim(), listingUrl: badUrl ? '' : listingUrl.trim(),
     });
@@ -351,6 +469,7 @@ function EditAircraftSheet({ id, onClose }: { id: string; onClose: () => void })
           <TextField label="Model" value={model} onChange={setModel} />
           <TextField label="Serial" value={serial} onChange={setSerial} />
         </div>
+        <TextField label="Base airport" value={baseAirport} onChange={setBaseAirport} placeholder="KSBA" hint="Identifier, not a city." />
         <SelectField label="Status" value={status} options={AIRCRAFT_STATUSES} onChange={setStatus} />
         <SelectField label="Owner" value={ownerId} options={owners} onChange={setOwnerId} />
         {ownerId !== currentOwnerId && currentOwnerId ? (
@@ -373,56 +492,6 @@ function EditAircraftSheet({ id, onClose }: { id: string; onClose: () => void })
         />
 
         <TextArea label="Notes" value={notes} onChange={setNotes} rows={5} />
-      </div>
-    </Sheet>
-  );
-}
-
-export function NewOpportunitySheet({
-  contactId,
-  aircraftId,
-  defaultTitle,
-  onClose,
-}: {
-  contactId: string | null;
-  aircraftId: string | null;
-  defaultTitle?: string;
-  onClose: () => void;
-}) {
-  const toast = useToast();
-  const [type, setType] = useState<'Insurance' | 'Aircraft Purchase' | 'Aircraft Sale' | 'Both' | 'Other'>('Insurance');
-  const [title, setTitle] = useState(defaultTitle ?? '');
-  const [notes, setNotes] = useState('');
-
-  return (
-    <Sheet
-      title="New opportunity"
-      onClose={onClose}
-      footer={
-        <>
-          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn--primary"
-            onClick={() => {
-              createOpportunity({ contactId, aircraftId, type, title: title.trim(), notes: notes.trim() });
-              toast('Opportunity created');
-              onClose();
-            }}
-          >
-            Create
-          </button>
-        </>
-      }
-    >
-      <div className="stack">
-        <SelectField
-          label="Type"
-          value={type}
-          options={['Insurance', 'Aircraft Purchase', 'Aircraft Sale', 'Both', 'Other'] as const}
-          onChange={setType}
-        />
-        <TextField label="Title" value={title} onChange={setTitle} placeholder="N917JH — hull and liability" />
-        <TextArea label="Notes" value={notes} onChange={setNotes} rows={4} />
       </div>
     </Sheet>
   );

@@ -5,6 +5,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as store from './store';
+import { defaultTemplates } from '../lib/email';
 import * as persistence from './db';
 import { emptyDatabase } from './types';
 import { addDays } from '../lib/dates';
@@ -136,7 +137,7 @@ describe('opportunities, activities and follow-ups', () => {
 
 describe('templates', () => {
   it('seeds the built-in templates on first run', () => {
-    expect(store.getState().templates.length).toBe(7);
+    expect(store.getState().templates.length).toBe(defaultTemplates('').length);
     expect(store.getState().templates.every((t) => t.builtIn)).toBe(true);
   });
 
@@ -146,12 +147,12 @@ describe('templates', () => {
     expect(store.getState().templates[0].body).toBe('Custom body');
 
     store.deleteTemplate(t.id);
-    expect(store.getState().templates).toHaveLength(7);
+    expect(store.getState().templates).toHaveLength(defaultTemplates('').length);
 
     const mine = store.createTemplate('Mine');
-    expect(store.getState().templates).toHaveLength(8);
+    expect(store.getState().templates).toHaveLength(defaultTemplates('').length + 1);
     store.deleteTemplate(mine.id);
-    expect(store.getState().templates).toHaveLength(7);
+    expect(store.getState().templates).toHaveLength(defaultTemplates('').length);
   });
 });
 
@@ -173,7 +174,7 @@ describe('persistence', () => {
     expect(db.aircraft[0].tailNumber).toBe('N917JH');
     expect(db.aircraft[0].ownerships[0].contactId).toBe(c.id);
     expect(db.followUps).toHaveLength(1);
-    expect(db.templates).toHaveLength(7);
+    expect(db.templates).toHaveLength(defaultTemplates('').length);
   });
 
   it('starts empty rather than failing when there is nothing stored', async () => {
@@ -195,7 +196,7 @@ describe('persistence', () => {
     store.createContact({ firstName: 'John' });
     await store.eraseEverything();
     expect(store.getState().contacts).toEqual([]);
-    expect(store.getState().templates).toHaveLength(7);
+    expect(store.getState().templates).toHaveLength(defaultTemplates('').length);
   });
 });
 

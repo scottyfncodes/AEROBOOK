@@ -13,17 +13,20 @@ import { AircraftRow, OpportunityRow } from '../components/records';
 import {
   Chip, ConfirmButton, EmptyState, KeyValue, SelectField, Sheet, TextArea, TextField, useToast,
 } from '../components/ui';
-import { NewOpportunitySheet } from './AircraftDetail';
+import { NewOpportunitySheet } from '../components/opportunity';
+import { InsuranceSection } from '../components/insurance';
 import { useDatabase } from '../data/useStore';
 import { deleteActivity, deleteContact, updateContact } from '../data/store';
 import {
-  CONTACT_STATUSES, CONTACT_TYPES, PROSPECT_STATUSES,
-  type ContactStatus, type ContactType, type FollowUp, type ProspectStatus,
+  CONTACT_STATUSES, CONTACT_TYPES, INTENT_LEVELS, PROSPECT_STATUSES, emptyIntent, hasIntent,
+  type ContactIntent, type ContactStatus, type ContactType, type FollowUp, type IntentLevel,
+  type ProspectStatus,
 } from '../data/types';
-import { aircraftOf, opportunitiesFor, timelineFor } from '../lib/selectors';
+import { aircraftOf, nextMove, opportunitiesFor, timelineFor } from '../lib/selectors';
+import { policiesFor } from '../lib/insurance';
 import { displayName } from '../lib/names';
 import { formatPhone, formatZip } from '../lib/phone';
-import { formatDate } from '../lib/dates';
+import { formatDate, relativeDue } from '../lib/dates';
 import { mapsLink, smsLink, telLink, type ExternalLink } from '../lib/links';
 
 export default function ContactDetail() {
@@ -33,7 +36,9 @@ export default function ContactDetail() {
   const toast = useToast();
 
   const contact = db.contacts.find((c) => c.id === id);
-  const [sheet, setSheet] = useState<'email' | 'activity' | 'followUp' | 'edit' | 'opportunity' | null>(null);
+  const [sheet, setSheet] = useState<
+    'email' | 'activity' | 'followUp' | 'edit' | 'opportunity' | 'intent' | null
+  >(null);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
 
   const timeline = useMemo(
@@ -54,8 +59,11 @@ export default function ContactDetail() {
 
   const owned = aircraftOf(db, contact.id);
   const opportunities = opportunitiesFor(db, { contactId: contact.id });
+  const policies = policiesFor(db, { contactId: contact.id });
   const files = db.files.filter((f) => f.contactId === contact.id);
   const primaryAircraft = owned[0] ?? null;
+  const move = nextMove(db, { contactId: contact.id });
+  const intent = contact.intent;
   const address = [contact.address, contact.address2, contact.city, contact.state, formatZip(contact.zip)]
     .filter(Boolean)
     .join(', ');
@@ -125,6 +133,72 @@ export default function ContactDetail() {
           <button className="btn" onClick={() => setSheet('opportunity')}>
             <IconTarget /> Add opportunity
           </button>
+          <button className="btn" onClick={() => setSheet('intent')}>
+            <IconTarget /> What they want
+          </button>
+        </section>
+
+        {/* What they have, what they want, and what happens next. */}
+        <section className="glance" aria-label="At a glance">
+          <div className="glance__cell">
+            <span className="glance__label">Aircraft</span>
+            <span className="glance__value strong truncate">
+              {owned.length === 0
+                ? 'None on record'
+                : owned.map((a) => a.tailNumber).join(', ')}
+            </span>
+            <span className="xsmall muted truncate">
+              {owned.length > 1 ? `${owned.length} aircraft` : owned[0]
+                ? [owned[0].year, owned[0].make, owned[0].model].filter(Boolean).join(' ')
+                : '—'}
+            </span>
+          </div>
+          <div className="glance__cell">
+            <span className="glance__label">Wants</span>
+            <span className="glance__value truncate">{wantsSummary(intent)}</span>
+            <span className="xsmall muted truncate">{intent?.timeline || '—'}</span>
+          </div>
+          <div className="glance__cell">
+            <span className="glance__label">Insurance</span>
+            <span className="glance__value truncate">
+              {policies.length === 0 ? 'Nothing on record' : `${policies.length} polic${policies.length === 1 ? 'y' : 'ies'}`}
+            </span>
+            <span className="xsmall muted truncate">{policies[0]?.carrier || intent?.insuranceNotes || '—'}</span>
+          </div>
+          <div className="glance__cell">
+            <span className="glance__label">Next move</span>
+            <span className={`glance__value truncate${move ? ' strong' : ' muted'}`}>
+              {move ? move.text : 'Nothing scheduled'}
+            </span>
+            <span className="xsmall muted">{move?.dueDate ? relativeDue(move.dueDate) : '—'}</span>
+          </div>
+        </section>
+
+        <section className="stack stack--sm">
+          <div className="row row--between">
+            <h2 className="section-title">What they want</h2>
+            <button className="btn btn--sm btn--ghost" onClick={() => setSheet('intent')}>
+              <IconEdit /> Edit
+            </button>
+          </div>
+          {hasIntent(intent) ? (
+            <div className="card">
+              <KeyValue k="May sell">{intent?.selling ?? 'Unknown'}</KeyValue>
+              {intent?.sellingNotes ? <KeyValue k="Selling notes">{intent.sellingNotes}</KeyValue> : null}
+              <KeyValue k="Looking to buy">{intent?.buying ?? 'Unknown'}</KeyValue>
+              {intent?.wantedAircraft ? <KeyValue k="Wants">{intent.wantedAircraft}</KeyValue> : null}
+              {intent?.budget ? <KeyValue k="Budget">{intent.budget}</KeyValue> : null}
+              {intent?.mission ? <KeyValue k="Mission">{intent.mission}</KeyValue> : null}
+              {intent?.timeline ? <KeyValue k="Timeline">{intent.timeline}</KeyValue> : null}
+              <KeyValue k="Insurance">{intent?.insurance ?? 'Unknown'}</KeyValue>
+              {intent?.insuranceNotes ? <KeyValue k="Insurance notes">{intent.insuranceNotes}</KeyValue> : null}
+            </div>
+          ) : (
+            <button className="card small muted" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => setSheet('intent')}>
+              Nothing recorded yet. What they want is usually more useful than what they have — tap to
+              note whether they may sell, what they are looking for, and where insurance stands.
+            </button>
+          )}
         </section>
 
         <section className="stack stack--sm">
@@ -192,6 +266,17 @@ export default function ContactDetail() {
           )}
         </section>
 
+        <InsuranceSection
+          policies={policies}
+          links={{ contactId: contact.id, aircraftId: primaryAircraft?.id ?? null }}
+          emptyBody="No insurance on record for this person. Add a policy and the renewal shows up here, on the aircraft and on the home screen."
+          onFollowUp={(policy) => {
+            setEditingFollowUp(undefined);
+            setSheet('followUp');
+            void policy;
+          }}
+        />
+
         {timeline.followUps.some((f) => !f.completed) ? (
           <section className="stack stack--sm">
             <h2 className="section-title">Follow-ups</h2>
@@ -219,7 +304,7 @@ export default function ContactDetail() {
         ) : null}
 
         <section className="stack stack--sm">
-          <h2 className="section-title">Files</h2>
+          <h2 className="section-title">Documents</h2>
           <FilesSection files={files} links={{ contactId: contact.id }} />
         </section>
 
@@ -257,6 +342,7 @@ export default function ContactDetail() {
         />
       ) : null}
       {sheet === 'edit' ? <EditContactSheet id={contact.id} onClose={() => setSheet(null)} /> : null}
+      {sheet === 'intent' ? <IntentSheet id={contact.id} onClose={() => setSheet(null)} /> : null}
       {sheet === 'opportunity' ? (
         <NewOpportunitySheet
           contactId={contact.id}
@@ -356,6 +442,100 @@ function EditContactSheet({ id, onClose }: { id: string; onClose: () => void }) 
         </div>
 
         <TextArea label="Notes" value={notes} onChange={setNotes} rows={5} />
+      </div>
+    </Sheet>
+  );
+}
+
+/** One line for the glance panel. Says nothing rather than guessing. */
+function wantsSummary(intent: ContactIntent | undefined): string {
+  if (!intent) return 'Not recorded';
+  const parts: string[] = [];
+  if (intent.buying !== 'Unknown' && intent.buying !== 'Not now') {
+    parts.push(intent.wantedAircraft ? `Buying: ${intent.wantedAircraft}` : `Buying: ${intent.buying}`);
+  }
+  if (intent.selling !== 'Unknown' && intent.selling !== 'Not now') parts.push(`Selling: ${intent.selling}`);
+  if (intent.insurance !== 'Unknown' && intent.insurance !== 'Not now') parts.push(`Insurance: ${intent.insurance}`);
+  return parts.join(' · ') || 'Not recorded';
+}
+
+function IntentSheet({ id, onClose }: { id: string; onClose: () => void }) {
+  const db = useDatabase();
+  const toast = useToast();
+  const contact = db.contacts.find((c) => c.id === id)!;
+  const current = contact.intent ?? emptyIntent();
+
+  const [selling, setSelling] = useState<IntentLevel>(current.selling);
+  const [sellingNotes, setSellingNotes] = useState(current.sellingNotes ?? '');
+  const [buying, setBuying] = useState<IntentLevel>(current.buying);
+  const [wantedAircraft, setWantedAircraft] = useState(current.wantedAircraft ?? '');
+  const [budget, setBudget] = useState(current.budget ?? '');
+  const [mission, setMission] = useState(current.mission ?? '');
+  const [timeline, setTimeline] = useState(current.timeline ?? '');
+  const [insurance, setInsurance] = useState<IntentLevel>(current.insurance);
+  const [insuranceNotes, setInsuranceNotes] = useState(current.insuranceNotes ?? '');
+
+  const save = () => {
+    updateContact(id, {
+      intent: {
+        selling,
+        sellingNotes: sellingNotes.trim(),
+        buying,
+        wantedAircraft: wantedAircraft.trim(),
+        budget: budget.trim(),
+        mission: mission.trim(),
+        timeline: timeline.trim(),
+        insurance,
+        insuranceNotes: insuranceNotes.trim(),
+      },
+    });
+    toast('Saved what they want');
+    onClose();
+  };
+
+  return (
+    <Sheet
+      title="What they want"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn--primary" onClick={save}>Save</button>
+        </>
+      }
+    >
+      <div className="stack">
+        <p className="small muted">
+          Everything here is optional. It exists so that three months from now you still know why this
+          person is worth a call.
+        </p>
+
+        <SelectField label="May sell an aircraft" value={selling} options={INTENT_LEVELS} onChange={setSelling} />
+        <TextField
+          label="Selling notes"
+          value={sellingNotes}
+          onChange={setSellingNotes}
+          placeholder="Wants 2.1M, would move by spring"
+        />
+
+        <div className="divider" />
+        <SelectField label="Looking to buy" value={buying} options={INTENT_LEVELS} onChange={setBuying} />
+        <TextField label="What they want" value={wantedAircraft} onChange={setWantedAircraft} placeholder="Pressurised single, PC-12 or TBM" />
+        <div className="form-grid">
+          <TextField label="Budget" value={budget} onChange={setBudget} placeholder="$3–4M" />
+          <TextField label="Timeline" value={timeline} onChange={setTimeline} placeholder="Next 6 months" />
+        </div>
+        <TextField label="Mission" value={mission} onChange={setMission} placeholder="Family trips, 700nm legs, short strip at home" />
+
+        <div className="divider" />
+        <SelectField label="Insurance conversation" value={insurance} options={INTENT_LEVELS} onChange={setInsurance} />
+        <TextArea
+          label="Insurance notes"
+          value={insuranceNotes}
+          onChange={setInsuranceNotes}
+          rows={3}
+          placeholder="Unhappy with the hull value on the current policy. Renews in November."
+        />
       </div>
     </Sheet>
   );

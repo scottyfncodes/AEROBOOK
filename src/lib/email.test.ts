@@ -121,11 +121,17 @@ describe('buildMailto', () => {
 describe('defaultTemplates', () => {
   const templates = defaultTemplates(new Date().toISOString());
 
-  it('ships the six named templates plus Custom', () => {
-    expect(templates.map((t) => t.name)).toEqual([
-      'Initial Aircraft Outreach', 'Insurance Outreach', 'Brokerage Outreach',
-      'Quote Follow-Up', 'Renewal Follow-Up', 'General Follow-Up', 'Custom',
-    ]);
+  it('ships a template for each workflow, with Custom last', () => {
+    const names = templates.map((t) => t.name);
+    for (const expected of [
+      'Initial Aircraft Outreach', 'Insurance Outreach', 'Brokerage Outreach', 'Quote Follow-Up',
+      'Renewal Follow-Up', 'General Follow-Up', 'No Response Follow-Up', 'Aircraft Purchase Inquiry',
+      'New Client Introduction', 'Post-Meeting Follow-Up', 'Document Request', 'Custom',
+    ]) {
+      expect(names).toContain(expected);
+    }
+    expect(names.at(-1)).toBe('Custom');
+    expect(new Set(templates.map((t) => t.id)).size).toBe(templates.length);
   });
 
   it('renders every one of them cleanly for a real record', () => {

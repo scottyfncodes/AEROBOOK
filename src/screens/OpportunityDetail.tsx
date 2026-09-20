@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
-import { IconCalendar, IconEdit, IconMail, IconNote, IconShield } from '../components/Icons';
+import { IconCalendar, IconEdit, IconMail, IconNote } from '../components/Icons';
 import { ActivitySheet, FilesSection, FollowUpList, FollowUpSheet, Timeline } from '../components/detail';
+import { InsuranceSection } from '../components/insurance';
+import { StageControl } from '../components/opportunity';
 import { EmailComposer } from '../components/EmailComposer';
 import {
-  Chip, ConfirmButton, EmptyState, KeyValue, SelectField, Sheet, TextArea, TextField, useToast,
+  Chip, ConfirmButton, EmptyState, SelectField, Sheet, TextArea, TextField, useToast,
 } from '../components/ui';
 import { useDatabase } from '../data/useStore';
 import { deleteActivity, deleteOpportunity, updateOpportunity } from '../data/store';
@@ -14,9 +16,10 @@ import {
   OPPORTUNITY_STATUSES, OPPORTUNITY_TYPES,
   type FollowUp, type OpportunityStatus, type OpportunityType,
 } from '../data/types';
-import { timelineFor } from '../lib/selectors';
+import { nextFollowUpFor, timelineFor } from '../lib/selectors';
+import { policiesFor } from '../lib/insurance';
 import { displayName } from '../lib/names';
-import { formatDate } from '../lib/dates';
+import { formatDate, relativeDue } from '../lib/dates';
 
 export default function OpportunityDetail() {
   const { id = '' } = useParams();
@@ -25,7 +28,7 @@ export default function OpportunityDetail() {
   const toast = useToast();
 
   const opportunity = db.opportunities.find((o) => o.id === id);
-  const [sheet, setSheet] = useState<'edit' | 'insurance' | 'activity' | 'followUp' | 'email' | null>(null);
+  const [sheet, setSheet] = useState<'edit' | 'activity' | 'followUp' | 'email' | null>(null);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
 
   const timeline = useMemo(
@@ -46,9 +49,10 @@ export default function OpportunityDetail() {
 
   const contact = opportunity.contactId ? db.contacts.find((c) => c.id === opportunity.contactId) : undefined;
   const aircraft = opportunity.aircraftId ? db.aircraft.find((a) => a.id === opportunity.aircraftId) : undefined;
+  const policies = policiesFor(db, { opportunityId: opportunity.id });
   const files = db.files.filter((f) => f.opportunityId === opportunity.id);
-  const ins = opportunity.insurance;
-  const hasInsuranceDetail = ins && Object.values(ins).some(Boolean);
+  const nextFollowUp = nextFollowUpFor(db, { opportunityId: opportunity.id });
+  const isInsurance = opportunity.type.includes('Insurance');
 
   return (
     <>
@@ -69,6 +73,56 @@ export default function OpportunityDetail() {
             <Chip tone={opportunity.status === 'Won' ? 'success' : opportunity.status === 'Lost' ? 'danger' : undefined}>
               {opportunity.status}
             </Chip>
+            {opportunity.estimatedValue ? <Chip>{opportunity.estimatedValue}</Chip> : null}
+          </div>
+        </section>
+
+        {/* Moving a deal along is one tap, not a trip through the edit form. */}
+        <section className="stack stack--sm" aria-label="Pipeline">
+          <h2 className="section-title">Stage</h2>
+          <StageControl opportunity={opportunity} />
+        </section>
+
+        <section className="glance" aria-label="At a glance">
+          {contact ? (
+            <Link className="glance__cell" to={`/contacts/${contact.id}`}>
+              <span className="glance__label">Contact</span>
+              <span className="glance__value strong truncate">{displayName(contact)}</span>
+              <span className="xsmall muted truncate">{contact.email || contact.phone || '—'}</span>
+            </Link>
+          ) : (
+            <div className="glance__cell">
+              <span className="glance__label">Contact</span>
+              <span className="glance__value muted">None linked</span>
+            </div>
+          )}
+          {aircraft ? (
+            <Link className="glance__cell" to={`/aircraft/${aircraft.id}`}>
+              <span className="glance__label">Aircraft</span>
+              <span className="glance__value tail strong truncate">{aircraft.tailNumber}</span>
+              <span className="xsmall muted truncate">
+                {[aircraft.year, aircraft.make, aircraft.model].filter(Boolean).join(' ') || '—'}
+              </span>
+            </Link>
+          ) : (
+            <div className="glance__cell">
+              <span className="glance__label">Aircraft</span>
+              <span className="glance__value muted">None linked</span>
+            </div>
+          )}
+          <div className="glance__cell">
+            <span className="glance__label">Next action</span>
+            <span className={`glance__value truncate${opportunity.nextAction ? ' strong' : ' muted'}`}>
+              {opportunity.nextAction || 'Not set'}
+            </span>
+            <span className="xsmall muted">
+              {nextFollowUp ? `Follow-up ${relativeDue(nextFollowUp.dueDate).toLowerCase()}` : 'No follow-up scheduled'}
+            </span>
+          </div>
+          <div className="glance__cell">
+            <span className="glance__label">Opened</span>
+            <span className="glance__value">{formatDate(opportunity.openedAt)}</span>
+            <span className="xsmall muted">{opportunity.estimatedValue || 'No value estimated'}</span>
           </div>
         </section>
 
@@ -82,42 +136,19 @@ export default function OpportunityDetail() {
           <button className="btn" onClick={() => { setEditingFollowUp(undefined); setSheet('followUp'); }}>
             <IconCalendar /> Follow up
           </button>
-          <button className="btn" onClick={() => setSheet('insurance')}>
-            <IconShield /> Insurance detail
-          </button>
         </section>
 
-        <section className="stack stack--sm">
-          <h2 className="section-title">Linked to</h2>
-          <div className="card">
-            <KeyValue k="Contact">
-              {contact ? <Link to={`/contacts/${contact.id}`}>{displayName(contact)}</Link> : <span className="muted">None</span>}
-            </KeyValue>
-            <KeyValue k="Aircraft">
-              {aircraft ? <Link className="tail" to={`/aircraft/${aircraft.id}`}>{aircraft.tailNumber}</Link> : <span className="muted">None</span>}
-            </KeyValue>
-            <KeyValue k="Opened">{formatDate(opportunity.openedAt)}</KeyValue>
-            {opportunity.estimatedValue ? <KeyValue k="Estimated value">{opportunity.estimatedValue}</KeyValue> : null}
-            {opportunity.followUpDate ? <KeyValue k="Follow-up">{formatDate(opportunity.followUpDate)}</KeyValue> : null}
-          </div>
-        </section>
-
-        {hasInsuranceDetail ? (
-          <section className="stack stack--sm">
-            <h2 className="section-title">Insurance</h2>
-            <div className="card">
-              {ins?.currentInsurer ? <KeyValue k="Current insurer">{ins.currentInsurer}</KeyValue> : null}
-              {ins?.carrier ? <KeyValue k="Quoting carrier">{ins.carrier}</KeyValue> : null}
-              {ins?.policyNumber ? <KeyValue k="Policy number">{ins.policyNumber}</KeyValue> : null}
-              {ins?.policyStatus ? <KeyValue k="Policy status">{ins.policyStatus}</KeyValue> : null}
-              {ins?.renewalDate ? <KeyValue k="Renewal">{formatDate(ins.renewalDate)}</KeyValue> : null}
-              {ins?.hullValue ? <KeyValue k="Hull value">{ins.hullValue}</KeyValue> : null}
-              {ins?.premium ? <KeyValue k="Premium">{ins.premium}</KeyValue> : null}
-              {ins?.deductible ? <KeyValue k="Deductible">{ins.deductible}</KeyValue> : null}
-              {ins?.liabilityLimit ? <KeyValue k="Liability limit">{ins.liabilityLimit}</KeyValue> : null}
-              {ins?.coverageNotes ? <KeyValue k="Coverage notes">{ins.coverageNotes}</KeyValue> : null}
-            </div>
-          </section>
+        {isInsurance || policies.length > 0 ? (
+          <InsuranceSection
+            policies={policies}
+            links={{
+              opportunityId: opportunity.id,
+              contactId: opportunity.contactId,
+              aircraftId: opportunity.aircraftId,
+            }}
+            emptyBody="No policy attached to this deal yet. Add one and its renewal date drives the countdown everywhere it appears."
+            onFollowUp={() => { setEditingFollowUp(undefined); setSheet('followUp'); }}
+          />
         ) : null}
 
         {opportunity.notes ? (
@@ -144,8 +175,12 @@ export default function OpportunityDetail() {
         </section>
 
         <section className="stack stack--sm">
-          <h2 className="section-title">Files</h2>
-          <FilesSection files={files} links={{ opportunityId: opportunity.id }} />
+          <h2 className="section-title">Documents</h2>
+          <FilesSection
+            files={files}
+            links={{ opportunityId: opportunity.id }}
+            defaultCategory={isInsurance ? 'Insurance' : 'Brokerage'}
+          />
         </section>
 
         <section>
@@ -159,7 +194,6 @@ export default function OpportunityDetail() {
       </main>
 
       {sheet === 'edit' ? <EditOpportunitySheet id={opportunity.id} onClose={() => setSheet(null)} /> : null}
-      {sheet === 'insurance' ? <InsuranceSheet id={opportunity.id} onClose={() => setSheet(null)} /> : null}
       {sheet === 'activity' ? (
         <ActivitySheet
           links={{ opportunityId: opportunity.id, contactId: contact?.id ?? null, aircraftId: aircraft?.id ?? null }}
@@ -170,7 +204,7 @@ export default function OpportunityDetail() {
         <FollowUpSheet
           links={{ opportunityId: opportunity.id, contactId: contact?.id ?? null, aircraftId: aircraft?.id ?? null }}
           existing={editingFollowUp}
-          defaultNote={opportunity.title || `Follow up on this ${opportunity.type.toLowerCase()}`}
+          defaultNote={opportunity.nextAction || opportunity.title || `Follow up on this ${opportunity.type.toLowerCase()}`}
           onClose={() => { setSheet(null); setEditingFollowUp(undefined); }}
         />
       ) : null}
@@ -195,7 +229,7 @@ function EditOpportunitySheet({ id, onClose }: { id: string; onClose: () => void
   const [type, setType] = useState<OpportunityType>(o.type);
   const [status, setStatus] = useState<OpportunityStatus>(o.status);
   const [estimatedValue, setEstimatedValue] = useState(o.estimatedValue ?? '');
-  const [followUpDate, setFollowUpDate] = useState(o.followUpDate ?? '');
+  const [nextAction, setNextAction] = useState(o.nextAction ?? '');
   const [notes, setNotes] = useState(o.notes);
   const [contactId, setContactId] = useState(o.contactId ?? '');
   const [aircraftId, setAircraftId] = useState(o.aircraftId ?? '');
@@ -221,7 +255,7 @@ function EditOpportunitySheet({ id, onClose }: { id: string; onClose: () => void
             onClick={() => {
               updateOpportunity(id, {
                 title: title.trim(), type, status, estimatedValue: estimatedValue.trim(),
-                followUpDate: followUpDate || undefined, notes,
+                nextAction: nextAction.trim(), notes,
                 contactId: contactId || null, aircraftId: aircraftId || null,
               });
               toast('Opportunity updated');
@@ -240,74 +274,14 @@ function EditOpportunitySheet({ id, onClose }: { id: string; onClose: () => void
         <SelectField label="Contact" value={contactId} options={contacts} onChange={setContactId} />
         <SelectField label="Aircraft" value={aircraftId} options={aircraft} onChange={setAircraftId} />
         <TextField label="Estimated value" value={estimatedValue} onChange={setEstimatedValue} />
-        <TextField label="Follow-up date" value={followUpDate} onChange={setFollowUpDate} type="date" />
+        <TextField
+          label="Next action"
+          value={nextAction}
+          onChange={setNextAction}
+          placeholder="Send the renewal comparison"
+          hint="Set a follow-up too if it needs a date."
+        />
         <TextArea label="Notes" value={notes} onChange={setNotes} rows={5} />
-      </div>
-    </Sheet>
-  );
-}
-
-function InsuranceSheet({ id, onClose }: { id: string; onClose: () => void }) {
-  const db = useDatabase();
-  const toast = useToast();
-  const o = db.opportunities.find((x) => x.id === id)!;
-  const ins = o.insurance ?? {};
-
-  const [currentInsurer, setCurrentInsurer] = useState(ins.currentInsurer ?? '');
-  const [carrier, setCarrier] = useState(ins.carrier ?? '');
-  const [policyNumber, setPolicyNumber] = useState(ins.policyNumber ?? '');
-  const [policyStatus, setPolicyStatus] = useState(ins.policyStatus ?? '');
-  const [renewalDate, setRenewalDate] = useState(ins.renewalDate ?? '');
-  const [hullValue, setHullValue] = useState(ins.hullValue ?? '');
-  const [premium, setPremium] = useState(ins.premium ?? '');
-  const [deductible, setDeductible] = useState(ins.deductible ?? '');
-  const [liabilityLimit, setLiabilityLimit] = useState(ins.liabilityLimit ?? '');
-  const [coverageNotes, setCoverageNotes] = useState(ins.coverageNotes ?? '');
-
-  return (
-    <Sheet
-      title="Insurance detail"
-      onClose={onClose}
-      footer={
-        <>
-          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn--primary"
-            onClick={() => {
-              updateOpportunity(id, {
-                insurance: {
-                  currentInsurer: currentInsurer.trim(), carrier: carrier.trim(),
-                  policyNumber: policyNumber.trim(), policyStatus: policyStatus.trim(),
-                  renewalDate: renewalDate || undefined, hullValue: hullValue.trim(),
-                  premium: premium.trim(), deductible: deductible.trim(),
-                  liabilityLimit: liabilityLimit.trim(), coverageNotes: coverageNotes.trim(),
-                },
-              });
-              toast('Insurance detail saved');
-              onClose();
-            }}
-          >
-            Save
-          </button>
-        </>
-      }
-    >
-      <div className="stack">
-        <p className="small muted">Every field is optional. Fill in what you know.</p>
-        <TextField label="Current insurer" value={currentInsurer} onChange={setCurrentInsurer} />
-        <TextField label="Quoting carrier" value={carrier} onChange={setCarrier} />
-        <TextField label="Policy number" value={policyNumber} onChange={setPolicyNumber} />
-        <TextField label="Policy status" value={policyStatus} onChange={setPolicyStatus} placeholder="In force, lapsed, quoted…" />
-        <TextField label="Renewal date" value={renewalDate} onChange={setRenewalDate} type="date" />
-        <div className="form-grid">
-          <TextField label="Hull value" value={hullValue} onChange={setHullValue} />
-          <TextField label="Premium" value={premium} onChange={setPremium} />
-        </div>
-        <div className="form-grid">
-          <TextField label="Deductible" value={deductible} onChange={setDeductible} />
-          <TextField label="Liability limit" value={liabilityLimit} onChange={setLiabilityLimit} />
-        </div>
-        <TextArea label="Coverage notes" value={coverageNotes} onChange={setCoverageNotes} rows={4} />
       </div>
     </Sheet>
   );

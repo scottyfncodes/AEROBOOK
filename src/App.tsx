@@ -24,11 +24,16 @@ import Templates from './screens/Templates';
 import Settings from './screens/Settings';
 import NotFound from './screens/NotFound';
 
+/**
+ * Six tabs, each a place records live. Prospects, Templates, Import and
+ * Settings are reachable from the screens they belong to rather than taking
+ * a tab of their own.
+ */
 const TABS = [
   { to: '/', label: 'Home', Icon: IconHome, end: true },
-  { to: '/prospects', label: 'Prospects', Icon: IconTarget, end: false },
   { to: '/aircraft', label: 'Aircraft', Icon: IconPlane, end: false },
   { to: '/contacts', label: 'Contacts', Icon: IconUsers, end: false },
+  { to: '/opportunities', label: 'Pipeline', Icon: IconTarget, end: false },
   { to: '/follow-ups', label: 'Tasks', Icon: IconBell, end: false },
   { to: '/tools', label: 'Tools', Icon: IconTools, end: false },
 ];

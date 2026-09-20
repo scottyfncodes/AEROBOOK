@@ -4,9 +4,10 @@ import { useSearchParams } from 'react-router-dom';
 import { AppBar } from '../components/AppBar';
 import { IconPlus, IconTarget } from '../components/Icons';
 import { OpportunityRow } from '../components/records';
-import { EmptyState } from '../components/ui';
-import { NewOpportunitySheet } from './AircraftDetail';
+import { EmptyState, Metric } from '../components/ui';
+import { NewOpportunitySheet } from '../components/opportunity';
 import { useDatabase } from '../data/useStore';
+import { isOpen, openOpportunities, pipeline } from '../lib/selectors';
 import { OPPORTUNITY_STATUSES, OPPORTUNITY_TYPES, type OpportunityStatus, type OpportunityType } from '../data/types';
 
 export default function Opportunities() {
@@ -16,12 +17,14 @@ export default function Opportunities() {
   const [status, setStatus] = useState<OpportunityStatus | 'Open only'>('Open only');
 
   const filtered = useMemo(() => {
-    let list = db.opportunities;
+    // "Open only" keeps the working pipeline order — nearest a decision first.
+    let list = status === 'Open only' ? openOpportunities(db) : db.opportunities.filter((o) => o.status === status);
     if (type !== 'All') list = list.filter((o) => o.type === type);
-    if (status === 'Open only') list = list.filter((o) => !['Won', 'Lost', 'Closed'].includes(o.status));
-    else list = list.filter((o) => o.status === status);
-    return [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }, [db.opportunities, type, status]);
+    return status === 'Open only' ? list : [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [db, type, status]);
+
+  const pipe = useMemo(() => pipeline(db), [db]);
+  const openCount = db.opportunities.filter(isOpen).length;
 
   return (
     <>
@@ -35,6 +38,16 @@ export default function Opportunities() {
         }
       />
       <main className="page stack">
+        {openCount > 0 ? (
+          <div className="card">
+            <div className="metric-grid">
+              {pipe.stages.map((stage) => (
+                <Metric key={stage.status} value={stage.count} label={stage.status} tone={stage.count ? 'accent' : undefined} />
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="filter-bar">
           {(['All', ...OPPORTUNITY_TYPES] as const).map((t) => (
             <button

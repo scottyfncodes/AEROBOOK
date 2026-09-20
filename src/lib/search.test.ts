@@ -29,7 +29,16 @@ const db: Database = {
     aircraft({ id: 'a2', tailNumber: 'N441FP', tailKey: '441FP', year: '2019', make: 'Cirrus', model: 'SR22', ownerships: [{ contactId: 'c2' }] }),
   ],
   opportunities: [
-    { id: 'o1', contactId: 'c1', aircraftId: 'a1', type: 'Insurance', status: 'Quote', title: 'Hull renewal', openedAt: '', notes: '', insurance: { carrier: 'Global Aerospace', policyNumber: 'GA-4417' }, createdAt: '', updatedAt: '' } as Opportunity,
+    { id: 'o1', contactId: 'c1', aircraftId: 'a1', type: 'Insurance', status: 'Quoting', title: 'Hull renewal', openedAt: '', notes: '', createdAt: '', updatedAt: '' } as Opportunity,
+  ],
+  policies: [
+    {
+      id: 'p1', aircraftId: 'a1', contactId: 'c1', opportunityId: 'o1',
+      carrier: 'Global Aerospace', policyNumber: 'GA-4417', brokerAgent: '',
+      premium: '', hullValue: '', liabilityLimit: '', deductible: '',
+      status: 'Unknown', quotedPremium: '', renewalNotes: '', notes: '',
+      createdAt: '', updatedAt: '',
+    },
   ],
 };
 

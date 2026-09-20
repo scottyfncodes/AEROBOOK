@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
 import { IconPlus, IconUsers } from '../components/Icons';
@@ -62,6 +62,10 @@ export default function Contacts() {
               {s}
             </button>
           ))}
+        </div>
+
+        <div className="row row--between">
+          <Link className="small" to="/prospects">Work the prospect list →</Link>
         </div>
 
         <div className="small muted">{filtered.length} of {db.contacts.length}</div>
