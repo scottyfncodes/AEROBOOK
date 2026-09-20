@@ -12,8 +12,10 @@ import { contactsCsv, aircraftCsv, fullJson, parseFullJson } from '../lib/export
 import { parseCsv } from '../lib/csv';
 
 beforeEach(async () => {
-  await persistence.clearAll();
+  // Let the previous test's writes land before wiping, so nothing arrives late.
+  await store.flush();
   store.__setStateForTests(emptyDatabase());
+  await persistence.clearAll();
   await store.init();
 });
 

@@ -33,30 +33,50 @@ type Listener = () => void;
 let state: Database = emptyDatabase();
 let loaded = false;
 const listeners = new Set<Listener>();
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSaveError: string | null = null;
+
+/**
+ * Saving starts the moment something changes — a debounce here means a change
+ * made just before the user navigates or closes the tab is never written. A
+ * save already in flight is not cancelled; the store simply remembers that the
+ * document moved on and writes again when the first write lands.
+ */
+let saveInFlight: Promise<void> | null = null;
+let saveAgain = false;
 
 function emit(): void {
   for (const l of listeners) l();
 }
 
-function scheduleSave(): void {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    void persistence
-      .saveDatabase(state)
-      .then(() => {
-        if (lastSaveError) {
-          lastSaveError = null;
-          emit();
-        }
-      })
-      .catch((error: Error) => {
-        lastSaveError = error.message;
+function runSave(): Promise<void> {
+  return persistence
+    .saveDatabase(state)
+    .then(() => {
+      if (lastSaveError) {
+        lastSaveError = null;
         emit();
-      });
-  }, 200);
+      }
+    })
+    .catch((error: Error) => {
+      lastSaveError = error.message;
+      emit();
+    })
+    .then(() => {
+      if (saveAgain) {
+        saveAgain = false;
+        return runSave();
+      }
+      saveInFlight = null;
+      return undefined;
+    });
+}
+
+function scheduleSave(): void {
+  if (saveInFlight) {
+    saveAgain = true;
+    return;
+  }
+  saveInFlight = runSave();
 }
 
 function set(updater: (db: Database) => Database): void {
@@ -82,12 +102,14 @@ export function getSaveError(): string | null {
   return lastSaveError;
 }
 
-/** Flush any pending write. Used by tests and before an export. */
+/** Wait for any write already started to land. */
+async function drain(): Promise<void> {
+  while (saveInFlight) await saveInFlight;
+}
+
+/** Wait for every pending write to land. Used by tests and before an export. */
 export async function flush(): Promise<void> {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-  }
+  await drain();
   await persistence.saveDatabase(state);
 }
 
@@ -170,8 +192,6 @@ export function createAircraft(input: Partial<Aircraft> & { tailNumber: string }
   const now = nowIso();
   const aircraft: Aircraft = {
     id: newId('acf'),
-    tailNumber: formatTail(input.tailNumber),
-    tailKey: normalizeTail(input.tailNumber),
     year: '',
     make: '',
     model: '',
@@ -182,10 +202,10 @@ export function createAircraft(input: Partial<Aircraft> & { tailNumber: string }
     createdAt: now,
     updatedAt: now,
     ...input,
-    // Recomputed after the spread so a caller cannot desynchronise them.
+    // Derived after the spread so the pair can never fall out of sync.
+    tailNumber: formatTail(input.tailNumber),
+    tailKey: normalizeTail(input.tailNumber),
   };
-  aircraft.tailNumber = formatTail(input.tailNumber);
-  aircraft.tailKey = normalizeTail(input.tailNumber);
   set((db) => ({ ...db, aircraft: [...db.aircraft, aircraft] }));
   return aircraft;
 }
@@ -483,6 +503,8 @@ export function replaceDatabase(db: Database): void {
 }
 
 export async function eraseEverything(): Promise<void> {
+  // Let any write already in flight finish, so it cannot land after the wipe.
+  await drain();
   await persistence.clearAll();
   state = { ...emptyDatabase(), templates: defaultTemplates(nowIso()) };
   emit();

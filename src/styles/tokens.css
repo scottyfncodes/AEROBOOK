@@ -1,0 +1,88 @@
+/*
+ * AEROBOOK design tokens.
+ *
+ * The reference is an instrument panel at night and a well-made operations
+ * tool: near-black surfaces, one warm signal colour, generous type, and no
+ * decoration that doesn't carry information.
+ */
+:root {
+  color-scheme: dark;
+
+  --bg: #0a0d11;
+  --bg-elevated: #10151b;
+  --surface: #141a21;
+  --surface-2: #1a222b;
+  --surface-hover: #1f2832;
+  --border: #232d38;
+  --border-strong: #32404e;
+
+  --text: #e9eef4;
+  --text-secondary: #a7b4c2;
+  --text-muted: #6f7f90;
+
+  --accent: #f0a63c;
+  --accent-strong: #ffb84d;
+  --accent-dim: rgba(240, 166, 60, 0.14);
+  --accent-contrast: #16110a;
+
+  --info: #5aa9e6;
+  --info-dim: rgba(90, 169, 230, 0.14);
+  --success: #4fb477;
+  --success-dim: rgba(79, 180, 119, 0.14);
+  --warn: #e8b13d;
+  --warn-dim: rgba(232, 177, 61, 0.14);
+  --danger: #e4675c;
+  --danger-dim: rgba(228, 103, 92, 0.14);
+
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.55);
+
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+
+  --tap: 44px;
+  --gutter: 16px;
+  --header-h: 56px;
+  --tabbar-h: calc(58px + env(safe-area-inset-bottom, 0px));
+
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f4f6f8;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f0f3f6;
+  --surface-hover: #e9eef3;
+  --border: #dfe5ec;
+  --border-strong: #c3cdd8;
+
+  --text: #121820;
+  --text-secondary: #4a5966;
+  --text-muted: #77879a;
+
+  --accent: #b46b0d;
+  --accent-strong: #925608;
+  --accent-dim: rgba(180, 107, 13, 0.1);
+  --accent-contrast: #ffffff;
+
+  --info: #1f6fb2;
+  --info-dim: rgba(31, 111, 178, 0.1);
+  --success: #23794b;
+  --success-dim: rgba(35, 121, 75, 0.1);
+  --warn: #8a6410;
+  --warn-dim: rgba(138, 100, 16, 0.12);
+  --danger: #b63a2f;
+  --danger-dim: rgba(182, 58, 47, 0.1);
+
+  --shadow-sm: 0 1px 2px rgba(18, 24, 32, 0.08);
+  --shadow: 0 6px 20px rgba(18, 24, 32, 0.1);
+  --shadow-lg: 0 18px 44px rgba(18, 24, 32, 0.16);
+}

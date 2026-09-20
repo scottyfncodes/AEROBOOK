@@ -12,9 +12,9 @@ const contact: Contact = {
 
 const aircraft: Aircraft = {
   id: 'a1', tailNumber: 'N917JH', tailKey: '917JH', year: '2026', make: 'Cirrus', model: 'SR22T',
-  ownerships: [{ contactId: 'c1' }], status: 'Unknown', notes: '', custom: '' as never && {},
+  ownerships: [{ contactId: 'c1' }], status: 'Unknown', notes: '', custom: {},
   createdAt: '', updatedAt: '',
-} as Aircraft;
+};
 
 const tpl = (patch: Partial<EmailTemplate>): EmailTemplate => ({
   id: 't', name: 'T', subject: 'RE: {{tail}}', body: 'Hi {{firstName}},', createdAt: '', updatedAt: '', ...patch,
