@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import { ToastProvider } from './components/ui';
-import { Signature } from './components/Signature';
+import { Mark } from './components/Brand';
 import { IconBell, IconHome, IconPlane, IconTarget, IconTools, IconUsers } from './components/Icons';
 import { useDatabase, useLoaded, useSaveError } from './data/useStore';
 
@@ -111,7 +111,7 @@ export default function App() {
         ) : (
           <div className="page">
             <div className="splash">
-              <Signature />
+              <Mark size={44} />
               <span className="splash__wordmark">AEROBOOK</span>
             </div>
           </div>

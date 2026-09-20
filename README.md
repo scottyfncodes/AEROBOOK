@@ -78,15 +78,19 @@ tail, generate and record the email, set a follow-up, reload, re-import,
 export. It fails on any console error, any horizontal overflow at 390px, or
 any link without a destination.
 
-## Brand assets
+## Brand
 
-`public/brand/` is generated from the owner's signature:
+The mark is an "A" whose crossbar runs well past both legs, drawn in fine
+strokes that lean forward — the visual language is a modern aviation
+operations tool: near-black surfaces, one warm signal colour, and no
+decoration that doesn't carry information.
 
 ```bash
-node scripts/build-brand.mjs      # brand-source/signature.jpg -> public/brand/
+npm run brand      # regenerates public/brand/ from scripts/build-brand.mjs
 ```
 
-Outputs are committed, so this only needs running if the source changes.
+Outputs are committed, so a normal build needs neither Chromium nor this
+script. Run it only when the mark changes.
 
 ## Deployment
 

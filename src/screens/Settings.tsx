@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { AppBar } from '../components/AppBar';
 import { IconDownload, IconMail, IconUpload } from '../components/Icons';
 import { Banner, ConfirmButton, KeyValue, SelectField, TextField, useToast } from '../components/ui';
-import { Signature } from '../components/Signature';
+import { Mark } from '../components/Brand';
 import { useDatabase } from '../data/useStore';
 import { eraseEverything, flush, replaceDatabase, updateSettings } from '../data/store';
 import {
@@ -153,10 +153,11 @@ export default function Settings() {
         <section className="stack stack--sm">
           <h2 className="section-title">About</h2>
           <div className="card small muted stack stack--sm">
-            <div className="row" style={{ gap: 12, marginBottom: 2 }}>
-              <Signature width={140} />
+            <div className="row" style={{ gap: 10, color: 'var(--accent)' }}>
+              <Mark size={24} />
+              <span className="strong" style={{ letterSpacing: '0.18em', fontSize: 13 }}>AEROBOOK</span>
             </div>
-            <div>AEROBOOK — a personal CRM for aircraft brokerage and aviation insurance.</div>
+            <div>A personal CRM for aircraft brokerage and aviation insurance.</div>
             <div>
               AEROBOOK does not send email. It prepares a message and hands it to your mail client; the activity it
               records says “prepared”, “opened in mail” or “copied”, never “sent”.

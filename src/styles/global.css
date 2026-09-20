@@ -611,50 +611,32 @@ button, input, select, textarea {
   .tabbar__item { max-width: 120px; }
 }
 
-/* ------------------------------------------------------------- signature */
+/* ----------------------------------------------------------------- brand */
 
-/*
- * The owner's own signature, used as a mask so it takes the surrounding text
- * colour and works in both themes from one asset. It is decorative, so it is
- * hidden from assistive technology wherever it appears.
- */
-.signature {
-  --signature-width: 180px;
-  width: var(--signature-width);
-  aspect-ratio: 1522 / 592;
-  background-color: currentColor;
-  -webkit-mask-image: url('/brand/signature.svg');
-  mask-image: url('/brand/signature.svg');
-  -webkit-mask-size: contain;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
-  flex: none;
+.appbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
 }
+
+.appbar__brand svg { color: var(--accent); flex: none; }
 
 .colophon {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 26px 0 8px;
   color: var(--text-muted);
   text-align: center;
 }
 
-.colophon .signature {
-  --signature-width: 168px;
-  opacity: 0.55;
-  transition: opacity 0.2s var(--ease);
-}
-
-.colophon:hover .signature { opacity: 0.85; }
+.colophon svg { opacity: 0.5; }
 
 .colophon__line {
   font-size: 11px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
@@ -663,15 +645,9 @@ button, input, select, textarea {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
+  gap: 16px;
   min-height: 60vh;
-  color: var(--text-muted);
-}
-
-.splash .signature {
-  --signature-width: 200px;
   color: var(--accent);
-  opacity: 0.9;
 }
 
 .splash__wordmark {

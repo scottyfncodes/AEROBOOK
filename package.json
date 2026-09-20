@@ -26,7 +26,6 @@
     "fake-indexeddb": "^6.2.2",
     "jsdom": "^27.0.0",
     "playwright": "^1.63.0",
-    "potrace": "^2.1.8",
     "typescript": "^5.9.2",
     "vite": "^7.1.5",
     "vitest": "^3.2.4"

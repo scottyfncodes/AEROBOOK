@@ -5,7 +5,7 @@ import {
   IconBell, IconDoc, IconMail, IconMap, IconPlane, IconPlus, IconSearch, IconTarget, IconUpload, IconUsers,
 } from '../components/Icons';
 import { Chip, EmptyState, Metric } from '../components/ui';
-import { Colophon } from '../components/Signature';
+import { Colophon } from '../components/Brand';
 import { useDatabase } from '../data/useStore';
 import {
   bucketFollowUps, followUpSubject, openFollowUps, pipeline, recentlyContacted, recentlyUpdated,

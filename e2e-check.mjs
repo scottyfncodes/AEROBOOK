@@ -55,9 +55,8 @@ async function checkOverflow(label) {
 
 // ------------------------------------------------------- 0. brand assets
 for (const asset of [
-  '/brand/signature.svg', '/brand/icon.svg', '/brand/icon-180.png',
-  '/brand/icon-192.png', '/brand/icon-512.png', '/brand/icon-maskable-512.png',
-  '/manifest.webmanifest',
+  '/brand/icon.svg', '/brand/icon-180.png', '/brand/icon-192.png',
+  '/brand/icon-512.png', '/brand/icon-maskable-512.png', '/manifest.webmanifest',
 ]) {
   const res = await page.request.get(BASE + asset);
   if (!res.ok()) errors.push(`asset ${asset} returned ${res.status()}`);
@@ -69,17 +68,17 @@ await page.waitForSelector('.quick-actions');
 log('home loaded:', await page.title());
 if (!(await page.getByText('Nothing in the book yet').isVisible())) errors.push('empty state missing on home');
 await checkOverflow('home empty');
-const sigBox = await page.evaluate(() => {
-  const el = document.querySelector('.colophon .signature');
-  if (!el) return null;
-  const cs = getComputedStyle(el);
-  const r = el.getBoundingClientRect();
-  return { mask: cs.webkitMaskImage || cs.maskImage, w: Math.round(r.width), h: Math.round(r.height) };
+const markBox = await page.evaluate(() => {
+  const marks = [...document.querySelectorAll('.appbar__brand svg, .colophon svg')];
+  return marks.map((el) => {
+    const r = el.getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height), paths: el.querySelectorAll('path').length };
+  });
 });
-if (!sigBox || !sigBox.mask.includes('signature.svg') || sigBox.w < 100) {
-  errors.push(`signature did not render: ${JSON.stringify(sigBox)}`);
+if (markBox.length < 2 || markBox.some((m) => m.w < 12 || m.paths !== 2)) {
+  errors.push(`brand mark did not render: ${JSON.stringify(markBox)}`);
 }
-log('signature mark:', JSON.stringify(sigBox));
+log('brand mark:', JSON.stringify(markBox));
 await shot('01-home-empty');
 
 // ---------------------------------------------------------------- 2. import
