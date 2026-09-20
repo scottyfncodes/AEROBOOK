@@ -103,8 +103,6 @@ export function openOpportunities(db: Pick<Database, 'opportunities'>): Opportun
 }
 
 export interface Pipeline {
-  /** Deals per stage, in pipeline order. */
-  stages: { status: Opportunity['status']; count: number }[];
   open: number;
   won: number;
   /** Aircraft the user has marked as being for sale or being hunted. */
@@ -112,15 +110,13 @@ export interface Pipeline {
   wanted: number;
 }
 
+/**
+ * The home screen's summary. Per-stage counts live on the pipeline screen,
+ * where they double as its filter, rather than being computed twice.
+ */
 export function pipeline(db: Pick<Database, 'opportunities' | 'aircraft'>): Pipeline {
-  const open = db.opportunities.filter(isOpen);
-  const stages = (['Lead', 'Contacted', 'Interested', 'Quoting', 'Negotiating'] as const).map((status) => ({
-    status: status as Opportunity['status'],
-    count: open.filter((o) => o.status === status).length,
-  }));
   return {
-    stages,
-    open: open.length,
+    open: db.opportunities.filter(isOpen).length,
     won: db.opportunities.filter((o) => o.status === 'Won').length,
     forSale: db.aircraft.filter((a) => a.status === 'For Sale').length,
     wanted: db.aircraft.filter((a) => a.status === 'Purchase Prospect').length,

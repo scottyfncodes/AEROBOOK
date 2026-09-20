@@ -109,3 +109,38 @@ describe('tokenize', () => {
     expect(tokenize('')).toEqual([]);
   });
 });
+
+describe('what a result tells you before you open it', () => {
+  it('names the owner', () => {
+    const hit = search(db, 'n917jh').find((r) => r.kind === 'aircraft')!;
+    expect(hit.detail).toContain('Owner: John Heine');
+  });
+
+  it('says so when the insurance needs attention', () => {
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 30);
+    const expiring = {
+      ...db,
+      policies: [{ ...db.policies[0], expirationDate: soon.toISOString().slice(0, 10) }],
+    };
+    const hit = search(expiring, 'n917jh').find((r) => r.kind === 'aircraft')!;
+    expect(hit.detail).toContain('Renewal in 30 days');
+  });
+
+  it('stays quiet about a renewal that is a year away', () => {
+    const far = new Date();
+    far.setDate(far.getDate() + 300);
+    const calm = {
+      ...db,
+      policies: [{ ...db.policies[0], expirationDate: far.toISOString().slice(0, 10) }],
+    };
+    const hit = search(calm, 'n917jh').find((r) => r.kind === 'aircraft')!;
+    expect(hit.detail).toBe('Owner: John Heine');
+  });
+
+  it('finds the aircraft by its carrier', () => {
+    const hits = search(db, 'global aerospace');
+    expect(hits.some((r) => r.kind === 'aircraft' && r.id === 'a1')).toBe(true);
+    expect(hits.some((r) => r.kind === 'contact' && r.id === 'c1')).toBe(true);
+  });
+});

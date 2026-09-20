@@ -10,6 +10,7 @@ import type { Aircraft, Contact, Database, InsurancePolicy, Opportunity } from '
 import { normalizeTail } from './tail';
 import { normalizePhone } from './phone';
 import { displayName } from './names';
+import { policyState, sortByUrgency } from './insurance';
 
 export type ResultKind = 'contact' | 'aircraft' | 'opportunity';
 
@@ -88,12 +89,21 @@ export function buildIndex(db: SearchableDb): IndexEntry[] {
     const ownerId = a.ownerships.find((o) => !o.endedAt)?.contactId;
     const owner = ownerId ? contactsById.get(ownerId) : undefined;
     const ownerName = owner ? displayName(owner) : '';
+
+    // A result that says a renewal is due answers the question before the
+    // user has to open the record.
+    const urgent = policies
+      .filter((p) => p.aircraftId === a.id)
+      .sort(sortByUrgency)
+      .map((p) => policyState(p))
+      .find((state) => state.needsAttention);
+
     entries.push({
       kind: 'aircraft',
       id: a.id,
       title: a.tailNumber,
       subtitle: [a.year, a.make, a.model].filter(Boolean).join(' '),
-      detail: ownerName ? `Owner: ${ownerName}` : a.status,
+      detail: [ownerName ? `Owner: ${ownerName}` : a.status, urgent?.countdown].filter(Boolean).join(' · '),
       haystack: norm(
         [
           a.tailNumber, normalizeTail(a.tailNumber), a.year, a.make, a.model, a.serial, a.status,

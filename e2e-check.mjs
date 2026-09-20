@@ -296,6 +296,15 @@ const wantHits = await page.locator('.tile').allInnerTexts();
 log('search "pilatus" ->', wantHits.length, 'results');
 if (!has(wantHits.join(' '), 'Heine')) errors.push('searching what someone wants does not find them');
 
+await page.fill('input[type=search]', 'n917jh');
+await page.waitForTimeout(400);
+// Three days later, one search should answer the whole situation.
+const recallHit = await page.locator('.tile').first().innerText();
+log('search recall:', recallHit.replace(/\n/g, ' / '));
+for (const expected of ['N917JH', 'Cirrus', 'John Heine', 'Renewal in 47 days']) {
+  if (!has(recallHit, expected)) errors.push(`the search result does not say "${expected}"`);
+}
+
 await page.fill('input[type=search]', 'global aerospace');
 await page.waitForTimeout(400);
 const carrierHits = await page.locator('.tile').allInnerTexts();
