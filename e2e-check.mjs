@@ -2,11 +2,13 @@ import { chromium } from 'playwright';
 import { mkdirSync, readFileSync } from 'node:fs';
 
 /**
- * Drives the built app in Chromium at iPhone dimensions and walks the core
- * journey through the real UI: import the supplied CSV, find the aircraft by
- * a lowercase tail, generate the email, record it, set a follow-up, reload,
- * re-import, and export. Fails on any console error, any horizontal overflow
- * or any link without a destination.
+ * Drives the built app in Chromium at iPhone dimensions and walks the journeys
+ * the app exists for: import the supplied CSV, find the aircraft by a
+ * lowercase tail, generate the email, record it, set a follow-up, add an
+ * insurance policy and check the renewal countdown, open a brokerage
+ * opportunity and move it through the pipeline, record what the owner wants,
+ * reload, re-import, and export. Fails on any console error, any horizontal
+ * overflow or any link without a destination.
  *
  *   npm run build && npm run preview &
  *   node e2e-check.mjs
@@ -43,6 +45,14 @@ page.on('requestfailed', (r) => {
 
 async function shot(name) {
   await page.screenshot({ path: `${SHOTS}/${name}.png` });
+}
+
+/**
+ * Section titles and chips are uppercased in CSS, and innerText reports what
+ * is painted, so text assertions compare case-insensitively.
+ */
+function has(haystack, needle) {
+  return haystack.toLowerCase().includes(needle.toLowerCase());
 }
 
 async function checkOverflow(label) {
@@ -162,7 +172,7 @@ await page.waitForTimeout(300);
 
 const timeline = await page.locator('.timeline__item').allInnerTexts();
 log('timeline entries:', timeline.length);
-if (!timeline.join(' ').includes('RE: N917JH')) errors.push('email activity not on the timeline');
+if (!has(timeline.join(' '), 'RE: N917JH')) errors.push('email activity not on the timeline');
 await shot('08-timeline');
 
 // ---------------------------------------------------------- 6. follow up
@@ -177,19 +187,206 @@ await page.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
 await page.waitForSelector('.metric');
 const fu = await page.locator('.card').first().innerText();
 log('follow-up dashboard:', fu.replace(/\n/g, ' / '));
-const upcoming = await page.locator('section:has(h2:text("Upcoming")) .card').first().innerText();
-log('upcoming item:', upcoming.replace(/\n/g, ' / '));
-if (!upcoming.includes('N917JH')) errors.push('follow-up does not name the aircraft');
+const upcoming = await page.locator('section:has(h2:text("This week")) .card').first().innerText();
+log('this week item:', upcoming.replace(/\n/g, ' / '));
+if (!has(upcoming, 'N917JH')) errors.push('follow-up does not name the aircraft');
 await checkOverflow('follow-ups');
 await shot('10-followups');
+
+// -------------------------------------------------- 6b. insurance renewal
+// The scenario the app exists for: the owner's policy renews in 47 days.
+const in47 = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() + 47);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+})();
+
+await page.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
+await page.fill('input[type=search]', 'n917jh');
+await page.waitForSelector('.tile');
+await page.waitForTimeout(400);
+await page.locator('.tile').first().click();
+await page.waitForSelector('h1.tail');
+
+await page.locator('section:has(h2:text("Insurance"))').getByRole('button', { name: 'Add', exact: true }).click();
+await page.waitForSelector('.sheet');
+await page.getByLabel('Carrier').fill('Global Aerospace');
+await page.getByLabel('Hull value').fill('$1,250,000');
+await page.getByLabel('Expiration date').fill(in47);
+await page.waitForTimeout(200);
+const previewChip = await page.locator('.sheet .chip').first().innerText();
+log('renewal preview chip:', previewChip);
+if (previewChip.toLowerCase() !== 'renewal in 47 days') errors.push(`renewal preview read "${previewChip}"`);
+await checkOverflow('policy sheet');
+await shot('10a-policy-sheet');
+await page.getByRole('button', { name: 'Save', exact: true }).click();
+await page.waitForTimeout(400);
+
+const glance = await page.locator('section[aria-label="At a glance"]').innerText();
+log('aircraft glance:', glance.replace(/\n/g, ' / '));
+for (const expected of ['Heine', 'Renewal in 47 days', 'Global Aerospace']) {
+  if (!has(glance, expected)) errors.push(`glance panel is missing "${expected}"`);
+}
+await checkOverflow('aircraft with policy');
+await shot('10b-aircraft-insurance');
+
+// A renewal task, straight off the aircraft.
+await page.getByRole('button', { name: 'Renewal task' }).click();
+await page.waitForSelector('.sheet');
+const renewalNote = await page.getByLabel(/Why/).inputValue();
+log('renewal follow-up note:', renewalNote);
+if (!renewalNote.includes('N917JH') || !renewalNote.includes('Global Aerospace')) {
+  errors.push(`renewal follow-up note read "${renewalNote}"`);
+}
+await page.getByRole('button', { name: 'Set follow-up' }).click();
+await page.waitForTimeout(400);
+
+// ------------------------------------------------ 6c. brokerage pipeline
+await page.getByRole('button', { name: 'Add opportunity' }).click();
+await page.waitForSelector('.sheet');
+await page.getByLabel('Type').selectOption('Sale + Insurance');
+await page.getByLabel('Next action').fill('Send comparable sales');
+await page.getByRole('button', { name: 'Create' }).click();
+await page.waitForTimeout(400);
+
+await page.locator('section:has(h2:text("Opportunities")) .tile').first().click();
+await page.waitForSelector('.stage-track');
+await checkOverflow('opportunity detail');
+await page.getByRole('button', { name: 'Quoting', exact: true }).click();
+await page.waitForTimeout(400);
+const oppText = await page.locator('main').innerText();
+log('opportunity after stage move:', oppText.split('\n').slice(0, 6).join(' / '));
+if (!has(oppText, 'Quoting')) errors.push('stage did not move to Quoting');
+if (!has(oppText, 'Send comparable sales')) errors.push('next action missing from the opportunity');
+if (!has(oppText, 'Lead → Quoting')) errors.push('stage change was not recorded on the timeline');
+await shot('10c-opportunity');
+
+// ------------------------------------------------ 6d. what they want
+await page.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
+await page.fill('input[type=search]', 'heine');
+await page.waitForSelector('.tile');
+await page.waitForTimeout(400);
+await page.locator('.tile:has-text("Heine")').first().click();
+await page.waitForSelector('h1');
+await page.getByRole('button', { name: 'What they want', exact: true }).click();
+await page.waitForSelector('.sheet');
+await page.getByLabel('May sell an aircraft').selectOption('Actively');
+await page.getByLabel('Aircraft they want').fill('Pilatus PC-12');
+await page.getByLabel('Budget').fill('$4M');
+await page.getByRole('button', { name: 'Save', exact: true }).click();
+await page.waitForTimeout(400);
+
+const contactText = await page.locator('main').innerText();
+for (const expected of ['Pilatus PC-12', '$4M', 'Global Aerospace', 'N917JH']) {
+  if (!has(contactText, expected)) errors.push(`contact page is missing "${expected}"`);
+}
+const contactGlance = await page.locator('section[aria-label="At a glance"]').innerText();
+log('contact glance:', contactGlance.replace(/\n/g, ' / '));
+for (const expected of ['Wants Pilatus PC-12', 'Selling: Actively', '$4M', '1 policy', 'N917JH']) {
+  if (!has(contactGlance, expected)) errors.push(`contact glance is missing "${expected}"`);
+}
+await checkOverflow('contact detail');
+await shot('10d-contact-intent');
+
+// The whole point: three days later, one search answers everything.
+await page.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
+await page.fill('input[type=search]', 'pilatus');
+await page.waitForTimeout(400);
+const wantHits = await page.locator('.tile').allInnerTexts();
+log('search "pilatus" ->', wantHits.length, 'results');
+if (!has(wantHits.join(' '), 'Heine')) errors.push('searching what someone wants does not find them');
+
+await page.fill('input[type=search]', 'n917jh');
+await page.waitForTimeout(400);
+// Three days later, one search should answer the whole situation.
+const recallHit = await page.locator('.tile').first().innerText();
+log('search recall:', recallHit.replace(/\n/g, ' / '));
+for (const expected of ['N917JH', 'Cirrus', 'John Heine', 'Renewal in 47 days']) {
+  if (!has(recallHit, expected)) errors.push(`the search result does not say "${expected}"`);
+}
+
+await page.fill('input[type=search]', 'global aerospace');
+await page.waitForTimeout(400);
+const carrierHits = await page.locator('.tile').allInnerTexts();
+log('search "global aerospace" ->', carrierHits.length, 'results');
+if (!has(carrierHits.join(' '), 'N917JH')) errors.push('searching a carrier does not find the aircraft');
+await shot('10e-search-carrier');
+
+// ------------------------------------------------- 6f. a brand new client
+// The call-comes-in scenario: a person, their aircraft and a follow-up,
+// without ever having to go and find the record again.
+await page.goto(`${BASE}/contacts?new=1`, { waitUntil: 'networkidle' });
+await page.waitForSelector('.sheet');
+await page.getByLabel('First name').fill('John');
+await page.getByLabel('Last name').fill('Smith');
+await page.getByLabel('Email').fill('john@example.com');
+await page.getByRole('button', { name: 'Save', exact: true }).click();
+await page.waitForSelector('h1:has-text("John Smith")');
+if (!page.url().includes('/contacts/')) errors.push('creating a contact did not open the contact');
+
+await page.getByRole('button', { name: 'Add aircraft' }).click();
+await page.waitForSelector('.sheet');
+const prefilled = await page.getByLabel('Owner').inputValue();
+await page.getByLabel('Tail number').fill('n123ab');
+await page.getByLabel('Year').fill('2018');
+await page.getByLabel('Make').fill('Pilatus');
+await page.getByLabel('Model').fill('PC-12');
+await page.getByRole('button', { name: 'Save', exact: true }).click();
+await page.waitForSelector('h1.tail:has-text("N123AB")');
+const newAircraft = await page.locator('section[aria-label="At a glance"]').innerText();
+log('new aircraft glance:', newAircraft.replace(/\n/g, ' / '));
+if (!has(newAircraft, 'John Smith')) {
+  errors.push(`aircraft added from a contact lost the owner (picker held "${prefilled}")`);
+}
+
+await page.getByRole('button', { name: 'Follow up' }).click();
+await page.waitForSelector('.sheet');
+await page.getByRole('button', { name: 'Tomorrow' }).click();
+await page.getByRole('button', { name: 'Set follow-up' }).click();
+await page.waitForTimeout(400);
+
+await page.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
+await page.waitForSelector('.metric');
+const tasks = await page.locator('main').innerText();
+if (!has(tasks, 'N123AB')) errors.push('the new aircraft follow-up is not on the task list');
+await checkOverflow('follow-ups with work');
+await shot('10g-new-client');
+
+// ------------------------------------------------------ 6e. home triage
+await page.goto(BASE, { waitUntil: 'networkidle' });
+await page.waitForSelector('.metric-grid');
+const home = await page.locator('main').innerText();
+log('home sections:', ['Today', 'Insurance', 'Active business'].filter((h) => has(home, h)).join(', '));
+for (const expected of ['Today', 'Insurance', 'Renewal in 47 days', 'Active business', 'Send comparable sales']) {
+  if (!has(home, expected)) errors.push(`home screen is missing "${expected}"`);
+}
+await checkOverflow('home with work on it');
+await shot('10f-home-triage');
 
 // ---------------------------------------------------- 7. persistence reload
 await page.goto(BASE, { waitUntil: 'networkidle' });
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForSelector('.metric-grid');
 const homeText = await page.locator('main').innerText();
-log('after reload, home shows aircraft count:', /(\d+)\s*\nAircraft/.exec(homeText)?.[1]);
-if (!homeText.includes('117')) errors.push('aircraft count missing after reload');
+// 117 imported, plus N123AB added by hand in the new-client workflow above.
+const aircraftCount = /(\d+)\s*\nAIRCRAFT/i.exec(homeText)?.[1];
+log('after reload, home shows aircraft count:', aircraftCount);
+if (aircraftCount !== '118') errors.push(`aircraft count read ${aircraftCount} after reload, expected 118`);
+// Home only shows what needs attention, so persistence of a record added by
+// hand is checked where the record actually lives.
+await page.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
+await page.fill('input[type=search]', 'N123AB');
+await page.waitForSelector('.tile');
+await page.waitForTimeout(400);
+await page.locator('.tile').first().click();
+await page.waitForSelector('h1.tail');
+const survived = await page.locator('main').innerText();
+log('after reload, N123AB reads:', survived.split('\n').slice(0, 4).join(' / '));
+for (const expected of ['N123AB', '2018 Pilatus PC-12', 'John Smith']) {
+  if (!has(survived, expected)) errors.push(`"${expected}" did not survive the reload`);
+}
+await page.goto(BASE, { waitUntil: 'networkidle' });
+await page.waitForSelector('.metric-grid');
 await checkOverflow('home populated');
 await shot('11-home-populated');
 
@@ -269,7 +466,19 @@ const path = await d.path();
 const csvOut = readFileSync(path, 'utf8');
 const lines = csvOut.trim().split('\r\n');
 log('exported contacts CSV:', lines.length - 1, 'rows; header:', lines[0].slice(0, 60));
-if (lines.length - 1 !== 115) errors.push(`export had ${lines.length - 1} contact rows, expected 115`);
+// 115 from the CSV (two owners hold two aircraft each), plus John Smith.
+if (lines.length - 1 !== 116) errors.push(`export had ${lines.length - 1} contact rows, expected 116`);
+if (!has(csvOut, 'Pilatus PC-12')) errors.push('the contact export does not carry what they want');
+
+const insDownload = page.waitForEvent('download');
+await page.getByRole('button', { name: 'Export insurance' }).click();
+const insFile = await (await insDownload).path();
+const insCsv = readFileSync(insFile, 'utf8').trim().split('\r\n');
+log('exported insurance CSV:', insCsv.length - 1, 'rows; header:', insCsv[0].slice(0, 60));
+if (insCsv.length - 1 !== 1) errors.push(`insurance export had ${insCsv.length - 1} rows, expected 1`);
+if (!has(insCsv[1], 'N917JH') || !has(insCsv[1], 'Global Aerospace')) {
+  errors.push('insurance export does not carry the aircraft and carrier');
+}
 
 // ------------------------------------------------------------------ report
 await browser.close();

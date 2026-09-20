@@ -6,10 +6,11 @@
  * "heine sr22" narrows instead of widening. Tail numbers are matched on their
  * normalised form, which is why "n917jh", "917JH" and "N917JH" all land.
  */
-import type { Aircraft, Contact, Database, Opportunity } from '../data/types';
+import type { Aircraft, Contact, Database, InsurancePolicy, Opportunity } from '../data/types';
 import { normalizeTail } from './tail';
 import { normalizePhone } from './phone';
 import { displayName } from './names';
+import { policyState, sortByUrgency } from './insurance';
 
 export type ResultKind = 'contact' | 'aircraft' | 'opportunity';
 
@@ -38,9 +39,24 @@ function norm(v: unknown): string {
   return String(v ?? '').toLowerCase().trim();
 }
 
-export function buildIndex(db: Pick<Database, 'contacts' | 'aircraft' | 'opportunities'>): IndexEntry[] {
+/**
+ * Policies are not a result kind of their own — nobody searches for a policy,
+ * they search for the aircraft or the person it belongs to. The policy's text
+ * is folded into both, so "Global Aerospace" lands on the aircraft it covers.
+ */
+type SearchableDb = Pick<Database, 'contacts' | 'aircraft' | 'opportunities'> &
+  Partial<Pick<Database, 'policies'>>;
+
+function policyText(policies: InsurancePolicy[]): string {
+  return policies
+    .map((p) => [p.carrier, p.policyNumber, p.brokerAgent, p.renewalNotes, p.notes].filter(Boolean).join(' '))
+    .join(' ');
+}
+
+export function buildIndex(db: SearchableDb): IndexEntry[] {
   const entries: IndexEntry[] = [];
   const contactsById = new Map(db.contacts.map((c) => [c.id, c]));
+  const policies = db.policies ?? [];
 
   for (const c of db.contacts) {
     const name = displayName(c);
@@ -56,7 +72,14 @@ export function buildIndex(db: Pick<Database, 'contacts' | 'aircraft' | 'opportu
       subtitle: [c.company, location].filter(Boolean).join(' · '),
       detail: [c.status, c.prospectStatus].filter(Boolean).join(' · '),
       haystack: norm(
-        [name, c.rawName, c.company, c.email, c.phone, normalizePhone(c.phone), c.address, c.city, c.state, c.zip, c.notes, c.status, c.prospectStatus, owned].join(' '),
+        [
+          name, c.rawName, c.company, c.email, c.phone, normalizePhone(c.phone), c.address, c.city,
+          c.state, c.zip, c.notes, c.status, c.prospectStatus, owned,
+          // What they want is as searchable as what they have.
+          c.intent?.wantedAircraft, c.intent?.budget, c.intent?.mission, c.intent?.timeline,
+          c.intent?.sellingNotes, c.intent?.insuranceNotes,
+          policyText(policies.filter((p) => p.contactId === c.id)),
+        ].join(' '),
       ),
       prefixes: [norm(name), norm(c.lastName), norm(c.firstName), norm(c.company), norm(c.email)],
     });
@@ -66,14 +89,27 @@ export function buildIndex(db: Pick<Database, 'contacts' | 'aircraft' | 'opportu
     const ownerId = a.ownerships.find((o) => !o.endedAt)?.contactId;
     const owner = ownerId ? contactsById.get(ownerId) : undefined;
     const ownerName = owner ? displayName(owner) : '';
+
+    // A result that says a renewal is due answers the question before the
+    // user has to open the record.
+    const urgent = policies
+      .filter((p) => p.aircraftId === a.id)
+      .sort(sortByUrgency)
+      .map((p) => policyState(p))
+      .find((state) => state.needsAttention);
+
     entries.push({
       kind: 'aircraft',
       id: a.id,
       title: a.tailNumber,
       subtitle: [a.year, a.make, a.model].filter(Boolean).join(' '),
-      detail: ownerName ? `Owner: ${ownerName}` : a.status,
+      detail: [ownerName ? `Owner: ${ownerName}` : a.status, urgent?.countdown].filter(Boolean).join(' · '),
       haystack: norm(
-        [a.tailNumber, normalizeTail(a.tailNumber), a.year, a.make, a.model, a.serial, a.status, a.notes, ownerName, owner?.city, owner?.state, a.listingStatus].join(' '),
+        [
+          a.tailNumber, normalizeTail(a.tailNumber), a.year, a.make, a.model, a.serial, a.status,
+          a.notes, ownerName, owner?.city, owner?.state, a.listingStatus, a.baseAirport,
+          policyText(policies.filter((p) => p.aircraftId === a.id)),
+        ].join(' '),
       ),
       prefixes: [norm(a.tailNumber), normalizeTail(a.tailNumber).toLowerCase(), norm(a.model), norm(a.make)],
     });
@@ -89,7 +125,11 @@ export function buildIndex(db: Pick<Database, 'contacts' | 'aircraft' | 'opportu
       subtitle: [contact ? displayName(contact) : '', aircraft?.tailNumber].filter(Boolean).join(' · '),
       detail: `${o.type} · ${o.status}`,
       haystack: norm(
-        [o.title, o.type, o.status, o.notes, contact ? displayName(contact) : '', aircraft?.tailNumber, aircraft ? normalizeTail(aircraft.tailNumber) : '', o.insurance?.carrier, o.insurance?.currentInsurer, o.insurance?.policyNumber, o.insurance?.coverageNotes, o.estimatedValue].join(' '),
+        [
+          o.title, o.type, o.status, o.notes, o.nextAction, contact ? displayName(contact) : '',
+          aircraft?.tailNumber, aircraft ? normalizeTail(aircraft.tailNumber) : '', o.estimatedValue,
+          policyText(policies.filter((p) => p.opportunityId === o.id)),
+        ].join(' '),
       ),
       prefixes: [norm(o.title), norm(o.type)],
     });
@@ -146,11 +186,7 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function search(
-  db: Pick<Database, 'contacts' | 'aircraft' | 'opportunities'>,
-  query: string,
-  limit?: number,
-): SearchResult[] {
+export function search(db: SearchableDb, query: string, limit?: number): SearchResult[] {
   return searchIndex(buildIndex(db), query, limit);
 }
 

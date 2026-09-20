@@ -29,7 +29,16 @@ const db: Database = {
     aircraft({ id: 'a2', tailNumber: 'N441FP', tailKey: '441FP', year: '2019', make: 'Cirrus', model: 'SR22', ownerships: [{ contactId: 'c2' }] }),
   ],
   opportunities: [
-    { id: 'o1', contactId: 'c1', aircraftId: 'a1', type: 'Insurance', status: 'Quote', title: 'Hull renewal', openedAt: '', notes: '', insurance: { carrier: 'Global Aerospace', policyNumber: 'GA-4417' }, createdAt: '', updatedAt: '' } as Opportunity,
+    { id: 'o1', contactId: 'c1', aircraftId: 'a1', type: 'Insurance', status: 'Quoting', title: 'Hull renewal', openedAt: '', notes: '', createdAt: '', updatedAt: '' } as Opportunity,
+  ],
+  policies: [
+    {
+      id: 'p1', aircraftId: 'a1', contactId: 'c1', opportunityId: 'o1',
+      carrier: 'Global Aerospace', policyNumber: 'GA-4417', brokerAgent: '',
+      premium: '', hullValue: '', liabilityLimit: '', deductible: '',
+      status: 'Unknown', quotedPremium: '', renewalNotes: '', notes: '',
+      createdAt: '', updatedAt: '',
+    },
   ],
 };
 
@@ -98,5 +107,40 @@ describe('tokenize', () => {
   it('splits on whitespace and drops empties', () => {
     expect(tokenize('  heine   sr22t ')).toEqual(['heine', 'sr22t']);
     expect(tokenize('')).toEqual([]);
+  });
+});
+
+describe('what a result tells you before you open it', () => {
+  it('names the owner', () => {
+    const hit = search(db, 'n917jh').find((r) => r.kind === 'aircraft')!;
+    expect(hit.detail).toContain('Owner: John Heine');
+  });
+
+  it('says so when the insurance needs attention', () => {
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 30);
+    const expiring = {
+      ...db,
+      policies: [{ ...db.policies[0], expirationDate: soon.toISOString().slice(0, 10) }],
+    };
+    const hit = search(expiring, 'n917jh').find((r) => r.kind === 'aircraft')!;
+    expect(hit.detail).toContain('Renewal in 30 days');
+  });
+
+  it('stays quiet about a renewal that is a year away', () => {
+    const far = new Date();
+    far.setDate(far.getDate() + 300);
+    const calm = {
+      ...db,
+      policies: [{ ...db.policies[0], expirationDate: far.toISOString().slice(0, 10) }],
+    };
+    const hit = search(calm, 'n917jh').find((r) => r.kind === 'aircraft')!;
+    expect(hit.detail).toBe('Owner: John Heine');
+  });
+
+  it('finds the aircraft by its carrier', () => {
+    const hits = search(db, 'global aerospace');
+    expect(hits.some((r) => r.kind === 'aircraft' && r.id === 'a1')).toBe(true);
+    expect(hits.some((r) => r.kind === 'contact' && r.id === 'c1')).toBe(true);
   });
 });

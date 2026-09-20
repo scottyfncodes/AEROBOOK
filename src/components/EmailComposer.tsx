@@ -7,7 +7,7 @@
  */
 import { useMemo, useState } from 'react';
 
-import { IconCopy, IconExternal, IconMail } from './Icons';
+import { IconCheck, IconCopy, IconExternal, IconMail } from './Icons';
 import { Banner, Chip, SelectField, Sheet, TextArea, TextField, useToast } from './ui';
 import { useCopy } from './detail';
 import { useDatabase } from '../data/useStore';
@@ -15,6 +15,8 @@ import { logActivity } from '../data/store';
 import { buildMailto, renderEmail, TEMPLATE_VARIABLES } from '../lib/email';
 import { Link } from 'react-router-dom';
 import { isValidEmail } from '../lib/phone';
+import { policiesFor, policyState } from '../lib/insurance';
+import { nextFollowUpFor } from '../lib/selectors';
 import type { Aircraft, Contact } from '../data/types';
 
 /** "a, b and c" — a warning reads better than a comma-separated list. */
@@ -40,12 +42,52 @@ export function EmailComposer({
   const toast = useToast();
   const copy = useCopy();
 
-  const [templateId, setTemplateId] = useState(db.templates[0]?.id ?? '');
+  const opportunity = opportunityId ? db.opportunities.find((o) => o.id === opportunityId) ?? null : null;
+
+  /**
+   * The message is almost always about the thing that is happening: a renewal
+   * inside the window, or the deal it was opened from. Picking that template
+   * first saves a tap and, more importantly, saves sending the wrong one.
+   */
+  const policy = useMemo(() => {
+    const candidates = [
+      ...(aircraft ? policiesFor(db, { aircraftId: aircraft.id }) : []),
+      ...(contact ? policiesFor(db, { contactId: contact.id }) : []),
+      ...(opportunityId ? policiesFor(db, { opportunityId }) : []),
+    ];
+    return candidates[0] ?? null;
+  }, [db, aircraft, contact, opportunityId]);
+
+  const followUpDate = useMemo(() => {
+    const match = opportunityId
+      ? { opportunityId }
+      : aircraft
+        ? { aircraftId: aircraft.id }
+        : contact
+          ? { contactId: contact.id }
+          : {};
+    return nextFollowUpFor(db, match)?.dueDate ?? null;
+  }, [db, aircraft, contact, opportunityId]);
+
+  const suggestedId = useMemo(() => {
+    if (policy && policyState(policy).needsAttention) return 'tpl_renewal_followup';
+    if (opportunity?.type.includes('Insurance')) return 'tpl_insurance_outreach';
+    if (opportunity?.type.includes('Sale')) return 'tpl_brokerage_outreach';
+    if (opportunity?.type.includes('Purchase')) return 'tpl_purchase_inquiry';
+    return db.templates[0]?.id ?? '';
+  }, [policy, opportunity, db.templates]);
+
+  const [templateId, setTemplateId] = useState(
+    () => (db.templates.some((t) => t.id === suggestedId) ? suggestedId : db.templates[0]?.id ?? ''),
+  );
   const template = db.templates.find((t) => t.id === templateId) ?? db.templates[0];
 
   const rendered = useMemo(
-    () => (template ? renderEmail(template, { contact, aircraft, settings: db.settings }) : null),
-    [template, contact, aircraft, db.settings],
+    () =>
+      template
+        ? renderEmail(template, { contact, aircraft, opportunity, policy, followUpDate, settings: db.settings })
+        : null,
+    [template, contact, aircraft, opportunity, policy, followUpDate, db.settings],
   );
 
   const [editing, setEditing] = useState(false);
@@ -70,14 +112,20 @@ export function EmailComposer({
     setEditing(false);
   };
 
-  const record = (how: 'Prepared' | 'Opened in Mail' | 'Copied') => {
+  const record = (how: 'Prepared' | 'Opened in Mail' | 'Copied' | 'Marked sent by you') => {
+    // AEROBOOK has no mail integration, so the record always says who knows
+    // what — "marked sent by you" is the user's assertion, not the app's.
+    const qualifier =
+      how === 'Marked sent by you'
+        ? 'You marked this as sent. AEROBOOK did not send it and cannot confirm delivery.'
+        : 'Not a confirmed delivery.';
     logActivity({
       contactId: contact?.id ?? null,
       aircraftId: aircraft?.id ?? null,
       opportunityId: opportunityId ?? null,
       type: 'Email',
       subject: finalSubject,
-      notes: `${how} — not a confirmed delivery.\n\n${finalBody}`,
+      notes: `${how} — ${qualifier}\n\n${finalBody}`,
     });
     toast(`Recorded: ${how}`);
     onRecorded?.();
@@ -207,11 +255,19 @@ export function EmailComposer({
           </button>
         </div>
 
+        <button className="btn btn--sm btn--ghost btn--block" onClick={() => record('Marked sent by you')}>
+          <IconCheck /> Mark as sent
+        </button>
+
         <div className="row row--wrap" style={{ gap: 6 }}>
           <Chip>Prepared</Chip>
           <Chip>Opened in Mail</Chip>
           <Chip>Copied</Chip>
-          <span className="xsmall muted">AEROBOOK cannot confirm delivery, so it never says “sent”.</span>
+          <Chip>Marked sent by you</Chip>
+          <span className="xsmall muted">
+            AEROBOOK has no mail integration. It records what it did, and records “sent” only as
+            something you told it.
+          </span>
         </div>
       </div>
     </Sheet>

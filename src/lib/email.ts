@@ -6,9 +6,10 @@
  * gentle fallback: a missing tail must not leave "RE: {{tail}}" in the subject
  * line of a real email.
  */
-import type { Aircraft, Contact, EmailTemplate, Settings } from '../data/types';
+import type { Aircraft, Contact, EmailTemplate, InsurancePolicy, Opportunity, Settings } from '../data/types';
 import { greetingName } from './names';
 import { formatTail } from './tail';
+import { formatDate } from './dates';
 
 export interface TemplateVariable {
   key: string;
@@ -28,6 +29,11 @@ export const TEMPLATE_VARIABLES: TemplateVariable[] = [
   { key: 'aircraft', label: 'Year make model', example: '2026 Cirrus SR22T' },
   { key: 'city', label: 'Owner city', example: 'Santa Barbara' },
   { key: 'state', label: 'Owner state', example: 'CA' },
+  { key: 'base', label: 'Base airport', example: 'KSBA' },
+  { key: 'opportunity', label: 'Opportunity title', example: 'N917JH — hull and liability' },
+  { key: 'carrier', label: 'Insurance carrier', example: 'Global Aerospace' },
+  { key: 'renewalDate', label: 'Insurance renewal date', example: 'Nov 2' },
+  { key: 'followUpDate', label: 'Next follow-up date', example: 'Sep 30' },
   { key: 'senderName', label: 'Your name', example: '' },
   { key: 'senderTitle', label: 'Your title', example: '' },
   { key: 'senderCompany', label: 'Your company', example: '' },
@@ -38,6 +44,10 @@ export const TEMPLATE_VARIABLES: TemplateVariable[] = [
 export interface EmailContext {
   contact?: Contact | null;
   aircraft?: Aircraft | null;
+  opportunity?: Opportunity | null;
+  policy?: InsurancePolicy | null;
+  /** The date of the follow-up this message is answering, when there is one. */
+  followUpDate?: string | null;
   settings?: Partial<Settings> | null;
 }
 
@@ -66,6 +76,11 @@ export function buildVariables(ctx: EmailContext): Record<string, string> {
     aircraft: [year, make, model].filter(Boolean).join(' '),
     city: c?.city ?? '',
     state: c?.state ?? '',
+    base: a?.baseAirport ?? '',
+    opportunity: ctx.opportunity?.title ?? '',
+    carrier: ctx.policy?.carrier ?? '',
+    renewalDate: ctx.policy?.expirationDate ? formatDate(ctx.policy.expirationDate) : '',
+    followUpDate: ctx.followUpDate ? formatDate(ctx.followUpDate) : '',
     senderName: s.senderName ?? '',
     senderTitle: s.senderTitle ?? '',
     senderCompany: s.senderCompany ?? '',
@@ -222,6 +237,71 @@ export function defaultTemplates(now: string): EmailTemplate[] {
         'Hi {{firstName}},\n\n' +
         'Circling back on {{tail}}. Let me know if the timing is better now, or if you would rather I ' +
         'check back later in the year.\n\n' +
+        'Best regards,\n' +
+        sig,
+    },
+    {
+      id: 'tpl_no_response',
+      name: 'No Response Follow-Up',
+      subject: 'RE: {{tail}}',
+      body:
+        'Hi {{firstName}},\n\n' +
+        'I have written once or twice about {{tail}} and have not heard back, which usually just means ' +
+        'the timing is wrong. I will stop here rather than fill your inbox.\n\n' +
+        'If anything changes — a renewal, a sale, a purchase — I am a phone call away.\n\n' +
+        'Best regards,\n' +
+        sig,
+    },
+    {
+      id: 'tpl_purchase_inquiry',
+      name: 'Aircraft Purchase Inquiry',
+      subject: 'Looking for a {{make}} {{model}}',
+      body:
+        'Hi {{firstName}},\n\n' +
+        'I have a client looking for a {{make}} {{model}} and I am reaching out to owners directly ' +
+        'rather than waiting for one to come to market.\n\n' +
+        'If you would consider an offer on {{tail}}, I can tell you what the aircraft is worth today ' +
+        'and what my client is prepared to do. If not, no harm in asking.\n\n' +
+        'Best regards,\n' +
+        sig,
+    },
+    {
+      id: 'tpl_new_client',
+      name: 'New Client Introduction',
+      subject: 'Good to be working together',
+      body:
+        'Hi {{firstName}},\n\n' +
+        'Thanks for your time today. To put it in writing: I will handle {{opportunity}} and come back ' +
+        'to you with the detail.\n\n' +
+        'My direct line is {{senderPhone}} — use it for anything, not just the business at hand.\n\n' +
+        'Best regards,\n' +
+        sig,
+    },
+    {
+      id: 'tpl_post_meeting',
+      name: 'Post-Meeting Follow-Up',
+      subject: 'RE: {{tail}} — following up on our conversation',
+      body:
+        'Hi {{firstName}},\n\n' +
+        'Good to talk today. What I took away:\n\n' +
+        '  · \n' +
+        '  · \n\n' +
+        'I will come back to you by {{followUpDate}}. If I have any of that wrong, tell me and I will ' +
+        'correct it before I go any further.\n\n' +
+        'Best regards,\n' +
+        sig,
+    },
+    {
+      id: 'tpl_document_request',
+      name: 'Document Request',
+      subject: 'RE: {{tail}} — a couple of documents',
+      body:
+        'Hi {{firstName}},\n\n' +
+        'To move {{tail}} along I need a few things when you have a moment:\n\n' +
+        '  · Current declarations page\n' +
+        '  · Pilot hours and ratings\n' +
+        '  · Anything recent on avionics or engine work\n\n' +
+        'A photo of each is fine — they do not need to be tidy.\n\n' +
         'Best regards,\n' +
         sig,
     },

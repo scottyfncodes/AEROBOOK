@@ -9,6 +9,7 @@ import { useDatabase } from '../data/useStore';
 import { eraseEverything, flush, replaceDatabase, updateSettings } from '../data/store';
 import {
   aircraftCsv, contactsCsv, downloadText, exportFilename, fullJson, opportunitiesCsv, parseFullJson,
+  policiesCsv,
 } from '../lib/export';
 
 export default function Settings() {
@@ -96,6 +97,7 @@ export default function Settings() {
             <KeyValue k="Contacts">{db.contacts.length}</KeyValue>
             <KeyValue k="Aircraft">{db.aircraft.length}</KeyValue>
             <KeyValue k="Opportunities">{db.opportunities.length}</KeyValue>
+            <KeyValue k="Insurance policies">{db.policies.length}</KeyValue>
             <KeyValue k="Activities">{db.activities.length}</KeyValue>
             <KeyValue k="Follow-ups">{db.followUps.length}</KeyValue>
             <KeyValue k="Files">{db.files.length}</KeyValue>
@@ -113,10 +115,18 @@ export default function Settings() {
             <button className="btn" onClick={() => exportCsv('opportunities', opportunitiesCsv(db))}>
               <IconDownload /> Export opportunities
             </button>
+            <button className="btn" onClick={() => exportCsv('insurance', policiesCsv(db))}>
+              <IconDownload /> Export insurance
+            </button>
             <button className="btn btn--primary" onClick={() => void exportAll()}>
               <IconDownload /> Export everything
             </button>
           </div>
+          <p className="xsmall muted">
+            The JSON backup carries every record and every link between them, and restores into a clean
+            AEROBOOK. It lists attached documents but cannot carry the files themselves — those live in
+            this browser's storage. Keep originals of anything that matters.
+          </p>
 
           <p className="xsmall muted">
             CSV opens in any spreadsheet. The full export is JSON and can be restored here — it carries every record,

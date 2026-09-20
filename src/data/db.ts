@@ -7,7 +7,17 @@
  * live in their own store so the document stays small. localStorage is the
  * fallback when IndexedDB is unavailable (private browsing on older Safari).
  */
-import { DB_VERSION, emptyDatabase, type Database } from './types';
+import { newId, nowIso } from '../lib/id';
+import {
+  DB_VERSION,
+  emptyDatabase,
+  type Database,
+  type FollowUp,
+  type InsurancePolicy,
+  type Opportunity,
+  type OpportunityStatus,
+  type OpportunityType,
+} from './types';
 
 const IDB_NAME = 'aerobook';
 const IDB_VERSION = 1;
@@ -54,22 +64,127 @@ function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) 
   );
 }
 
-/** Fill in anything a newer version of the app added. */
+/**
+ * Version 1 kept insurance as an optional blob on an opportunity, and a
+ * parallel `followUpDate` string that nothing ever acted on. Version 2 lifts
+ * insurance into a record of its own and turns those dates into real
+ * follow-ups. The old fields are read, converted and dropped — nothing is
+ * thrown away without somewhere to put it.
+ */
+interface LegacyInsurance {
+  currentInsurer?: string;
+  carrier?: string;
+  policyNumber?: string;
+  renewalDate?: string;
+  policyStatus?: string;
+  premium?: string;
+  deductible?: string;
+  liabilityLimit?: string;
+  hullValue?: string;
+  coverageNotes?: string;
+}
+
+type LegacyOpportunity = Opportunity & { insurance?: LegacyInsurance; followUpDate?: string };
+
+const TYPE_ALIASES: Record<string, OpportunityType> = {
+  Both: 'Sale + Insurance',
+  'Aircraft Purchase': 'Aircraft Purchase',
+  'Aircraft Sale': 'Aircraft Sale',
+  Insurance: 'Insurance',
+  Other: 'Other',
+};
+
+/**
+ * "Open" was the entry stage and "Quote" the quoting stage. "Closed" was only
+ * ever used the way "Lost" is used now — every query grouped it with Won and
+ * Lost as no longer in play.
+ */
+const STATUS_ALIASES: Record<string, OpportunityStatus> = {
+  Open: 'Lead',
+  Quote: 'Quoting',
+  Closed: 'Lost',
+};
+
+function hasAnyValue(value: LegacyInsurance | undefined): boolean {
+  return Boolean(value && Object.values(value).some((v) => typeof v === 'string' && v.trim() !== ''));
+}
+
+/** Fill in anything a newer version of the app added, and convert what moved. */
 export function migrate(raw: unknown): Database {
   const base = emptyDatabase();
   if (!raw || typeof raw !== 'object') return base;
   const input = raw as Partial<Database>;
+  const now = nowIso();
+
+  const policies: InsurancePolicy[] = [...(input.policies ?? [])].map((p) => ({
+    ...p,
+    aircraftId: p.aircraftId ?? null,
+    contactId: p.contactId ?? null,
+    opportunityId: p.opportunityId ?? null,
+  }));
+  const followUps: FollowUp[] = [...(input.followUps ?? [])];
+
+  const opportunities = (input.opportunities ?? []).map((raw_o) => {
+    const legacy = raw_o as LegacyOpportunity;
+    const { insurance, followUpDate, ...rest } = legacy;
+
+    if (hasAnyValue(insurance) && !policies.some((p) => p.opportunityId === legacy.id)) {
+      policies.push({
+        id: newId('pol'),
+        aircraftId: legacy.aircraftId,
+        contactId: legacy.contactId,
+        opportunityId: legacy.id,
+        carrier: insurance?.carrier || insurance?.currentInsurer || '',
+        policyNumber: insurance?.policyNumber ?? '',
+        brokerAgent: '',
+        expirationDate: insurance?.renewalDate,
+        premium: insurance?.premium ?? '',
+        hullValue: insurance?.hullValue ?? '',
+        liabilityLimit: insurance?.liabilityLimit ?? '',
+        deductible: insurance?.deductible ?? '',
+        status: 'Unknown',
+        quotedPremium: '',
+        renewalNotes: insurance?.policyStatus ? `Policy status: ${insurance.policyStatus}` : '',
+        notes: insurance?.coverageNotes ?? '',
+        createdAt: legacy.createdAt ?? now,
+        updatedAt: legacy.updatedAt ?? now,
+      });
+    }
+
+    // A follow-up date that only ever sat on the record becomes a real task.
+    if (followUpDate && !followUps.some((f) => f.opportunityId === legacy.id && f.dueDate === followUpDate)) {
+      followUps.push({
+        id: newId('fup'),
+        contactId: legacy.contactId,
+        aircraftId: legacy.aircraftId,
+        opportunityId: legacy.id,
+        dueDate: followUpDate,
+        note: legacy.title || `Follow up on this ${String(legacy.type).toLowerCase()}`,
+        completed: false,
+        createdAt: legacy.createdAt ?? now,
+        updatedAt: now,
+      });
+    }
+
+    return {
+      ...rest,
+      type: TYPE_ALIASES[String(legacy.type)] ?? (legacy.type as OpportunityType) ?? 'Other',
+      status: STATUS_ALIASES[String(legacy.status)] ?? (legacy.status as OpportunityStatus) ?? 'Lead',
+    } satisfies Opportunity;
+  });
+
   return {
     ...base,
     ...input,
     version: DB_VERSION,
     contacts: input.contacts ?? [],
     aircraft: (input.aircraft ?? []).map((a) => ({ ...a, ownerships: a.ownerships ?? [], custom: a.custom ?? {} })),
-    opportunities: input.opportunities ?? [],
+    opportunities,
+    policies,
     activities: input.activities ?? [],
-    followUps: input.followUps ?? [],
+    followUps,
     templates: input.templates ?? [],
-    files: input.files ?? [],
+    files: (input.files ?? []).map((f) => ({ ...f, category: f.category ?? 'Other' })),
     imports: input.imports ?? [],
     layoverSpots: input.layoverSpots ?? [],
     settings: { ...base.settings, ...(input.settings ?? {}) },

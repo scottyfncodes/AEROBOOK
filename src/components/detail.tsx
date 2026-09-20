@@ -10,8 +10,10 @@ import {
   IconPhone, IconPlus, IconTarget, IconTrash, IconUpload,
 } from './Icons';
 import { Banner, Chip, EmptyState, SelectField, Sheet, TextArea, TextField, useToast } from './ui';
-import type { Activity, ActivityType, FollowUp, FileRecord } from '../data/types';
-import { ACTIVITY_TYPES } from '../data/types';
+import type {
+  Activity, ActivityType, DocumentCategory, FollowUp, FollowUpPriority, FileRecord,
+} from '../data/types';
+import { ACTIVITY_TYPES, DOCUMENT_CATEGORIES } from '../data/types';
 import {
   addFile, completeFollowUp, createFollowUp, deleteFollowUp, getFile, logActivity, removeFile,
   updateFollowUp,
@@ -19,7 +21,12 @@ import {
 import { addDays, formatDate, relativeDue, todayKey } from '../lib/dates';
 import type { ExternalLink } from '../lib/links';
 
-type Links = { contactId?: string | null; aircraftId?: string | null; opportunityId?: string | null };
+type Links = {
+  contactId?: string | null;
+  aircraftId?: string | null;
+  opportunityId?: string | null;
+  insurancePolicyId?: string | null;
+};
 
 // ----------------------------------------------------------------- timeline
 
@@ -30,6 +37,9 @@ const ACTIVITY_ICON: Record<string, typeof IconNote> = {
   Meeting: IconCalendar,
   Note: IconNote,
   Quote: IconDoc,
+  'Status Change': IconTarget,
+  Renewal: IconClock,
+  Document: IconDoc,
   Import: IconUpload,
   'Follow-Up': IconClock,
   Other: IconNote,
@@ -192,6 +202,7 @@ export function ActivitySheet({
 // ---------------------------------------------------------- follow-up sheet
 
 const PRESETS = [
+  { label: 'Tomorrow', days: 1 },
   { label: '3 days', days: 3 },
   { label: '1 week', days: 7 },
   { label: '2 weeks', days: 14 },
@@ -203,23 +214,28 @@ export function FollowUpSheet({
   links,
   existing,
   defaultNote = '',
+  defaultDueDate,
   onClose,
 }: {
   links: Links;
   existing?: FollowUp;
   defaultNote?: string;
+  defaultDueDate?: string;
   onClose: () => void;
 }) {
   const toast = useToast();
-  const [dueDate, setDueDate] = useState(existing?.dueDate ?? addDays(7));
+  const [dueDate, setDueDate] = useState(existing?.dueDate ?? defaultDueDate ?? addDays(7));
   const [note, setNote] = useState(existing?.note ?? defaultNote);
+  const [priority, setPriority] = useState<FollowUpPriority>(existing?.priority ?? 'Normal');
 
   const save = () => {
     if (existing) {
-      updateFollowUp(existing.id, { dueDate, note: note.trim(), completed: false, completedAt: undefined });
+      updateFollowUp(existing.id, {
+        dueDate, note: note.trim(), priority, completed: false, completedAt: undefined,
+      });
       toast('Follow-up updated');
     } else {
-      createFollowUp({ ...links, dueDate, note: note.trim() });
+      createFollowUp({ ...links, dueDate, note: note.trim(), priority });
       toast(`Follow-up set for ${formatDate(dueDate)}`);
     }
     onClose();
@@ -250,12 +266,116 @@ export function FollowUpSheet({
         </div>
         <TextField label="Due date" value={dueDate} onChange={setDueDate} type="date" hint={relativeDue(dueDate)} />
         <TextArea
-          label="Reminder"
+          label="Why — what is this follow-up for?"
           value={note}
           onChange={setNote}
           rows={3}
           placeholder="Check if the aircraft is still available"
         />
+        <div className="field">
+          <span className="field__label">Priority</span>
+          <div className="row" style={{ gap: 6 }}>
+            {(['Normal', 'High'] as FollowUpPriority[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`filter-chip${priority === p ? ' is-active' : ''}`}
+                onClick={() => setPriority(p)}
+                aria-pressed={priority === p}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * Completing a follow-up is the one moment the user definitely knows what
+ * happened. Asking then costs a sentence; asking later costs the record. The
+ * outcome and the next follow-up are both optional — one tap on Done still
+ * works.
+ */
+export function CompleteFollowUpSheet({
+  followUp,
+  onClose,
+}: {
+  followUp: FollowUp;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const [outcome, setOutcome] = useState('');
+  const [scheduleNext, setScheduleNext] = useState(false);
+  const [nextDate, setNextDate] = useState(addDays(7));
+  const [nextNote, setNextNote] = useState(followUp.note);
+
+  const finish = () => {
+    completeFollowUp(followUp.id, true, outcome);
+    if (scheduleNext && nextNote.trim()) {
+      createFollowUp({
+        contactId: followUp.contactId,
+        aircraftId: followUp.aircraftId,
+        opportunityId: followUp.opportunityId,
+        insurancePolicyId: followUp.insurancePolicyId,
+        dueDate: nextDate,
+        note: nextNote.trim(),
+        priority: followUp.priority,
+      });
+      toast(`Done — next one set for ${formatDate(nextDate)}`);
+    } else {
+      toast('Follow-up completed');
+    }
+    onClose();
+  };
+
+  return (
+    <Sheet
+      title="Complete follow-up"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn--primary" onClick={finish}>
+            <IconCheck /> Complete
+          </button>
+        </>
+      }
+    >
+      <div className="stack">
+        <div className="card card--tight small secondary">{followUp.note || 'Follow up'}</div>
+        <TextArea
+          label="What happened?"
+          value={outcome}
+          onChange={setOutcome}
+          rows={3}
+          placeholder="Left a voicemail. Wants a call back after the 15th."
+          hint="Optional. Anything here lands on the timeline."
+        />
+        <label className="checkbox">
+          <input type="checkbox" checked={scheduleNext} onChange={(e) => setScheduleNext(e.target.checked)} />
+          <span>Schedule the next follow-up</span>
+        </label>
+        {scheduleNext ? (
+          <>
+            <div className="filter-bar">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.days}
+                  type="button"
+                  className={`filter-chip${nextDate === addDays(p.days) ? ' is-active' : ''}`}
+                  onClick={() => setNextDate(addDays(p.days))}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <TextField label="Due date" value={nextDate} onChange={setNextDate} type="date" hint={relativeDue(nextDate)} />
+            <TextArea label="Why" value={nextNote} onChange={setNextNote} rows={2} />
+          </>
+        ) : null}
       </div>
     </Sheet>
   );
@@ -265,6 +385,7 @@ export function FollowUpSheet({
 
 export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onEdit: (f: FollowUp) => void }) {
   const toast = useToast();
+  const [completing, setCompleting] = useState<FollowUp | null>(null);
   const open = followUps.filter((f) => !f.completed);
   if (open.length === 0) return null;
   return (
@@ -276,9 +397,11 @@ export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onE
             <Chip tone={relativeDue(f.dueDate).includes('overdue') ? 'danger' : 'info'}>{relativeDue(f.dueDate)}</Chip>
           </div>
           <div className="row" style={{ gap: 6, marginTop: 8 }}>
+            {/* One tap completes it; the sheet is for when there is more to say. */}
             <button className="btn btn--sm grow" onClick={() => { completeFollowUp(f.id); toast('Follow-up completed'); }}>
               <IconCheck /> Done
             </button>
+            <button className="btn btn--sm btn--ghost grow" onClick={() => setCompleting(f)}>Done + note</button>
             <button className="btn btn--sm btn--ghost grow" onClick={() => onEdit(f)}>Reschedule</button>
             <button className="btn btn--sm btn--ghost" onClick={() => { deleteFollowUp(f.id); toast('Follow-up removed'); }} aria-label="Delete follow-up">
               <IconTrash />
@@ -286,30 +409,44 @@ export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onE
           </div>
         </div>
       ))}
+      {completing ? <CompleteFollowUpSheet followUp={completing} onClose={() => setCompleting(null)} /> : null}
     </div>
   );
 }
 
 // ----------------------------------------------------------------- files
 
-export function FilesSection({ files, links }: { files: FileRecord[]; links: Links }) {
+export function FilesSection({
+  files,
+  links,
+  defaultCategory = 'Other',
+}: {
+  files: FileRecord[];
+  links: Links;
+  defaultCategory?: DocumentCategory;
+}) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [category, setCategory] = useState<DocumentCategory>(defaultCategory);
 
   const onPick = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     setBusy(true);
+    let attached = 0;
     try {
       for (const file of Array.from(fileList)) {
         if (file.size > 25 * 1024 * 1024) {
           toast(`${file.name} is larger than 25 MB and was skipped`, 'error');
           continue;
         }
-        await addFile(file, links);
+        await addFile(file, links, category);
+        attached += 1;
       }
-      toast(fileList.length === 1 ? 'File attached' : `${fileList.length} files attached`);
+      if (attached > 0) toast(attached === 1 ? 'Document attached' : `${attached} documents attached`);
     } catch (error) {
-      toast((error as Error).message, 'error');
+      // The blob write failed, so no row was created — say so rather than
+      // leaving the user thinking the file is safe here.
+      toast(`Could not store the document: ${(error as Error).message}`, 'error');
     } finally {
       setBusy(false);
     }
@@ -344,7 +481,9 @@ export function FilesSection({ files, links }: { files: FileRecord[]; links: Lin
               <IconDoc className="muted" style={{ width: 17, height: 17, flex: 'none' }} />
               <button className="grow truncate" style={{ background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', padding: 0 }} onClick={() => open(f)}>
                 <div className="small truncate">{f.name}</div>
-                <div className="xsmall muted">{formatBytes(f.size)} · {formatDate(f.createdAt)}</div>
+                <div className="xsmall muted">
+                  {[f.category ?? 'Other', formatBytes(f.size), formatDate(f.createdAt)].join(' · ')}
+                </div>
               </button>
               <button
                 className="btn btn--sm btn--ghost"
@@ -357,10 +496,15 @@ export function FilesSection({ files, links }: { files: FileRecord[]; links: Lin
           ))}
         </div>
       )}
+      <SelectField label="Category for the next attachment" value={category} options={DOCUMENT_CATEGORIES} onChange={setCategory} />
       <label className="btn btn--ghost btn--block" style={{ cursor: 'pointer' }}>
         <IconUpload /> {busy ? 'Attaching…' : 'Attach a document'}
         <input type="file" multiple hidden onChange={(e) => { void onPick(e.target.files); e.target.value = ''; }} />
       </label>
+      <p className="xsmall muted">
+        Documents are stored on this device only, inside the browser. Clearing this site's data removes
+        them, and a JSON backup carries the list but not the files themselves.
+      </p>
     </div>
   );
 }

@@ -20,9 +20,11 @@ import {
   type Contact,
   type Database,
   type EmailTemplate,
+  type DocumentCategory,
   type FileRecord,
   type FollowUp,
   type ImportRecord,
+  type InsurancePolicy,
   type LayoverSpot,
   type Opportunity,
   type Settings,
@@ -181,6 +183,7 @@ export function deleteContact(id: string): void {
         : a,
     ),
     opportunities: db.opportunities.map((o) => (o.contactId === id ? { ...o, contactId: null } : o)),
+    policies: db.policies.map((p) => (p.contactId === id ? { ...p, contactId: null } : p)),
     activities: db.activities.filter((a) => a.contactId !== id || a.aircraftId || a.opportunityId),
     followUps: db.followUps.filter((f) => f.contactId !== id || f.aircraftId || f.opportunityId),
   }));
@@ -230,6 +233,8 @@ export function deleteAircraft(id: string): void {
     ...db,
     aircraft: db.aircraft.filter((a) => a.id !== id),
     opportunities: db.opportunities.map((o) => (o.aircraftId === id ? { ...o, aircraftId: null } : o)),
+    // A policy without its aircraft is a renewal nobody can act on.
+    policies: db.policies.filter((p) => p.aircraftId !== id),
     activities: db.activities.filter((a) => a.aircraftId !== id || a.contactId || a.opportunityId),
     followUps: db.followUps.filter((f) => f.aircraftId !== id || f.contactId || f.opportunityId),
   }));
@@ -270,7 +275,7 @@ export function createOpportunity(input: Partial<Opportunity>): Opportunity {
     contactId: null,
     aircraftId: null,
     type: 'Insurance',
-    status: 'Open',
+    status: 'Lead',
     title: '',
     openedAt: now,
     notes: '',
@@ -293,8 +298,76 @@ export function deleteOpportunity(id: string): void {
   set((db) => ({
     ...db,
     opportunities: db.opportunities.filter((o) => o.id !== id),
+    // The policy outlives the deal it was being worked under.
+    policies: db.policies.map((p) => (p.opportunityId === id ? { ...p, opportunityId: null } : p)),
     activities: db.activities.map((a) => (a.opportunityId === id ? { ...a, opportunityId: null } : a)),
     followUps: db.followUps.filter((f) => f.opportunityId !== id || f.contactId || f.aircraftId),
+  }));
+}
+
+/**
+ * Moving an opportunity forward is the single most common edit in the app, so
+ * it gets its own mutation — and it records itself on the timeline, because
+ * "when did this become a quote?" is a question worth being able to answer.
+ */
+export function setOpportunityStatus(id: string, status: import('./types').OpportunityStatus): void {
+  const current = state.opportunities.find((o) => o.id === id);
+  if (!current || current.status === status) return;
+  const from = current.status;
+  updateOpportunity(id, { status });
+  logActivity({
+    contactId: current.contactId,
+    aircraftId: current.aircraftId,
+    opportunityId: id,
+    type: 'Status Change',
+    subject: `${from} → ${status}`,
+    notes: current.title,
+  });
+}
+
+// ------------------------------------------------------- insurance policies
+
+export function createPolicy(input: Partial<InsurancePolicy>): InsurancePolicy {
+  const now = nowIso();
+  const policy: InsurancePolicy = {
+    id: newId('pol'),
+    aircraftId: null,
+    contactId: null,
+    opportunityId: null,
+    carrier: '',
+    policyNumber: '',
+    brokerAgent: '',
+    premium: '',
+    hullValue: '',
+    liabilityLimit: '',
+    deductible: '',
+    status: 'Unknown',
+    quotedPremium: '',
+    renewalNotes: '',
+    notes: '',
+    createdAt: now,
+    updatedAt: now,
+    ...input,
+  };
+  set((db) => ({ ...db, policies: [...db.policies, policy] }));
+  return policy;
+}
+
+export function updatePolicy(id: string, patch: Partial<InsurancePolicy>): void {
+  set((db) => ({
+    ...db,
+    policies: db.policies.map((p) => (p.id === id ? { ...p, ...patch, updatedAt: nowIso() } : p)),
+  }));
+}
+
+export function deletePolicy(id: string): void {
+  set((db) => ({
+    ...db,
+    policies: db.policies.filter((p) => p.id !== id),
+    followUps: db.followUps.map((f) =>
+      f.insurancePolicyId === id ? { ...f, insurancePolicyId: null } : f,
+    ),
+    files: db.files.map((f) => (f.insurancePolicyId === id ? { ...f, insurancePolicyId: null } : f)),
   }));
 }
 
@@ -341,9 +414,11 @@ export function deleteActivity(id: string): void {
 export function createFollowUp(input: {
   dueDate: string;
   note: string;
+  priority?: import('./types').FollowUpPriority;
   contactId?: string | null;
   aircraftId?: string | null;
   opportunityId?: string | null;
+  insurancePolicyId?: string | null;
 }): FollowUp {
   const now = nowIso();
   const followUp: FollowUp = {
@@ -351,8 +426,10 @@ export function createFollowUp(input: {
     contactId: input.contactId ?? null,
     aircraftId: input.aircraftId ?? null,
     opportunityId: input.opportunityId ?? null,
+    insurancePolicyId: input.insurancePolicyId ?? null,
     dueDate: input.dueDate,
     note: input.note,
+    priority: input.priority ?? 'Normal',
     completed: false,
     createdAt: now,
     updatedAt: now,
@@ -368,8 +445,28 @@ export function updateFollowUp(id: string, patch: Partial<FollowUp>): void {
   }));
 }
 
-export function completeFollowUp(id: string, completed = true): void {
-  updateFollowUp(id, { completed, completedAt: completed ? nowIso() : undefined });
+/**
+ * Completing a follow-up is the moment the user knows what happened, so it is
+ * also the cheapest moment to capture it. The outcome, when given, lands on
+ * the timeline of every record the follow-up was attached to.
+ */
+export function completeFollowUp(id: string, completed = true, outcome?: string): void {
+  const followUp = state.followUps.find((f) => f.id === id);
+  updateFollowUp(id, {
+    completed,
+    completedAt: completed ? nowIso() : undefined,
+    outcome: completed ? outcome?.trim() || followUp?.outcome : undefined,
+  });
+  if (completed && followUp) {
+    logActivity({
+      contactId: followUp.contactId,
+      aircraftId: followUp.aircraftId,
+      opportunityId: followUp.opportunityId,
+      type: 'Follow-Up',
+      subject: followUp.note || 'Follow-up completed',
+      notes: outcome?.trim() ?? '',
+    });
+  }
 }
 
 export function deleteFollowUp(id: string): void {
@@ -415,7 +512,13 @@ export function resetTemplates(): void {
 
 export async function addFile(
   file: File,
-  links: { contactId?: string | null; aircraftId?: string | null; opportunityId?: string | null },
+  links: {
+    contactId?: string | null;
+    aircraftId?: string | null;
+    opportunityId?: string | null;
+    insurancePolicyId?: string | null;
+  },
+  category: DocumentCategory = 'Other',
 ): Promise<FileRecord> {
   const record: FileRecord = {
     id: newId('fil'),
@@ -425,8 +528,12 @@ export async function addFile(
     contactId: links.contactId ?? null,
     aircraftId: links.aircraftId ?? null,
     opportunityId: links.opportunityId ?? null,
+    insurancePolicyId: links.insurancePolicyId ?? null,
+    category,
     createdAt: nowIso(),
   };
+  // The blob is written first: a row pointing at a file that was never stored
+  // would be a lie the user could not see.
   await persistence.putFileBlob(record.id, file);
   set((db) => ({ ...db, files: [...db.files, record] }));
   return record;

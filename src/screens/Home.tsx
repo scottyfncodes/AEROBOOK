@@ -1,27 +1,40 @@
+/**
+ * The home screen answers one question: what needs my attention?
+ *
+ * Everything above the fold is something the user can act on today. Counts
+ * that cannot be acted on — total contacts, total aircraft — sit below the
+ * work, because a number nobody acts on is decoration.
+ */
 import { Link } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
 import {
-  IconBell, IconDoc, IconMail, IconMap, IconPlane, IconPlus, IconSearch, IconTarget, IconUpload, IconUsers,
+  IconBell, IconDoc, IconMail, IconMap, IconPlane, IconPlus, IconSearch, IconShield, IconTarget,
+  IconUpload, IconUsers,
 } from '../components/Icons';
 import { Chip, EmptyState, Metric } from '../components/ui';
+import { PolicyRow } from '../components/insurance';
 import { Colophon } from '../components/Brand';
 import { useDatabase } from '../data/useStore';
 import {
-  bucketFollowUps, followUpSubject, openFollowUps, pipeline, recentlyContacted, recentlyUpdated,
+  bucketFollowUps, followUpSubject, openFollowUps, openOpportunities, pipeline, recentActivity,
 } from '../lib/selectors';
-import { formatDate, relativeDue } from '../lib/dates';
+import { renewalSummary, renewalsNeedingAttention } from '../lib/insurance';
+import { formatDate, formatDateTime, relativeDue } from '../lib/dates';
 import { displayName } from '../lib/names';
 
 export default function Home() {
   const db = useDatabase();
   const buckets = bucketFollowUps(openFollowUps(db));
   const pipe = pipeline(db);
+  const renewals = renewalsNeedingAttention(db);
+  const renewalCounts = renewalSummary(db);
   const hasData = db.contacts.length > 0 || db.aircraft.length > 0;
 
+  const today = [...buckets.overdue, ...buckets.today];
+  const openDeals = openOpportunities(db);
+  const recent = recentActivity(db, 5);
   const lastImport = db.imports[0];
-  const recentAircraft = recentlyUpdated(db.aircraft, 4);
-  const recentContacts = recentlyContacted(db, 4);
 
   return (
     <>
@@ -29,9 +42,9 @@ export default function Home() {
       <main className="page stack stack--lg">
         <section aria-label="Quick actions">
           <div className="quick-actions">
-            <Link className="quick-action quick-action--primary" to="/import">
-              <IconUpload aria-hidden />
-              Import CSV
+            <Link className="quick-action quick-action--primary" to="/search">
+              <IconSearch aria-hidden />
+              Search
             </Link>
             <Link className="quick-action" to="/contacts?new=1">
               <IconPlus aria-hidden />
@@ -41,17 +54,17 @@ export default function Home() {
               <IconPlane aria-hidden />
               Aircraft
             </Link>
-            <Link className="quick-action" to="/follow-ups">
-              <IconBell aria-hidden />
-              Follow-ups
-            </Link>
-            <Link className="quick-action" to="/search">
-              <IconSearch aria-hidden />
-              Search
-            </Link>
             <Link className="quick-action" to="/opportunities?new=1">
               <IconTarget aria-hidden />
               Opportunity
+            </Link>
+            <Link className="quick-action" to="/follow-ups">
+              <IconBell aria-hidden />
+              Follow-up
+            </Link>
+            <Link className="quick-action" to="/import">
+              <IconUpload aria-hidden />
+              Import CSV
             </Link>
             <Link className="quick-action" to="/templates">
               <IconMail aria-hidden />
@@ -75,54 +88,145 @@ export default function Home() {
           </section>
         ) : null}
 
-        <section className="stack stack--sm" aria-label="Follow-ups">
+        {/* ------------------------------------------------------- today */}
+        <section className="stack stack--sm" aria-label="Today">
           <div className="row row--between">
-            <h2 className="section-title">Follow-ups</h2>
-            <Link className="small" to="/follow-ups">All</Link>
+            <h2 className="section-title">Today</h2>
+            <Link className="small" to="/follow-ups">All follow-ups</Link>
           </div>
-          {buckets.overdue.length + buckets.today.length + buckets.upcoming.length === 0 ? (
-            <div className="card small muted">Nothing due. Set a follow-up from any contact or aircraft.</div>
+
+          <div className="card">
+            <div className="metric-grid metric-grid--quad">
+              <Metric value={buckets.overdue.length} label="Overdue" tone={buckets.overdue.length ? 'danger' : undefined} />
+              <Metric value={buckets.today.length} label="Due today" tone={buckets.today.length ? 'warn' : undefined} />
+              <Metric value={buckets.upcoming.length} label="This week" />
+              <Metric
+                value={renewalCounts.expired + renewalCounts.upcoming}
+                label="Renewals"
+                tone={renewalCounts.expired ? 'danger' : renewalCounts.upcoming ? 'warn' : undefined}
+              />
+            </div>
+          </div>
+
+          {today.length === 0 ? (
+            <div className="card small muted">
+              Nothing due today. Set a follow-up from any contact, aircraft or opportunity.
+            </div>
           ) : (
-            <>
-              <div className="card">
-                <div className="metric-grid">
-                  <Metric value={buckets.overdue.length} label="Overdue" tone={buckets.overdue.length ? 'danger' : undefined} />
-                  <Metric value={buckets.today.length} label="Today" tone={buckets.today.length ? 'warn' : undefined} />
-                  <Metric value={buckets.upcoming.length} label="Upcoming" />
-                </div>
-              </div>
-              <div className="list">
-                {[...buckets.overdue, ...buckets.today].slice(0, 4).map((f) => (
-                  <Link key={f.id} className="tile" to="/follow-ups">
-                    <div className="row row--between">
-                      <span className="strong truncate">{followUpSubject(db, f)}</span>
-                      <Chip tone={f.dueDate < new Date().toISOString().slice(0, 10) ? 'danger' : 'warn'}>
-                        {relativeDue(f.dueDate)}
-                      </Chip>
-                    </div>
-                    <div className="small muted truncate">{f.note || 'Follow up'}</div>
-                  </Link>
-                ))}
-              </div>
-            </>
+            <div className="list">
+              {today.slice(0, 6).map((f) => (
+                <Link
+                  key={f.id}
+                  className="tile"
+                  to={f.aircraftId ? `/aircraft/${f.aircraftId}` : f.contactId ? `/contacts/${f.contactId}` : '/follow-ups'}
+                >
+                  <div className="row row--between">
+                    <span className="strong truncate">{followUpSubject(db, f)}</span>
+                    <Chip tone={buckets.overdue.includes(f) ? 'danger' : 'warn'}>{relativeDue(f.dueDate)}</Chip>
+                  </div>
+                  <div className="small secondary truncate">{f.note || 'Follow up'}</div>
+                </Link>
+              ))}
+            </div>
           )}
         </section>
 
-        {hasData ? (
-          <section className="stack stack--sm" aria-label="Pipeline">
-            <h2 className="section-title">Pipeline</h2>
-            <div className="card">
-              <div className="metric-grid">
-                <Metric value={pipe.newProspects} label="New" />
-                <Metric value={pipe.active} label="Active" />
-                <Metric value={pipe.quotes} label="Quotes" tone={pipe.quotes ? 'accent' : undefined} />
-                <Metric value={pipe.clients} label="Clients" tone={pipe.clients ? 'success' : undefined} />
-                <Metric value={pipe.aircraftOpportunities} label="Aircraft" />
-              </div>
+        {/* --------------------------------------------------- insurance */}
+        {renewals.length > 0 ? (
+          <section className="stack stack--sm" aria-label="Insurance renewals">
+            <h2 className="section-title">Insurance</h2>
+            <div className="list">
+              {renewals.slice(0, 5).map(({ policy, aircraft, contact }) => (
+                <PolicyRow
+                  key={policy.id}
+                  policy={policy}
+                  title={aircraft?.tailNumber ?? (contact ? displayName(contact) : 'Policy')}
+                  subtitle={contact ? displayName(contact) : undefined}
+                  to={aircraft ? `/aircraft/${aircraft.id}` : contact ? `/contacts/${contact.id}` : '/aircraft'}
+                />
+              ))}
             </div>
-            <div className="row" style={{ gap: 8 }}>
-              <Link className="btn btn--sm grow" to="/prospects">Prospects</Link>
-              <Link className="btn btn--sm grow" to="/opportunities">Opportunities</Link>
+            {renewals.length > 5 ? (
+              <div className="small muted">{renewals.length - 5} more want attention.</div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {/* ---------------------------------------------- active business */}
+        {hasData ? (
+          <section className="stack stack--sm" aria-label="Active business">
+            <div className="row row--between">
+              <h2 className="section-title">Active business</h2>
+              <Link className="small" to="/opportunities">Pipeline</Link>
+            </div>
+
+            {openDeals.length === 0 ? (
+              <div className="card small muted">
+                No open opportunities. Create one from any contact or aircraft.
+              </div>
+            ) : (
+              <div className="list">
+                {openDeals.slice(0, 4).map((o) => {
+                  const aircraft = o.aircraftId ? db.aircraft.find((a) => a.id === o.aircraftId) : undefined;
+                  const contact = o.contactId ? db.contacts.find((c) => c.id === o.contactId) : undefined;
+                  return (
+                    <Link key={o.id} className="tile" to={`/opportunities/${o.id}`}>
+                      <div className="row row--between">
+                        <span className="strong truncate">{o.title || `${o.type} opportunity`}</span>
+                        <Chip tone="accent">{o.status}</Chip>
+                      </div>
+                      <div className="small muted truncate">
+                        {[o.type, contact ? displayName(contact) : '', aircraft?.tailNumber].filter(Boolean).join(' · ')}
+                      </div>
+                      {o.nextAction ? <div className="small secondary truncate">Next: {o.nextAction}</div> : null}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+
+            {pipe.forSale + pipe.wanted > 0 ? (
+              <div className="row" style={{ gap: 8 }}>
+                {pipe.forSale > 0 ? (
+                  <Link className="tile grow" to="/aircraft">
+                    <div className="strong numeric">{pipe.forSale}</div>
+                    <div className="xsmall muted">For sale</div>
+                  </Link>
+                ) : null}
+                {pipe.wanted > 0 ? (
+                  <Link className="tile grow" to="/aircraft">
+                    <div className="strong numeric">{pipe.wanted}</div>
+                    <div className="xsmall muted">Purchase prospects</div>
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {/* ------------------------------------------------------- recent */}
+        {recent.length > 0 ? (
+          <section className="stack stack--sm" aria-label="Recent activity">
+            <h2 className="section-title">Recent</h2>
+            <div className="list list--flush">
+              {recent.map((a) => {
+                const to = a.opportunityId
+                  ? `/opportunities/${a.opportunityId}`
+                  : a.aircraftId
+                    ? `/aircraft/${a.aircraftId}`
+                    : a.contactId
+                      ? `/contacts/${a.contactId}`
+                      : '/';
+                return (
+                  <Link key={a.id} className="link-row" to={to}>
+                    <div className="grow">
+                      <div className="small truncate">{a.subject || a.type}</div>
+                      <div className="xsmall muted truncate">{a.type}</div>
+                    </div>
+                    <span className="xsmall muted nowrap">{formatDateTime(a.date) || formatDate(a.date)}</span>
+                  </Link>
+                );
+              })}
             </div>
           </section>
         ) : null}
@@ -149,34 +253,15 @@ export default function Home() {
                   </div>
                 </div>
               </Link>
-            </div>
-          </section>
-        ) : null}
-
-        {recentContacts.length > 0 ? (
-          <section className="stack stack--sm" aria-label="Recently contacted">
-            <h2 className="section-title">Recently contacted</h2>
-            <div className="list list--flush">
-              {recentContacts.map((c) => (
-                <Link key={c.id} className="link-row" to={`/contacts/${c.id}`}>
-                  <span className="grow truncate">{displayName(c)}</span>
-                  <span className="xsmall muted nowrap">{relativeDue(c.lastContactedAt ?? '')}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {recentAircraft.length > 0 ? (
-          <section className="stack stack--sm" aria-label="Recently updated aircraft">
-            <h2 className="section-title">Recently updated</h2>
-            <div className="list list--flush">
-              {recentAircraft.map((a) => (
-                <Link key={a.id} className="link-row" to={`/aircraft/${a.id}`}>
-                  <span className="tail">{a.tailNumber}</span>
-                  <span className="grow small muted truncate">{[a.year, a.make, a.model].filter(Boolean).join(' ')}</span>
-                </Link>
-              ))}
+              <Link className="tile grow" to="/opportunities">
+                <div className="row">
+                  <IconShield className="muted" style={{ width: 18, height: 18 }} />
+                  <div className="grow">
+                    <div className="strong numeric">{db.policies.length}</div>
+                    <div className="xsmall muted">Policies</div>
+                  </div>
+                </div>
+              </Link>
             </div>
           </section>
         ) : null}
