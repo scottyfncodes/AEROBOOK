@@ -622,6 +622,43 @@ button, input, select, textarea {
 
 /* ----------------------------------------------------------------- brand */
 
+/*
+ * The owner's own signature, used as a mask so it takes the surrounding text
+ * colour and works in both themes from one asset. Both are decorative, so
+ * both are hidden from assistive technology wherever they appear.
+ */
+.mark {
+  --mark-width: 22px;
+  width: var(--mark-width);
+  aspect-ratio: 890.24 / 698.39;
+  background-color: currentColor;
+  -webkit-mask-image: url('/brand/mark.svg');
+  mask-image: url('/brand/mark.svg');
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  flex: none;
+}
+
+.signature {
+  --signature-width: 180px;
+  width: var(--signature-width);
+  aspect-ratio: 2361.52 / 967.50;
+  background-color: currentColor;
+  -webkit-mask-image: url('/brand/signature.svg');
+  mask-image: url('/brand/signature.svg');
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  flex: none;
+}
+
 .appbar__brand {
   display: flex;
   align-items: center;
@@ -629,19 +666,25 @@ button, input, select, textarea {
   min-width: 0;
 }
 
-.appbar__brand svg { color: var(--accent); flex: none; }
+.appbar__brand .mark { color: var(--accent); }
 
 .colophon {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 26px 0 8px;
   color: var(--text-muted);
   text-align: center;
 }
 
-.colophon svg { opacity: 0.5; }
+.colophon .signature {
+  --signature-width: 168px;
+  opacity: 0.55;
+  transition: opacity 0.2s var(--ease);
+}
+
+.colophon:hover .signature { opacity: 0.85; }
 
 .colophon__line {
   font-size: 11px;

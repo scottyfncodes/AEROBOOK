@@ -119,17 +119,22 @@ became `Lost` — which is how every query already treated it — and the ambigu
 
 ## Brand
 
-The mark is an "A" whose crossbar runs well past both legs, drawn in fine
-strokes that lean forward — the visual language is a modern aviation
-operations tool: near-black surfaces, one warm signal colour, and no
-decoration that doesn't carry information.
+The mark and the footer signature are the owner's own hand, not a drawn
+imitation of it. `brand-source/signature.jpg` is traced twice: the whole
+signature, tight-cropped, for the quiet sign-off at the foot of the
+dashboard, and a close crop of just its capital "A" — peak, the long
+downstroke, the short one, the crossbar — for the logo and the home-screen
+icon, since the full signature is illegible at those sizes. Both land as
+`currentColor` SVGs applied through a CSS mask, so one asset works in both
+themes and takes whatever colour surrounds it.
 
 ```bash
-npm run brand      # regenerates public/brand/ from scripts/build-brand.mjs
+npm run brand      # regenerates public/brand/ from brand-source/signature.jpg
 ```
 
-Outputs are committed, so a normal build needs neither Chromium nor this
-script. Run it only when the mark changes.
+Needs Chromium (for the canvas-based ink matting) and `potrace` (the actual
+tracing), neither of which the normal build touches — outputs are committed.
+Run it only when the source signature changes.
 
 ## Deployment
 

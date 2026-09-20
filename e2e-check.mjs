@@ -67,6 +67,7 @@ async function checkOverflow(label) {
 for (const asset of [
   '/brand/icon.svg', '/brand/icon-180.png', '/brand/icon-192.png',
   '/brand/icon-512.png', '/brand/icon-maskable-512.png', '/manifest.webmanifest',
+  '/brand/mark.svg', '/brand/signature.svg',
 ]) {
   const res = await page.request.get(BASE + asset);
   if (!res.ok()) errors.push(`asset ${asset} returned ${res.status()}`);
@@ -78,14 +79,23 @@ await page.waitForSelector('.quick-actions');
 log('home loaded:', await page.title());
 if (!(await page.getByText('Nothing in the book yet').isVisible())) errors.push('empty state missing on home');
 await checkOverflow('home empty');
+// The mark and the signature are CSS masks, not inline SVG: check that each
+// element has real size and that its mask actually points at the traced
+// asset (a 404'd background-image degrades silently, a 404'd mask does not
+// even fail loudly — the box just renders empty).
 const markBox = await page.evaluate(() => {
-  const marks = [...document.querySelectorAll('.appbar__brand svg, .colophon svg')];
-  return marks.map((el) => {
+  const els = [...document.querySelectorAll('.appbar__brand .mark, .colophon .signature')];
+  return els.map((el) => {
     const r = el.getBoundingClientRect();
-    return { w: Math.round(r.width), h: Math.round(r.height), paths: el.querySelectorAll('path').length };
+    const style = getComputedStyle(el);
+    const mask = style.maskImage || style.webkitMaskImage || '';
+    return { w: Math.round(r.width), h: Math.round(r.height), mask };
   });
 });
-if (markBox.length < 2 || markBox.some((m) => m.w < 12 || m.paths !== 3)) {
+if (
+  markBox.length < 2 ||
+  markBox.some((m) => m.w < 12 || m.h < 8 || !/mark\.svg|signature\.svg/.test(m.mask))
+) {
   errors.push(`brand mark did not render: ${JSON.stringify(markBox)}`);
 }
 log('brand mark:', JSON.stringify(markBox));
