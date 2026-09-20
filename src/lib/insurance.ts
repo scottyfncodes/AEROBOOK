@@ -44,7 +44,9 @@ export function renewalCountdown(expirationDate: string | undefined, now: Date =
   if (days === 1) return 'Renewal tomorrow';
   if (days === -1) return 'Expired yesterday';
   if (days < 0) return `Expired ${Math.abs(days)} days ago`;
-  if (days <= 45) return `Renewal in ${days} days`;
+  // Inside the attention window the day count is what matters; beyond it a
+  // date reads better than "Renewal in 214 days". One threshold, not two.
+  if (days <= RENEWAL_WINDOW_DAYS) return `Renewal in ${days} days`;
   return `Renewal ${formatDate(expirationDate)}`;
 }
 

@@ -9,6 +9,7 @@ import { useDatabase } from '../data/useStore';
 import { createAircraft, findAircraftByTail, setAircraftOwner } from '../data/store';
 import { AIRCRAFT_STATUSES, type AircraftStatus } from '../data/types';
 import { ownerOf } from '../lib/selectors';
+import { policiesFor, policyState } from '../lib/insurance';
 import { formatTail, normalizeTail } from '../lib/tail';
 import { displayName } from '../lib/names';
 import { search } from '../lib/search';
@@ -17,20 +18,35 @@ export default function AircraftList() {
   const db = useDatabase();
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<AircraftStatus | 'All'>('All');
+  const [status, setStatus] = useState<AircraftStatus | 'All' | 'Renewal due'>('All');
   const debounced = useDebounced(query);
   const navigate = useNavigate();
   const toast = useToast();
 
+  /** Tail → the policy nearest its renewal, so a row can show the countdown. */
+  const policyByAircraft = useMemo(() => {
+    const map = new Map<string, (typeof db.policies)[number]>();
+    for (const a of db.aircraft) {
+      const first = policiesFor(db, { aircraftId: a.id })[0];
+      if (first) map.set(a.id, first);
+    }
+    return map;
+  }, [db]);
+
   const filtered = useMemo(() => {
     let list = db.aircraft;
-    if (status !== 'All') list = list.filter((a) => a.status === status);
+    if (status === 'Renewal due') {
+      list = list.filter((a) => {
+        const policy = policyByAircraft.get(a.id);
+        return policy ? policyState(policy).needsAttention : false;
+      });
+    } else if (status !== 'All') list = list.filter((a) => a.status === status);
     if (debounced.trim()) {
       const ids = new Set(search(db, debounced, 1000).filter((r) => r.kind === 'aircraft').map((r) => r.id));
       list = list.filter((a) => ids.has(a.id));
     }
     return [...list].sort((a, b) => a.tailNumber.localeCompare(b.tailNumber));
-  }, [db, debounced, status]);
+  }, [db, debounced, status, policyByAircraft]);
 
   return (
     <>
@@ -53,11 +69,11 @@ export default function AircraftList() {
         />
 
         <div className="filter-bar">
-          {(['All', ...AIRCRAFT_STATUSES] as const).map((s) => (
+          {(['All', 'Renewal due', ...AIRCRAFT_STATUSES] as const).map((s) => (
             <button
               key={s}
               className={`filter-chip${status === s ? ' is-active' : ''}`}
-              onClick={() => setStatus(s as AircraftStatus | 'All')}
+              onClick={() => setStatus(s as AircraftStatus | 'All' | 'Renewal due')}
             >
               {s}
             </button>
@@ -70,7 +86,13 @@ export default function AircraftList() {
           <EmptyState
             icon={<IconPlane />}
             title={db.aircraft.length === 0 ? 'No aircraft yet' : 'No aircraft match'}
-            body={db.aircraft.length === 0 ? 'Import an owner list, or add a tail number by hand.' : 'Try a different filter.'}
+            body={
+              db.aircraft.length === 0
+                ? 'Import an owner list, or add a tail number by hand.'
+                : status === 'Renewal due'
+                  ? 'No renewals need attention. Add an expiration date to a policy and it shows up here.'
+                  : 'Try a different filter.'
+            }
             action={
               <button className="btn btn--primary" onClick={() => setParams({ new: '1' })}>
                 <IconPlus /> New aircraft
@@ -80,7 +102,7 @@ export default function AircraftList() {
         ) : (
           <div className="list">
             {filtered.map((a) => (
-              <AircraftRow key={a.id} aircraft={a} owner={ownerOf(db, a)} />
+              <AircraftRow key={a.id} aircraft={a} owner={ownerOf(db, a)} policy={policyByAircraft.get(a.id)} />
             ))}
           </div>
         )}
@@ -112,6 +134,7 @@ function NewAircraftSheet({
   const [year, setYear] = useState('');
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
+  const [baseAirport, setBaseAirport] = useState('');
   const [status, setStatus] = useState<AircraftStatus>('Unknown');
   const [ownerId, setOwnerId] = useState('');
 
@@ -132,6 +155,7 @@ function NewAircraftSheet({
       year: year.trim(),
       make: make.trim(),
       model: model.trim(),
+      baseAirport: baseAirport.trim().toUpperCase(),
       status,
     });
     if (ownerId) setAircraftOwner(aircraft.id, ownerId);
@@ -167,6 +191,7 @@ function NewAircraftSheet({
           <TextField label="Make" value={make} onChange={setMake} />
         </div>
         <TextField label="Model" value={model} onChange={setModel} />
+        <TextField label="Base airport" value={baseAirport} onChange={setBaseAirport} placeholder="KSBA" />
         <SelectField label="Status" value={status} options={AIRCRAFT_STATUSES} onChange={setStatus} />
         <SelectField label="Owner" value={ownerId} options={owners} onChange={setOwnerId} />
       </div>

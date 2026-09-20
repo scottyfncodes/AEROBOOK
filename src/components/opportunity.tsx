@@ -4,7 +4,7 @@
  * The stage control is the important piece: moving a deal forward is the most
  * common edit in the app, and on a phone it has to be one tap, not a form.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { IconCheck, IconChevronRight, IconTarget } from './Icons';
 import { SelectField, Sheet, TextArea, TextField, useToast } from './ui';
@@ -24,6 +24,14 @@ import {
 export function StageControl({ opportunity }: { opportunity: Opportunity }) {
   const toast = useToast();
   const current = OPPORTUNITY_STAGES.indexOf(opportunity.status);
+  const track = useRef<HTMLDivElement>(null);
+
+  // Five stages do not fit across a phone, so the track scrolls — which is
+  // useless if the stage you are on is off-screen when the page opens.
+  useEffect(() => {
+    const el = track.current?.querySelector('.is-current');
+    el?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [opportunity.status]);
 
   const move = (status: OpportunityStatus) => {
     setOpportunityStatus(opportunity.id, status);
@@ -32,7 +40,7 @@ export function StageControl({ opportunity }: { opportunity: Opportunity }) {
 
   return (
     <div className="stack stack--sm">
-      <div className="stage-track" role="group" aria-label="Pipeline stage">
+      <div className="stage-track" role="group" aria-label="Pipeline stage" ref={track}>
         {OPPORTUNITY_STAGES.map((stage, i) => {
           const reached = current >= 0 && i <= current;
           return (

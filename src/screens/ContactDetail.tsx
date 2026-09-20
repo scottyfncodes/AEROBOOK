@@ -156,7 +156,9 @@ export default function ContactDetail() {
           <div className="glance__cell">
             <span className="glance__label">Wants</span>
             <span className="glance__value truncate">{wantsSummary(intent)}</span>
-            <span className="xsmall muted truncate">{intent?.timeline || '—'}</span>
+            <span className="xsmall muted truncate">
+              {[intent?.budget, intent?.timeline, intent?.sellingNotes].filter(Boolean).join(' · ') || '—'}
+            </span>
           </div>
           <div className="glance__cell">
             <span className="glance__label">Insurance</span>
@@ -194,7 +196,12 @@ export default function ContactDetail() {
               {intent?.insuranceNotes ? <KeyValue k="Insurance notes">{intent.insuranceNotes}</KeyValue> : null}
             </div>
           ) : (
-            <button className="card small muted" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => setSheet('intent')}>
+            <button
+              className="card small muted"
+              style={{ textAlign: 'left', cursor: 'pointer' }}
+              aria-label="Record what they want"
+              onClick={() => setSheet('intent')}
+            >
               Nothing recorded yet. What they want is usually more useful than what they have — tap to
               note whether they may sell, what they are looking for, and where insurance stands.
             </button>
@@ -447,15 +454,23 @@ function EditContactSheet({ id, onClose }: { id: string; onClose: () => void }) 
   );
 }
 
-/** One line for the glance panel. Says nothing rather than guessing. */
+/**
+ * One line for the glance panel. Anything the user actually typed wins over
+ * the level they picked — someone who wrote "Pilatus PC-12" has told you what
+ * they want whether or not they also set how badly they want it.
+ */
 function wantsSummary(intent: ContactIntent | undefined): string {
   if (!intent) return 'Not recorded';
   const parts: string[] = [];
-  if (intent.buying !== 'Unknown' && intent.buying !== 'Not now') {
-    parts.push(intent.wantedAircraft ? `Buying: ${intent.wantedAircraft}` : `Buying: ${intent.buying}`);
-  }
-  if (intent.selling !== 'Unknown' && intent.selling !== 'Not now') parts.push(`Selling: ${intent.selling}`);
-  if (intent.insurance !== 'Unknown' && intent.insurance !== 'Not now') parts.push(`Insurance: ${intent.insurance}`);
+
+  if (intent.wantedAircraft) parts.push(`Wants ${intent.wantedAircraft}`);
+  else if (intent.buying !== 'Unknown') parts.push(`Buying: ${intent.buying}`);
+
+  if (intent.selling !== 'Unknown') parts.push(`Selling: ${intent.selling}`);
+  else if (intent.sellingNotes) parts.push('May sell');
+
+  if (intent.insurance !== 'Unknown') parts.push(`Insurance: ${intent.insurance}`);
+
   return parts.join(' · ') || 'Not recorded';
 }
 
@@ -520,7 +535,7 @@ function IntentSheet({ id, onClose }: { id: string; onClose: () => void }) {
 
         <div className="divider" />
         <SelectField label="Looking to buy" value={buying} options={INTENT_LEVELS} onChange={setBuying} />
-        <TextField label="What they want" value={wantedAircraft} onChange={setWantedAircraft} placeholder="Pressurised single, PC-12 or TBM" />
+        <TextField label="Aircraft they want" value={wantedAircraft} onChange={setWantedAircraft} placeholder="Pressurised single, PC-12 or TBM" />
         <div className="form-grid">
           <TextField label="Budget" value={budget} onChange={setBudget} placeholder="$3–4M" />
           <TextField label="Timeline" value={timeline} onChange={setTimeline} placeholder="Next 6 months" />

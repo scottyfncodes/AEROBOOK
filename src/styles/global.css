@@ -414,6 +414,15 @@ button, input, select, textarea {
   gap: 8px;
 }
 
+/*
+ * Four metrics auto-fit to three columns at phone width and leave the fourth
+ * stranded on a line of its own. Two-by-two reads as one block instead.
+ */
+.metric-grid--quad { grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 480px) {
+  .metric-grid--quad { grid-template-columns: repeat(4, 1fr); }
+}
+
 .kv { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .kv:last-child { border-bottom: none; }
 .kv__key { color: var(--text-muted); font-size: 13px; flex: none; }

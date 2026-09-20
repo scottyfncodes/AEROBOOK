@@ -96,7 +96,7 @@ export default function FollowUps() {
       <AppBar title="Follow-ups" />
       <main className="page stack stack--lg">
         <div className="card">
-          <div className="metric-grid">
+          <div className="metric-grid metric-grid--quad">
             <Metric value={buckets.overdue.length} label="Overdue" tone={buckets.overdue.length ? 'danger' : undefined} />
             <Metric value={buckets.today.length} label="Today" tone={buckets.today.length ? 'warn' : undefined} />
             <Metric value={buckets.upcoming.length} label="This week" />

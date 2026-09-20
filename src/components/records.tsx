@@ -1,6 +1,7 @@
 /** Record-shaped UI: the rows and cards that show contacts, aircraft and tasks. */
 import { Link } from 'react-router-dom';
-import type { Aircraft, Contact, FollowUp, Opportunity, ProspectStatus } from '../data/types';
+import type { Aircraft, Contact, FollowUp, InsurancePolicy, Opportunity, ProspectStatus } from '../data/types';
+import { policyState } from '../lib/insurance';
 import { displayName } from '../lib/names';
 import { formatPhone } from '../lib/phone';
 import { dueBucket, relativeDue } from '../lib/dates';
@@ -51,17 +52,32 @@ export function ContactRow({ contact, aircraft }: { contact: Contact; aircraft?:
   );
 }
 
-export function AircraftRow({ aircraft, owner }: { aircraft: Aircraft; owner?: Contact }) {
+export function AircraftRow({
+  aircraft,
+  owner,
+  policy,
+}: {
+  aircraft: Aircraft;
+  owner?: Contact;
+  /** Shown only when the renewal actually wants attention. */
+  policy?: InsurancePolicy;
+}) {
+  const state = policy ? policyState(policy) : null;
   return (
     <Link className="tile" to={`/aircraft/${aircraft.id}`}>
       <div className="row">
         <div className="grow">
           <div className="row row--between">
             <span className="tail strong">{aircraft.tailNumber}</span>
-            {aircraft.status !== 'Unknown' ? <Chip>{aircraft.status}</Chip> : null}
+            <div className="row" style={{ gap: 4 }}>
+              {state?.needsAttention ? <Chip tone={state.tone}>{state.countdown || state.status}</Chip> : null}
+              {aircraft.status !== 'Unknown' ? <Chip>{aircraft.status}</Chip> : null}
+            </div>
           </div>
           <div className="small secondary truncate">{aircraftLabel(aircraft) || 'Aircraft details unknown'}</div>
-          <div className="small muted truncate">{owner ? displayName(owner) : 'No owner on record'}</div>
+          <div className="small muted truncate">
+            {[owner ? displayName(owner) : 'No owner on record', aircraft.baseAirport].filter(Boolean).join(' · ')}
+          </div>
         </div>
         <IconChevronRight className="muted" style={{ width: 18, height: 18, flex: 'none' }} />
       </div>
@@ -138,13 +154,26 @@ export function OpportunityRow({
         <div className="grow">
           <div className="row row--between">
             <span className="strong truncate">{opportunity.title || `${opportunity.type} opportunity`}</span>
-            <Chip tone={opportunity.status === 'Won' ? 'success' : opportunity.status === 'Lost' ? 'danger' : 'accent'}>
+            <Chip
+              tone={
+                opportunity.status === 'Won'
+                  ? 'success'
+                  : opportunity.status === 'Lost'
+                    ? 'danger'
+                    : opportunity.status === 'Future'
+                      ? undefined
+                      : 'accent'
+              }
+            >
               {opportunity.status}
             </Chip>
           </div>
           <div className="small muted truncate">
             {[opportunity.type, contact ? displayName(contact) : '', aircraft?.tailNumber].filter(Boolean).join(' · ')}
           </div>
+          {opportunity.nextAction ? (
+            <div className="small secondary truncate">Next: {opportunity.nextAction}</div>
+          ) : null}
         </div>
         <IconChevronRight className="muted" style={{ width: 18, height: 18, flex: 'none' }} />
       </div>
