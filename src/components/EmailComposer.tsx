@@ -13,8 +13,15 @@ import { useCopy } from './detail';
 import { useDatabase } from '../data/useStore';
 import { logActivity } from '../data/store';
 import { buildMailto, renderEmail, TEMPLATE_VARIABLES } from '../lib/email';
+import { Link } from 'react-router-dom';
 import { isValidEmail } from '../lib/phone';
 import type { Aircraft, Contact } from '../data/types';
+
+/** "a, b and c" — a warning reads better than a comma-separated list. */
+function listPhrase(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
 
 export function EmailComposer({
   contact,
@@ -76,6 +83,12 @@ export function EmailComposer({
     onRecorded?.();
   };
 
+  // Variable keys are for template authors; a warning should read in English.
+  const missingLabels = (rendered?.missing ?? []).map(
+    (key) => TEMPLATE_VARIABLES.find((v) => v.key === key)?.label.toLowerCase() ?? key,
+  );
+  const missingAreSenderFields = (rendered?.missing ?? []).every((key) => key.startsWith('sender'));
+
   const mailto = buildMailto({ to: finalTo, subject: finalSubject, body: finalBody, missing: [] });
   const emailUsable = isValidEmail(finalTo);
   const tooLongForMailto = mailto.length > 1800;
@@ -125,10 +138,11 @@ export function EmailComposer({
           </Banner>
         ) : null}
 
-        {rendered.missing.length > 0 && !editing ? (
+        {missingLabels.length > 0 && !editing ? (
           <Banner tone="info">
-            Not enough information for: {rendered.missing.join(', ')}. The message reads correctly without them, but
-            check it before sending.
+            Nothing on file for {listPhrase(missingLabels)}. The message still reads correctly without{' '}
+            {missingLabels.length === 1 ? 'it' : 'them'}
+            {missingAreSenderFields ? <> — fill your details in under <Link to="/settings">Settings</Link></> : null}.
           </Banner>
         ) : null}
 
