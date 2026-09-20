@@ -450,7 +450,10 @@ export function applyImport(
           model: v.model ?? '',
           serial: v.aircraftSerial ?? '',
           ownerships: contact ? [{ contactId: contact.id, startedAt: now }] : [],
-          status: 'Unknown',
+          // An owner-list import names a current owner; that is a fact in the
+          // source data, not a guess, so the aircraft is Owned rather than
+          // Unknown. With no owner identified, Unknown is the honest default.
+          status: contact ? 'Owned' : 'Unknown',
           notes: v.aircraftNotes ?? '',
           custom: { ...row.extracted.custom },
           source,

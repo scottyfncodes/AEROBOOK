@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
 import {
-  IconBell, IconDoc, IconMail, IconMap, IconPlane, IconPlus, IconSearch, IconShield, IconTarget,
+  IconBell, IconDoc, IconMail, IconMap, IconPlane, IconPlus, IconShield, IconTarget,
   IconUpload, IconUsers,
 } from '../components/Icons';
 import { Chip, EmptyState, Metric } from '../components/ui';
@@ -40,12 +40,10 @@ export default function Home() {
     <>
       <AppBar wordmark />
       <main className="page stack stack--lg">
+        {/* The header already carries a search icon on every screen, so this
+            row is for the actions search cannot do: creating something. */}
         <section aria-label="Quick actions">
           <div className="quick-actions">
-            <Link className="quick-action quick-action--primary" to="/search">
-              <IconSearch aria-hidden />
-              Search
-            </Link>
             <Link className="quick-action" to="/contacts?new=1">
               <IconPlus aria-hidden />
               Contact
@@ -58,7 +56,7 @@ export default function Home() {
               <IconTarget aria-hidden />
               Opportunity
             </Link>
-            <Link className="quick-action" to="/follow-ups">
+            <Link className="quick-action quick-action--primary" to="/follow-ups?new=1">
               <IconBell aria-hidden />
               Follow-up
             </Link>
@@ -68,7 +66,7 @@ export default function Home() {
             </Link>
             <Link className="quick-action" to="/templates">
               <IconMail aria-hidden />
-              Email
+              Templates
             </Link>
             <Link className="quick-action" to="/layover">
               <IconMap aria-hidden />

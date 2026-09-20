@@ -92,6 +92,11 @@ describe('apply', () => {
     expect(n917.tailKey).toBe('917JH');
   });
 
+  it('marks a newly created aircraft Owned when the source names an owner', () => {
+    const { result } = run(TWO_ROWS);
+    expect(result.aircraft.every((a) => a.status === 'Owned')).toBe(true);
+  });
+
   it('logs an import activity against each record', () => {
     const { result } = run(TWO_ROWS);
     expect(result.activities).toHaveLength(2);
@@ -167,6 +172,8 @@ describe('apply', () => {
     expect(result.aircraft).toHaveLength(1);
     expect(result.contacts).toHaveLength(0);
     expect(result.aircraft[0].ownerships).toEqual([]);
+    // With no owner in the source, "Owned" would be a guess — stay Unknown.
+    expect(result.aircraft[0].status).toBe('Unknown');
   });
 
   it('records the contact even when there is no tail number', () => {

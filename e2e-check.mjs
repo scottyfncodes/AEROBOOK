@@ -261,6 +261,54 @@ if (!has(oppText, 'Send comparable sales')) errors.push('next action missing fro
 if (!has(oppText, 'Lead → Quoting')) errors.push('stage change was not recorded on the timeline');
 await shot('10c-opportunity');
 
+// -------------------------------------- 6c2. purchase opportunity, no aircraft
+// Scenario B: John is selling N917JH (opportunity above, created from the
+// aircraft) AND separately shopping for a different aircraft. The purchase
+// opportunity must not stay silently linked to the plane he already owns.
+await page.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
+await page.fill('input[type=search]', 'heine');
+await page.waitForSelector('.tile');
+await page.waitForTimeout(400);
+await page.locator('.tile:has-text("Heine")').first().click();
+await page.waitForSelector('h1');
+await page.getByRole('button', { name: 'Add opportunity' }).click();
+await page.waitForSelector('.sheet');
+const preselectedAircraft = await page.getByLabel('Aircraft').inputValue();
+log('new opportunity aircraft defaults to:', preselectedAircraft);
+await page.getByLabel('Type').selectOption('Aircraft Purchase');
+await page.waitForTimeout(150);
+const warned = await page.locator('.sheet').innerText();
+if (!has(warned, 'already owns')) errors.push('no warning shown when a purchase opportunity is linked to the owner\'s own aircraft');
+await page.getByLabel('Aircraft').selectOption({ label: 'No aircraft' });
+await page.getByLabel('Title', { exact: true }).fill('Looking for a newer aircraft');
+await page.getByRole('button', { name: 'Create' }).click();
+await page.waitForTimeout(400);
+
+const contactAfterPurchase = await page.locator('main').innerText();
+if (!has(contactAfterPurchase, 'Looking for a newer aircraft')) {
+  errors.push('the purchase opportunity did not appear on the contact');
+}
+const oppRows = await page.locator('section:has(h2:text("Opportunities")) .tile').allInnerTexts();
+log('contact opportunities:', oppRows.map((r) => r.replace(/\n/g, ' / ')).join(' | '));
+if (oppRows.length !== 2) errors.push(`expected 2 opportunities on the contact, found ${oppRows.length}`);
+if (has(oppRows.join(' '), 'N917JH') === false) errors.push('the sale opportunity (linked to N917JH) is missing');
+await checkOverflow('contact with two opportunities');
+await shot('10c2-purchase-opportunity');
+
+// Scenario B, closing the loop: the aircraft page should show the sale
+// opportunity is in motion, not just that one exists.
+await page.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
+await page.fill('input[type=search]', 'n917jh');
+await page.waitForSelector('.tile');
+await page.waitForTimeout(400);
+await page.locator('.tile').first().click();
+await page.waitForSelector('h1.tail');
+const aircraftAfterOpp = await page.locator('section[aria-label="At a glance"]').innerText();
+log('aircraft glance after opportunity:', aircraftAfterOpp.replace(/\n/g, ' / '));
+for (const expected of ['Sale + Insurance', 'Quoting']) {
+  if (!has(aircraftAfterOpp, expected)) errors.push(`aircraft glance does not reflect the opportunity: missing "${expected}"`);
+}
+
 // ------------------------------------------------ 6d. what they want
 await page.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
 await page.fill('input[type=search]', 'heine');

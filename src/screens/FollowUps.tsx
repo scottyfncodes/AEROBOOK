@@ -3,10 +3,10 @@
  * because that is the order a person actually works them in.
  */
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
-import { IconBell, IconCheck, IconTrash } from '../components/Icons';
+import { IconBell, IconCheck, IconPlus, IconTrash } from '../components/Icons';
 import { CompleteFollowUpSheet, FollowUpSheet } from '../components/detail';
 import { Chip, EmptyState, Metric, useToast } from '../components/ui';
 import { useDatabase } from '../data/useStore';
@@ -18,9 +18,11 @@ import type { FollowUp } from '../data/types';
 export default function FollowUps() {
   const db = useDatabase();
   const toast = useToast();
+  const [params, setParams] = useSearchParams();
   const [showCompleted, setShowCompleted] = useState(false);
   const [editing, setEditing] = useState<FollowUp | undefined>();
   const [completing, setCompleting] = useState<FollowUp | undefined>();
+  const creatingGeneral = params.get('new') === '1';
 
   const buckets = useMemo(() => bucketFollowUps(openFollowUps(db)), [db]);
   const completed = useMemo(
@@ -93,7 +95,18 @@ export default function FollowUps() {
 
   return (
     <>
-      <AppBar title="Follow-ups" />
+      <AppBar
+        title="Follow-ups"
+        actions={
+          <button
+            className="btn btn--ghost btn--icon"
+            onClick={() => setParams({ new: '1' })}
+            aria-label="New follow-up"
+          >
+            <IconPlus />
+          </button>
+        }
+      />
       <main className="page stack stack--lg">
         <div className="card">
           <div className="metric-grid metric-grid--quad">
@@ -154,6 +167,12 @@ export default function FollowUps() {
       ) : null}
       {completing ? (
         <CompleteFollowUpSheet followUp={completing} onClose={() => setCompleting(undefined)} />
+      ) : null}
+      {creatingGeneral ? (
+        <FollowUpSheet
+          links={{}}
+          onClose={() => setParams({})}
+        />
       ) : null}
     </>
   );

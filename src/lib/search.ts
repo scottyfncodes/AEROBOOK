@@ -61,16 +61,27 @@ export function buildIndex(db: SearchableDb): IndexEntry[] {
   for (const c of db.contacts) {
     const name = displayName(c);
     const location = [c.city, c.state].filter(Boolean).join(', ');
-    const owned = db.aircraft
-      .filter((a) => a.ownerships.some((o) => o.contactId === c.id && !o.endedAt))
+    const ownedAircraft = db.aircraft.filter((a) => a.ownerships.some((o) => o.contactId === c.id && !o.endedAt));
+    const owned = ownedAircraft
       .map((a) => `${a.tailNumber} ${normalizeTail(a.tailNumber)} ${a.year} ${a.make} ${a.model}`)
       .join(' ');
+
+    // A search for a person should answer "what do they fly?" without a tap.
+    // Fall back to the pipeline status only when there is no aircraft to show.
+    const tails = ownedAircraft.map((a) => a.tailNumber);
+    const detail =
+      tails.length > 0
+        ? tails.length > 3
+          ? `${tails.slice(0, 3).join(', ')} +${tails.length - 3} more`
+          : tails.join(', ')
+        : [c.status, c.prospectStatus].filter(Boolean).join(' · ');
+
     entries.push({
       kind: 'contact',
       id: c.id,
       title: name,
       subtitle: [c.company, location].filter(Boolean).join(' · '),
-      detail: [c.status, c.prospectStatus].filter(Boolean).join(' · '),
+      detail,
       haystack: norm(
         [
           name, c.rawName, c.company, c.email, c.phone, normalizePhone(c.phone), c.address, c.city,

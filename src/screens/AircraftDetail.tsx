@@ -213,18 +213,6 @@ export default function AircraftDetail() {
           ) : null}
         </section>
 
-        <InsuranceSection
-          policies={policies}
-          links={{ aircraftId: aircraft.id, contactId: owner?.id ?? null }}
-          emptyBody="No insurance on record for this aircraft. Add the carrier and the expiration date and AEROBOOK will count the renewal down for you."
-          onFollowUp={(policy) =>
-            openFollowUp(
-              `Insurance renewal — ${aircraft.tailNumber}${policy.carrier ? ` (${policy.carrier})` : ''}`,
-              policy,
-            )
-          }
-        />
-
         <section className="stack stack--sm">
           <h2 className="section-title">Owner</h2>
           {owner ? (
@@ -254,6 +242,18 @@ export default function AircraftDetail() {
             </div>
           ) : null}
         </section>
+
+        <InsuranceSection
+          policies={policies}
+          links={{ aircraftId: aircraft.id, contactId: owner?.id ?? null }}
+          emptyBody="No insurance on record for this aircraft. Add the carrier and the expiration date and AEROBOOK will count the renewal down for you."
+          onFollowUp={(policy) =>
+            openFollowUp(
+              `Insurance renewal — ${aircraft.tailNumber}${policy.carrier ? ` (${policy.carrier})` : ''}`,
+              policy,
+            )
+          }
+        />
 
         <section className="stack stack--sm">
           <div className="row row--between">

@@ -4,11 +4,12 @@
  * The stage control is the important piece: moving a deal forward is the most
  * common edit in the app, and on a phone it has to be one tap, not a form.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { IconCheck, IconChevronRight, IconTarget } from './Icons';
 import { SelectField, Sheet, TextArea, TextField, useToast } from './ui';
 import { createOpportunity, setOpportunityStatus } from '../data/store';
+import { useDatabase } from '../data/useStore';
 import {
   OPPORTUNITY_STAGES,
   OPPORTUNITY_TYPES,
@@ -92,19 +93,33 @@ export function NewOpportunitySheet({
   onCreated,
 }: {
   contactId: string | null;
+  /** A starting point, not a lock — a purchase opportunity almost never
+   * belongs on the aircraft the contact already owns, so this stays editable. */
   aircraftId: string | null;
   defaultTitle?: string;
   defaultType?: OpportunityType;
   onClose: () => void;
   onCreated?: (opportunity: Opportunity) => void;
 }) {
+  const db = useDatabase();
   const toast = useToast();
   const [type, setType] = useState<OpportunityType>(defaultType);
   const [status, setStatus] = useState<OpportunityStatus>('Lead');
   const [title, setTitle] = useState(defaultTitle ?? '');
+  const [linkedAircraftId, setLinkedAircraftId] = useState(aircraftId ?? '');
   const [estimatedValue, setEstimatedValue] = useState('');
   const [nextAction, setNextAction] = useState('');
   const [notes, setNotes] = useState('');
+
+  const aircraftOptions = useMemo(
+    () => [{ value: '', label: 'No aircraft' }, ...db.aircraft
+      .map((a) => ({ value: a.id, label: a.tailNumber }))
+      .sort((a, b) => a.label.localeCompare(b.label))],
+    [db.aircraft],
+  );
+
+  const isPurchase = type === 'Aircraft Purchase' || type === 'Purchase + Insurance';
+  const isOwnAircraft = linkedAircraftId && linkedAircraftId === aircraftId;
 
   return (
     <Sheet
@@ -118,7 +133,7 @@ export function NewOpportunitySheet({
             onClick={() => {
               const created = createOpportunity({
                 contactId,
-                aircraftId,
+                aircraftId: linkedAircraftId || null,
                 type,
                 status,
                 title: title.trim(),
@@ -146,6 +161,18 @@ export function NewOpportunitySheet({
           hint="You can move it along with one tap afterwards."
         />
         <TextField label="Title" value={title} onChange={setTitle} placeholder="N917JH — hull and liability" />
+        <SelectField
+          label="Aircraft"
+          value={linkedAircraftId}
+          options={aircraftOptions}
+          onChange={setLinkedAircraftId}
+        />
+        {isPurchase && isOwnAircraft ? (
+          <p className="field__hint" style={{ marginTop: -8, color: 'var(--warn)' }}>
+            This is the aircraft the contact already owns — a purchase is usually about a different one.
+            Set it to “No aircraft” if the target isn’t in the book yet.
+          </p>
+        ) : null}
         <TextField label="Estimated value" value={estimatedValue} onChange={setEstimatedValue} placeholder="$18,000 premium" />
         <TextField
           label="Next action"

@@ -144,3 +144,29 @@ describe('what a result tells you before you open it', () => {
     expect(hits.some((r) => r.kind === 'contact' && r.id === 'c1')).toBe(true);
   });
 });
+
+describe('what a contact result tells you before you open it', () => {
+  it('shows the aircraft they own, not a generic pipeline status', () => {
+    const heineHit = search(db, 'heine').find((r) => r.kind === 'contact')!;
+    expect(heineHit.detail).toContain('N917JH');
+
+    const humphreyHit = search(db, 'humphrey').find((r) => r.kind === 'contact')!;
+    expect(humphreyHit.detail).toContain('N441FP');
+  });
+
+  it('falls back to pipeline status for someone who owns nothing', () => {
+    const noAircraft = { ...db, aircraft: [] };
+    const hit = search(noAircraft, 'heine').find((r) => r.kind === 'contact')!;
+    expect(hit.detail).toBe('Prospect · New');
+  });
+
+  it('caps the list rather than overflowing the row for someone with a fleet', () => {
+    const fleetOwner = contact({ id: 'c9', firstName: 'Fleet', lastName: 'Owner' });
+    const fleet = Array.from({ length: 4 }, (_, i) =>
+      aircraft({ id: `f${i}`, tailNumber: `N00${i}FL`, tailKey: `00${i}FL`, ownerships: [{ contactId: 'c9' }] }),
+    );
+    const withFleet = { ...db, contacts: [...db.contacts, fleetOwner], aircraft: [...db.aircraft, ...fleet] };
+    const hit = search(withFleet, 'fleet owner').find((r) => r.kind === 'contact')!;
+    expect(hit.detail).toBe('N000FL, N001FL, N002FL +1 more');
+  });
+});
