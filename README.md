@@ -19,7 +19,7 @@ when you next owe them something.
 ```bash
 npm install
 npm run dev        # development server
-npm test           # 255 tests
+npm test           # 265 tests
 npm run build      # production build into dist/
 npm run preview    # serve the build, then in another shell:
 npm run e2e        # drive it in Chromium at iPhone dimensions
