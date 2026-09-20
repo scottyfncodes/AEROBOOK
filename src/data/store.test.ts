@@ -242,6 +242,31 @@ describe('export', () => {
     expect(store.getState().contacts).toHaveLength(1);
   });
 
+  it('migrates an older backup on the way back in', () => {
+    // A version 1 export: no policies section, and the old insurance blob.
+    const v1Backup = JSON.stringify({
+      version: 1,
+      contacts: [{ id: 'c1', firstName: 'John', lastName: 'Smith' }],
+      aircraft: [{ id: 'a1', tailNumber: 'N123AB', tailKey: '123AB' }],
+      opportunities: [
+        {
+          id: 'o1', contactId: 'c1', aircraftId: 'a1', type: 'Both', status: 'Quote',
+          title: 'Renewal', openedAt: '', notes: '', createdAt: '', updatedAt: '',
+          insurance: { carrier: 'Global Aerospace', renewalDate: '2026-11-02' },
+        },
+      ],
+    });
+
+    const restored = parseFullJson(v1Backup);
+    expect(restored.policies).toHaveLength(1);
+    expect(restored.policies[0].carrier).toBe('Global Aerospace');
+    expect(restored.opportunities[0].status).toBe('Quoting');
+
+    store.replaceDatabase(restored);
+    expect(store.getState().policies).toHaveLength(1);
+    expect(store.getState().layoverSpots).toEqual([]);
+  });
+
   it('rejects a file that is not an AEROBOOK export', () => {
     expect(() => parseFullJson('{"nope":1}')).toThrow(/AEROBOOK export/);
     expect(() => parseFullJson('not json')).toThrow();

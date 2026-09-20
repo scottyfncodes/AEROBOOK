@@ -202,6 +202,7 @@ export function ActivitySheet({
 // ---------------------------------------------------------- follow-up sheet
 
 const PRESETS = [
+  { label: 'Tomorrow', days: 1 },
   { label: '3 days', days: 3 },
   { label: '1 week', days: 7 },
   { label: '2 weeks', days: 14 },

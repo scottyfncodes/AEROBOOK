@@ -4,14 +4,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AppBar } from '../components/AppBar';
 import { IconPlane, IconPlus } from '../components/Icons';
 import { AircraftRow } from '../components/records';
-import { Banner, EmptyState, SelectField, Sheet, TextField, useDebounced, useToast } from '../components/ui';
+import { NewAircraftSheet } from '../components/aircraft';
+import { EmptyState, useDebounced, useToast } from '../components/ui';
 import { useDatabase } from '../data/useStore';
-import { createAircraft, findAircraftByTail, setAircraftOwner } from '../data/store';
 import { AIRCRAFT_STATUSES, type AircraftStatus } from '../data/types';
 import { ownerOf } from '../lib/selectors';
 import { policiesFor, policyState } from '../lib/insurance';
-import { formatTail, normalizeTail } from '../lib/tail';
-import { displayName } from '../lib/names';
 import { search } from '../lib/search';
 
 export default function AircraftList() {
@@ -111,90 +109,13 @@ export default function AircraftList() {
       {params.get('new') === '1' ? (
         <NewAircraftSheet
           onClose={() => setParams({})}
-          onCreated={(id, tail) => {
-            toast(`${tail} added`);
+          onCreated={(aircraft) => {
+            toast(`${aircraft.tailNumber} added`);
             setParams({});
-            navigate(`/aircraft/${id}`);
+            navigate(`/aircraft/${aircraft.id}`);
           }}
         />
       ) : null}
     </>
-  );
-}
-
-function NewAircraftSheet({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: (id: string, tail: string) => void;
-}) {
-  const db = useDatabase();
-  const [tail, setTail] = useState('');
-  const [year, setYear] = useState('');
-  const [make, setMake] = useState('');
-  const [model, setModel] = useState('');
-  const [baseAirport, setBaseAirport] = useState('');
-  const [status, setStatus] = useState<AircraftStatus>('Unknown');
-  const [ownerId, setOwnerId] = useState('');
-
-  const existing = normalizeTail(tail) ? findAircraftByTail(tail) : undefined;
-  const canSave = normalizeTail(tail).length > 0 && !existing;
-
-  const owners = useMemo(
-    () => [{ value: '', label: 'No owner yet' }, ...db.contacts
-      .map((c) => ({ value: c.id, label: displayName(c) }))
-      .sort((a, b) => a.label.localeCompare(b.label))],
-    [db.contacts],
-  );
-
-  const save = () => {
-    if (!canSave) return;
-    const aircraft = createAircraft({
-      tailNumber: tail,
-      year: year.trim(),
-      make: make.trim(),
-      model: model.trim(),
-      baseAirport: baseAirport.trim().toUpperCase(),
-      status,
-    });
-    if (ownerId) setAircraftOwner(aircraft.id, ownerId);
-    onCreated(aircraft.id, aircraft.tailNumber);
-  };
-
-  return (
-    <Sheet
-      title="New aircraft"
-      onClose={onClose}
-      footer={
-        <>
-          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn--primary" onClick={save} disabled={!canSave}>Save</button>
-        </>
-      }
-    >
-      <div className="stack">
-        <TextField
-          label="Tail number"
-          value={tail}
-          onChange={setTail}
-          placeholder="N917JH"
-          hint={normalizeTail(tail) ? `Stored as ${formatTail(tail)}` : 'Required'}
-        />
-        {existing ? (
-          <Banner tone="warn">
-            {existing.tailNumber} is already in the book. Open it instead of creating a second record.
-          </Banner>
-        ) : null}
-        <div className="form-grid">
-          <TextField label="Year" value={year} onChange={setYear} inputMode="numeric" />
-          <TextField label="Make" value={make} onChange={setMake} />
-        </div>
-        <TextField label="Model" value={model} onChange={setModel} />
-        <TextField label="Base airport" value={baseAirport} onChange={setBaseAirport} placeholder="KSBA" />
-        <SelectField label="Status" value={status} options={AIRCRAFT_STATUSES} onChange={setStatus} />
-        <SelectField label="Owner" value={ownerId} options={owners} onChange={setOwnerId} />
-      </div>
-    </Sheet>
   );
 }

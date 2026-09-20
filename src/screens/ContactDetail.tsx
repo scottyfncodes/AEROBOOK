@@ -14,6 +14,7 @@ import {
   Chip, ConfirmButton, EmptyState, KeyValue, SelectField, Sheet, TextArea, TextField, useToast,
 } from '../components/ui';
 import { NewOpportunitySheet } from '../components/opportunity';
+import { NewAircraftSheet } from '../components/aircraft';
 import { InsuranceSection } from '../components/insurance';
 import { useDatabase } from '../data/useStore';
 import { deleteActivity, deleteContact, updateContact } from '../data/store';
@@ -37,9 +38,10 @@ export default function ContactDetail() {
 
   const contact = db.contacts.find((c) => c.id === id);
   const [sheet, setSheet] = useState<
-    'email' | 'activity' | 'followUp' | 'edit' | 'opportunity' | 'intent' | null
+    'email' | 'activity' | 'followUp' | 'edit' | 'opportunity' | 'intent' | 'aircraft' | null
   >(null);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
+  const [followUpNote, setFollowUpNote] = useState('');
 
   const timeline = useMemo(
     () => (contact ? timelineFor(db, { contactId: contact.id }) : { activities: [], followUps: [] }),
@@ -127,7 +129,14 @@ export default function ContactDetail() {
           <button className="btn" onClick={() => setSheet('activity')}>
             <IconNote /> Log activity
           </button>
-          <button className="btn" onClick={() => { setEditingFollowUp(undefined); setSheet('followUp'); }}>
+          <button
+            className="btn"
+            onClick={() => {
+              setEditingFollowUp(undefined);
+              setFollowUpNote(`Follow up with ${displayName(contact)}`);
+              setSheet('followUp');
+            }}
+          >
             <IconCalendar /> Follow up
           </button>
           <button className="btn" onClick={() => setSheet('opportunity')}>
@@ -135,6 +144,9 @@ export default function ContactDetail() {
           </button>
           <button className="btn" onClick={() => setSheet('intent')}>
             <IconTarget /> What they want
+          </button>
+          <button className="btn" onClick={() => setSheet('aircraft')}>
+            <IconPlane /> Add aircraft
           </button>
         </section>
 
@@ -234,9 +246,9 @@ export default function ContactDetail() {
         <section className="stack stack--sm">
           <div className="row row--between">
             <h2 className="section-title">Aircraft</h2>
-            <Link className="btn btn--sm btn--ghost" to="/aircraft?new=1">
+            <button className="btn btn--sm btn--ghost" onClick={() => setSheet('aircraft')}>
               <IconPlus /> New
-            </Link>
+            </button>
           </div>
           {owned.length === 0 ? (
             <div className="card small muted">
@@ -279,8 +291,10 @@ export default function ContactDetail() {
           emptyBody="No insurance on record for this person. Add a policy and the renewal shows up here, on the aircraft and on the home screen."
           onFollowUp={(policy) => {
             setEditingFollowUp(undefined);
+            setFollowUpNote(
+              `Insurance renewal — ${displayName(contact)}${policy.carrier ? ` (${policy.carrier})` : ''}`,
+            );
             setSheet('followUp');
-            void policy;
           }}
         />
 
@@ -344,12 +358,23 @@ export default function ContactDetail() {
         <FollowUpSheet
           links={{ contactId: contact.id, aircraftId: primaryAircraft?.id ?? null }}
           existing={editingFollowUp}
-          defaultNote={`Follow up with ${displayName(contact)}`}
-          onClose={() => { setSheet(null); setEditingFollowUp(undefined); }}
+          defaultNote={followUpNote || `Follow up with ${displayName(contact)}`}
+          onClose={() => { setSheet(null); setEditingFollowUp(undefined); setFollowUpNote(''); }}
         />
       ) : null}
       {sheet === 'edit' ? <EditContactSheet id={contact.id} onClose={() => setSheet(null)} /> : null}
       {sheet === 'intent' ? <IntentSheet id={contact.id} onClose={() => setSheet(null)} /> : null}
+      {sheet === 'aircraft' ? (
+        <NewAircraftSheet
+          ownerId={contact.id}
+          onClose={() => setSheet(null)}
+          onCreated={(created) => {
+            toast(`${created.tailNumber} linked to ${displayName(contact)}`);
+            setSheet(null);
+            navigate(`/aircraft/${created.id}`);
+          }}
+        />
+      ) : null}
       {sheet === 'opportunity' ? (
         <NewOpportunitySheet
           contactId={contact.id}

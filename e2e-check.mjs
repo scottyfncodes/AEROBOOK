@@ -303,6 +303,46 @@ log('search "global aerospace" ->', carrierHits.length, 'results');
 if (!has(carrierHits.join(' '), 'N917JH')) errors.push('searching a carrier does not find the aircraft');
 await shot('10e-search-carrier');
 
+// ------------------------------------------------- 6f. a brand new client
+// The call-comes-in scenario: a person, their aircraft and a follow-up,
+// without ever having to go and find the record again.
+await page.goto(`${BASE}/contacts?new=1`, { waitUntil: 'networkidle' });
+await page.waitForSelector('.sheet');
+await page.getByLabel('First name').fill('John');
+await page.getByLabel('Last name').fill('Smith');
+await page.getByLabel('Email').fill('john@example.com');
+await page.getByRole('button', { name: 'Save', exact: true }).click();
+await page.waitForSelector('h1:has-text("John Smith")');
+if (!page.url().includes('/contacts/')) errors.push('creating a contact did not open the contact');
+
+await page.getByRole('button', { name: 'Add aircraft' }).click();
+await page.waitForSelector('.sheet');
+const prefilled = await page.getByLabel('Owner').inputValue();
+await page.getByLabel('Tail number').fill('n123ab');
+await page.getByLabel('Year').fill('2018');
+await page.getByLabel('Make').fill('Pilatus');
+await page.getByLabel('Model').fill('PC-12');
+await page.getByRole('button', { name: 'Save', exact: true }).click();
+await page.waitForSelector('h1.tail:has-text("N123AB")');
+const newAircraft = await page.locator('section[aria-label="At a glance"]').innerText();
+log('new aircraft glance:', newAircraft.replace(/\n/g, ' / '));
+if (!has(newAircraft, 'John Smith')) {
+  errors.push(`aircraft added from a contact lost the owner (picker held "${prefilled}")`);
+}
+
+await page.getByRole('button', { name: 'Follow up' }).click();
+await page.waitForSelector('.sheet');
+await page.getByRole('button', { name: 'Tomorrow' }).click();
+await page.getByRole('button', { name: 'Set follow-up' }).click();
+await page.waitForTimeout(400);
+
+await page.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
+await page.waitForSelector('.metric');
+const tasks = await page.locator('main').innerText();
+if (!has(tasks, 'N123AB')) errors.push('the new aircraft follow-up is not on the task list');
+await checkOverflow('follow-ups with work');
+await shot('10g-new-client');
+
 // ------------------------------------------------------ 6e. home triage
 await page.goto(BASE, { waitUntil: 'networkidle' });
 await page.waitForSelector('.metric-grid');
@@ -319,8 +359,25 @@ await page.goto(BASE, { waitUntil: 'networkidle' });
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForSelector('.metric-grid');
 const homeText = await page.locator('main').innerText();
-log('after reload, home shows aircraft count:', /(\d+)\s*\nAircraft/.exec(homeText)?.[1]);
-if (!homeText.includes('117')) errors.push('aircraft count missing after reload');
+// 117 imported, plus N123AB added by hand in the new-client workflow above.
+const aircraftCount = /(\d+)\s*\nAIRCRAFT/i.exec(homeText)?.[1];
+log('after reload, home shows aircraft count:', aircraftCount);
+if (aircraftCount !== '118') errors.push(`aircraft count read ${aircraftCount} after reload, expected 118`);
+// Home only shows what needs attention, so persistence of a record added by
+// hand is checked where the record actually lives.
+await page.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
+await page.fill('input[type=search]', 'N123AB');
+await page.waitForSelector('.tile');
+await page.waitForTimeout(400);
+await page.locator('.tile').first().click();
+await page.waitForSelector('h1.tail');
+const survived = await page.locator('main').innerText();
+log('after reload, N123AB reads:', survived.split('\n').slice(0, 4).join(' / '));
+for (const expected of ['N123AB', '2018 Pilatus PC-12', 'John Smith']) {
+  if (!has(survived, expected)) errors.push(`"${expected}" did not survive the reload`);
+}
+await page.goto(BASE, { waitUntil: 'networkidle' });
+await page.waitForSelector('.metric-grid');
 await checkOverflow('home populated');
 await shot('11-home-populated');
 
@@ -400,7 +457,9 @@ const path = await d.path();
 const csvOut = readFileSync(path, 'utf8');
 const lines = csvOut.trim().split('\r\n');
 log('exported contacts CSV:', lines.length - 1, 'rows; header:', lines[0].slice(0, 60));
-if (lines.length - 1 !== 115) errors.push(`export had ${lines.length - 1} contact rows, expected 115`);
+// 115 from the CSV (two owners hold two aircraft each), plus John Smith.
+if (lines.length - 1 !== 116) errors.push(`export had ${lines.length - 1} contact rows, expected 116`);
+if (!has(csvOut, 'Pilatus PC-12')) errors.push('the contact export does not carry what they want');
 
 const insDownload = page.waitForEvent('download');
 await page.getByRole('button', { name: 'Export insurance' }).click();

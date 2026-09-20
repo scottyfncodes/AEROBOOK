@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
 import { IconPlus, IconUsers } from '../components/Icons';
@@ -15,6 +15,7 @@ import { search } from '../lib/search';
 export default function Contacts() {
   const db = useDatabase();
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const toast = useToast();
 
   const [query, setQuery] = useState('');
@@ -93,9 +94,12 @@ export default function Contacts() {
       {showNew ? (
         <NewContactSheet
           onClose={() => setParams({})}
-          onCreated={(name) => {
-            toast(`${name} added`);
+          onCreated={(contact) => {
+            // Straight to the record, because the next thing is always to add
+            // their aircraft, their insurance or a follow-up.
+            toast(`${displayName(contact)} added`);
             setParams({});
+            navigate(`/contacts/${contact.id}`);
           }}
         />
       ) : null}
@@ -103,7 +107,13 @@ export default function Contacts() {
   );
 }
 
-function NewContactSheet({ onClose, onCreated }: { onClose: () => void; onCreated: (name: string) => void }) {
+function NewContactSheet({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (contact: ReturnType<typeof createContact>) => void;
+}) {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [company, setCompany] = useState('');
@@ -127,7 +137,7 @@ function NewContactSheet({ onClose, onCreated }: { onClose: () => void; onCreate
       state: state.trim().toUpperCase(),
       status,
     });
-    onCreated(displayName(contact));
+    onCreated(contact);
   };
 
   return (

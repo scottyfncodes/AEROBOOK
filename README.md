@@ -1,19 +1,25 @@
 # AEROBOOK
 
 A personal CRM for an aircraft broker who also sells aviation insurance.
-Aircraft are first-class records, not a custom field on a contact.
+Aircraft and insurance policies are first-class records, not custom fields on
+a contact.
 
-The workflow it exists for:
+The chain it exists to make fast:
 
-> aircraft-owner CSV → intelligent import → aircraft and person automatically
-> connected → personalised outreach → follow-up → relationship history
+> person → aircraft → insurance → opportunity → activity → follow-up →
+> documents → outcome
+
+Open any aircraft and the first thing on the screen answers who owns it, where
+its insurance stands, what is happening with it commercially, and what the next
+move is. Open any contact and it answers what they have, what they *want*, and
+when you next owe them something.
 
 ## Running it
 
 ```bash
 npm install
 npm run dev        # development server
-npm test           # 205 tests
+npm test           # 255 tests
 npm run build      # production build into dist/
 npm run preview    # serve the build, then in another shell:
 npm run e2e        # drive it in Chromium at iPhone dimensions
@@ -35,6 +41,7 @@ src/lib/          domain logic, all pure and tested
   matching.ts     duplicate detection indexes
   importer.ts     preview (pure) and apply (writes) — same code path
   email.ts        template rendering and mailto building
+  insurance.ts    renewal state, countdowns and what needs attention
   search.ts       one index across contacts, aircraft and opportunities
   aviation.ts     ISA atmosphere, wind triangle, weight and balance, premiums
   links.ts        external links, built from stable endpoints only
@@ -42,6 +49,20 @@ src/data/         types, IndexedDB persistence, the store
 src/components/   shared UI
 src/screens/      one file per screen
 ```
+
+## Insurance
+
+A policy is its own record, attached to the aircraft it covers and the person
+who holds it. An opportunity is optional — a renewal is visible long before
+anyone decides to work it as a deal.
+
+Its state is **derived from the expiration date, not typed in**: a policy that
+lapsed last week reads as expired whatever was last selected. The three states
+only the user can know — renewal in progress, quote received, bound — are kept
+as chosen. Inside sixty days the countdown reads *"Renewal in 43 days"*; beyond
+that it reads as a date, because a count that large is not a countdown.
+
+## Data
 
 The whole dataset is a single JSON document in IndexedDB. A personal CRM is a
 few thousand records, so keeping it in memory and writing the document on
@@ -62,6 +83,12 @@ the fallback when IndexedDB is unavailable. Nothing leaves the device.
   data on the record.
 - **It never silently overwrites.** An import that would replace an existing
   value shows the conflict and waits for a decision.
+- **It does not pretend a document is safe.** Attachments are stored in this
+  browser and nowhere else. The JSON backup carries the list of them, not the
+  files, and the export screen says so.
+- **It has no notifications.** Reminders are in-app, on the home screen and the
+  task list, because a browser cannot deliver a background notification on iOS
+  reliably enough to build a working day on.
 
 ## The supplied sample file
 
@@ -72,11 +99,23 @@ uses. It asserts 117 aircraft, 115 contacts (two owners hold two aircraft
 each), the email subject, greeting and mailto, and that re-importing the same
 file creates nothing.
 
-`e2e-check.mjs` drives the built app in Chromium at iPhone dimensions and
-walks the same journey through the real UI — import, search by a lowercase
-tail, generate and record the email, set a follow-up, reload, re-import,
-export. It fails on any console error, any horizontal overflow at 390px, or
-any link without a destination.
+`e2e-check.mjs` drives the built app in Chromium at iPhone dimensions and walks
+the journeys the app exists for, through the real UI: import, search by a
+lowercase tail, generate and record an email, set a follow-up, add an insurance
+policy and check the renewal countdown, open a brokerage opportunity and move
+it through the pipeline, record what an owner wants, create a client and their
+aircraft from scratch, reload, re-import and export. It fails on any console
+error, any horizontal overflow at 390px, or any link without a destination.
+
+## Upgrading
+
+Version 2 of the stored document lifted insurance out of the opportunity it
+used to hang off, and turned the opportunity's unused `followUpDate` into a
+real follow-up. The migration runs on load *and* on restoring a backup, so an
+older export can still be read. Two vocabulary changes come with it: the
+opportunity statuses `Open` and `Quote` became `Lead` and `Quoting`, `Closed`
+became `Lost` — which is how every query already treated it — and the ambiguous
+`Both` type became `Sale + Insurance`.
 
 ## Brand
 

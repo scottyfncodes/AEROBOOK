@@ -4,6 +4,7 @@ import { toCsv } from './csv';
 import { displayName } from './names';
 import { formatPhone, formatZip } from './phone';
 import { policyState } from './insurance';
+import { migrate } from '../data/db';
 
 export function contactsCsv(db: Pick<Database, 'contacts' | 'aircraft'>): string {
   const headers = [
@@ -93,12 +94,17 @@ export function fullJson(db: Database): string {
   return JSON.stringify({ ...db, exportedAt: new Date().toISOString(), app: 'AEROBOOK' }, null, 2);
 }
 
+/**
+ * A backup can be older than the app restoring it, so it goes through the
+ * same migration a stored document does. Restoring a version 1 export
+ * without it would hand the UI a database with no `policies` at all.
+ */
 export function parseFullJson(text: string): Database {
   const parsed = JSON.parse(text) as Database;
   if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.contacts)) {
     throw new Error('This file does not look like an AEROBOOK export.');
   }
-  return parsed;
+  return migrate(parsed);
 }
 
 export function downloadText(filename: string, mime: string, text: string): void {
