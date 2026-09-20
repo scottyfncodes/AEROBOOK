@@ -386,9 +386,9 @@ function PreviewStep({
         </div>
       )}
 
-      <div className="row" style={{ gap: 8, position: 'sticky', bottom: 'calc(var(--tabbar-h) + 8px)' }}>
-        <button className="btn btn--ghost grow" onClick={onBack}>Back</button>
-        <button className="btn btn--primary grow" onClick={onImport} disabled={willImport === 0}>
+      <div className="sticky-actions">
+        <button className="btn btn--ghost" onClick={onBack}>Back</button>
+        <button className="btn btn--primary" onClick={onImport} disabled={willImport === 0}>
           Import {willImport} {willImport === 1 ? 'record' : 'records'}
         </button>
       </div>

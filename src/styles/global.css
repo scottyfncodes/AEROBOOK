@@ -680,3 +680,57 @@ button, input, select, textarea {
   letter-spacing: 0.24em;
   color: var(--text-secondary);
 }
+
+/*
+ * A sticky action bar over a scrolling list. It needs its own surface — a
+ * transparent bar lets rows scroll through the buttons and read as broken.
+ */
+.sticky-actions {
+  position: sticky;
+  bottom: calc(var(--tabbar-h) - var(--gutter));
+  z-index: 30;
+  display: flex;
+  gap: 8px;
+  margin: 4px calc(var(--gutter) * -1) 0;
+  padding: 12px var(--gutter);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  border-top: 1px solid var(--border);
+}
+
+.sticky-actions > .btn { flex: 1; }
+
+.timeline__remove {
+  /* Block-level flex so the auto left margin pushes it to the right edge. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 6px -6px -4px auto;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.14s var(--ease), color 0.14s var(--ease), background 0.14s var(--ease);
+}
+
+.timeline__remove svg { width: 15px; height: 15px; }
+.timeline__remove:hover { opacity: 1; color: var(--danger); background: var(--danger-dim); }
+
+.timeline__more {
+  margin-top: 4px;
+  padding: 4px 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.timeline__more:hover { text-decoration: underline; }

@@ -89,7 +89,6 @@ export default function AircraftDetail() {
           <div className="secondary">{description || 'Aircraft details unknown'}</div>
           <div className="row row--wrap" style={{ gap: 6 }}>
             <Chip tone={aircraft.status === 'For Sale' ? 'accent' : undefined}>{aircraft.status}</Chip>
-            {aircraft.source ? <Chip>From {aircraft.source}</Chip> : null}
           </div>
         </section>
 
@@ -199,6 +198,7 @@ export default function AircraftDetail() {
             {aircraft.askingPrice ? <KeyValue k="Asking price">{aircraft.askingPrice}</KeyValue> : null}
             {aircraft.targetPrice ? <KeyValue k="Target price">{aircraft.targetPrice}</KeyValue> : null}
             {aircraft.listingStatus ? <KeyValue k="Listing">{aircraft.listingStatus}</KeyValue> : null}
+            {aircraft.source ? <KeyValue k="Source">{aircraft.source}</KeyValue> : null}
             <KeyValue k="Added">{formatDate(aircraft.createdAt)}</KeyValue>
             <KeyValue k="Updated">{formatDate(aircraft.updatedAt)}</KeyValue>
             {Object.entries(aircraft.custom).map(([k, v]) => (

@@ -70,7 +70,7 @@ export function EmailComposer({
       opportunityId: opportunityId ?? null,
       type: 'Email',
       subject: finalSubject,
-      notes: `${how}. AEROBOOK does not send mail, so this is not a confirmed delivery.\n\n${finalBody}`,
+      notes: `${how} — not a confirmed delivery.\n\n${finalBody}`,
     });
     toast(`Recorded: ${how}`);
     onRecorded?.();

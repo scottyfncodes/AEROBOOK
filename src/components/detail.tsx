@@ -87,10 +87,14 @@ export function Timeline({
                   <span className="xsmall muted nowrap">{formatDate(a.date)}</span>
                 </div>
                 <div className="xsmall muted">{a.type}</div>
-                {a.notes ? <div className="small secondary" style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{a.notes}</div> : null}
+                {a.notes ? <TimelineNote text={a.notes} /> : null}
                 {onDeleteActivity ? (
-                  <button className="btn btn--sm btn--ghost" style={{ marginTop: 8 }} onClick={() => onDeleteActivity(a.id)}>
-                    <IconTrash /> Remove
+                  <button
+                    className="timeline__remove"
+                    onClick={() => onDeleteActivity(a.id)}
+                    aria-label={`Remove "${a.subject || a.type}" from the timeline`}
+                  >
+                    <IconTrash />
                   </button>
                 ) : null}
               </div>
@@ -98,6 +102,41 @@ export function Timeline({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A recorded email carries its whole body, which is the point — it is the
+ * record of what was said. It should not bury the rest of the timeline, so
+ * anything long is clamped until asked for.
+ */
+function TimelineNote({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > 180 || text.split('\n').length > 4;
+  return (
+    <div style={{ marginTop: 4 }}>
+      <div
+        className="small secondary"
+        style={
+          expanded || !isLong
+            ? { whiteSpace: 'pre-wrap' }
+            : {
+                whiteSpace: 'pre-wrap',
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }
+        }
+      >
+        {text}
+      </div>
+      {isLong ? (
+        <button className="timeline__more" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? 'Show less' : 'Show full message'}
+        </button>
+      ) : null}
     </div>
   );
 }
