@@ -75,7 +75,7 @@ const markBox = await page.evaluate(() => {
     return { w: Math.round(r.width), h: Math.round(r.height), paths: el.querySelectorAll('path').length };
   });
 });
-if (markBox.length < 2 || markBox.some((m) => m.w < 12 || m.paths !== 2)) {
+if (markBox.length < 2 || markBox.some((m) => m.w < 12 || m.paths !== 3)) {
   errors.push(`brand mark did not render: ${JSON.stringify(markBox)}`);
 }
 log('brand mark:', JSON.stringify(markBox));

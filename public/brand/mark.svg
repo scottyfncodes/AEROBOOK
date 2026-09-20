@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 17 80 68" fill="none" stroke="currentColor"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="15 13.4 57.6 70.2" fill="none" stroke="currentColor"
      stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="AEROBOOK">
-  <path d="M26 80 L58 22 L72 80" stroke-width="5"/>
-  <path d="M15 62 H85" stroke-width="3.4"/>
-</svg>
+    <path d="M56 16 L18 76 Q16.5 80 21 81" stroke-width="5.6"/>
+    <path d="M56 16 L70 52" stroke-width="5.6"/>
+    <path d="M32.5 63.5 L52 51 L67 59" stroke-width="3.8"/></svg>
