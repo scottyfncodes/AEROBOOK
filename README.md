@@ -15,7 +15,11 @@ npm install
 npm run dev        # development server
 npm test           # 205 tests
 npm run build      # production build into dist/
+npm run preview    # serve the build, then in another shell:
+npm run e2e        # drive it in Chromium at iPhone dimensions
 ```
+
+`npm run e2e` takes `BASE_URL` and `CHROME_PATH` from the environment.
 
 `npm run build` needs nothing but Node. Chromium and potrace are only used by
 the brand script below, which is not part of the build.
@@ -69,7 +73,10 @@ each), the email subject, greeting and mailto, and that re-importing the same
 file creates nothing.
 
 `e2e-check.mjs` drives the built app in Chromium at iPhone dimensions and
-walks the same journey through the real UI.
+walks the same journey through the real UI — import, search by a lowercase
+tail, generate and record the email, set a follow-up, reload, re-import,
+export. It fails on any console error, any horizontal overflow at 390px, or
+any link without a destination.
 
 ## Brand assets
 
@@ -80,3 +87,10 @@ node scripts/build-brand.mjs      # brand-source/signature.jpg -> public/brand/
 ```
 
 Outputs are committed, so this only needs running if the source changes.
+
+## Deployment
+
+Vercel, from this repository — a push to the production branch deploys it.
+The build is a plain static bundle; `vercel.json` handles the SPA rewrite and
+sets `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and
+`X-Robots-Tag: noindex`.

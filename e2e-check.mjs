@@ -1,14 +1,30 @@
 import { chromium } from 'playwright';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 
-const BASE = 'http://127.0.0.1:4173';
-const SHOTS = '/tmp/claude-0/shots';
-const CSV = '/home/user/AEROBOOK/sample-data/owners-cirrus-design-corp-sr22t.csv';
+/**
+ * Drives the built app in Chromium at iPhone dimensions and walks the core
+ * journey through the real UI: import the supplied CSV, find the aircraft by
+ * a lowercase tail, generate the email, record it, set a follow-up, reload,
+ * re-import, and export. Fails on any console error, any horizontal overflow
+ * or any link without a destination.
+ *
+ *   npm run build && npm run preview &
+ *   node e2e-check.mjs
+ */
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:4173';
+const SHOTS = process.env.SHOTS_DIR ?? resolve(here, '.e2e-shots');
+const CSV = resolve(here, 'sample-data/owners-cirrus-design-corp-sr22t.csv');
+const CHROME = process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
 const errors = [];
 const log = (...a) => console.log(...a);
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+mkdirSync(SHOTS, { recursive: true });
+const browser = await chromium.launch({ executablePath: CHROME });
 const context = await browser.newContext({
   viewport: { width: 390, height: 844 },       // iPhone 14 Pro logical size
   deviceScaleFactor: 3,

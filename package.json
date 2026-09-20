@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "e2e": "node e2e-check.mjs",
+    "brand": "node scripts/build-brand.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",
