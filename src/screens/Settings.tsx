@@ -176,16 +176,19 @@ export default function Settings() {
         </section>
 
         <section className="stack stack--sm">
-          <h2 className="section-title">Account</h2>
+          <h2 className="section-title">Storage &amp; backup</h2>
           <Banner tone="info">
-            AEROBOOK keeps everything in this browser on this device. Nothing is uploaded and there is no account.
-            That means clearing your browser data deletes it — export a backup from time to time.
+            Everything you enter stays on this device, in this browser — there is no cloud sync, no account,
+            and nothing is ever uploaded anywhere. That also means it will not show up on your other devices
+            or phones, and clearing this browser's data (or switching browsers) deletes it for good. Export a
+            backup from time to time so you always have a copy saved outside the browser.
           </Banner>
           {persisted === false ? (
             <Banner tone="warn">
-              This browser has not granted AEROBOOK protected storage, so it can clear this data on its own
-              under low disk space without asking. Visiting and using the app normally usually earns that
-              protection over time; exporting a backup is the reliable safeguard either way.
+              Some browsers automatically clear old app data to free up space. AEROBOOK has asked this
+              browser to protect its data from that, but the browser decides — using the app a little more
+              usually settles it. Exporting a backup below is still the surest way to make sure nothing is
+              ever lost.
             </Banner>
           ) : null}
           <ConfirmButton

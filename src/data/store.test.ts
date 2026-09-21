@@ -448,6 +448,95 @@ describe('export', () => {
     expect(() => parseFullJson('{"nope":1}')).toThrow(/AEROBOOK export/);
     expect(() => parseFullJson('not json')).toThrow();
   });
+
+  it('exports everything correctly right after a fresh first-load migration', async () => {
+    // A raw v1 document on disk, exactly as an old install would have left it —
+    // nothing has migrated or been touched by the user yet.
+    const v1 = {
+      version: 1,
+      contacts: [{ id: 'c1', firstName: 'John', lastName: 'Smith', createdAt: '', updatedAt: '' }],
+      aircraft: [{ id: 'a1', tailNumber: 'N123AB', tailKey: '123AB', createdAt: '', updatedAt: '' }],
+      opportunities: [
+        {
+          id: 'o1', contactId: 'c1', aircraftId: 'a1', type: 'Both', status: 'Quote',
+          title: 'Renewal', openedAt: '', followUpDate: '2026-03-01', notes: '', createdAt: '', updatedAt: '',
+          insurance: { carrier: 'Global Aerospace', renewalDate: '2026-11-02' },
+        },
+      ],
+      activities: [], followUps: [], templates: [], files: [], imports: [], settings: {},
+    };
+    await persistence.saveDatabase(v1 as never);
+
+    // The app starts up: loadDatabase() migrates, init() persists it immediately.
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+
+    // The user does some work in this same session.
+    const contact = store.getState().contacts[0];
+    store.logActivity({ type: 'Note', subject: 'Spoke on the phone', contactId: contact.id });
+    store.logActivity({ type: 'Email', subject: 'RE: N123AB', contactId: contact.id });
+    await store.addFile(new File(['dec page'], 'dec-page.pdf', { type: 'application/pdf' }), { contactId: contact.id });
+
+    const exported = JSON.parse(fullJson(store.getState()));
+    expect(exported.app).toBe('AEROBOOK');
+    expect(exported.contacts).toHaveLength(1);
+    expect(exported.contacts[0].id).toBe('c1');
+    expect(exported.aircraft).toHaveLength(1);
+    expect(exported.aircraft[0].id).toBe('a1');
+    expect(exported.opportunities).toHaveLength(1);
+    // The legacy blob and orphan date were converted, not carried forward as-is.
+    expect(exported.opportunities[0].insurance).toBeUndefined();
+    expect(exported.opportunities[0].followUpDate).toBeUndefined();
+    expect(exported.policies).toHaveLength(1);
+    expect(exported.policies[0].carrier).toBe('Global Aerospace');
+    expect(exported.followUps).toHaveLength(1);
+    expect(exported.activities).toHaveLength(2);
+    expect(exported.activities.map((a: { subject: string }) => a.subject).sort()).toEqual([
+      'RE: N123AB', 'Spoke on the phone',
+    ]);
+    // Document metadata is in the export; the file contents are a separate
+    // IndexedDB store and are not expected here (see fullJson's own comment).
+    expect(exported.files).toHaveLength(1);
+    expect(exported.files[0].name).toBe('dec-page.pdf');
+    expect(exported.files[0].contactId).toBe('c1');
+  });
+
+  it('re-importing an export does not duplicate activities or drop the ids/relationships it should keep', async () => {
+    const contact = store.createContact({ firstName: 'John', lastName: 'Heine' });
+    const aircraft = store.createAircraft({ tailNumber: 'N917JH' });
+    store.setAircraftOwner(aircraft.id, contact.id);
+    const opportunity = store.createOpportunity({ contactId: contact.id, aircraftId: aircraft.id, title: 'Renewal' });
+    const noteA = store.logActivity({ type: 'Note', subject: 'First note', contactId: contact.id });
+    const noteB = store.logActivity({ type: 'Note', subject: 'Second note', contactId: contact.id });
+    const doc = await store.addFile(new File(['x'], 'a.pdf'), { contactId: contact.id });
+
+    const exported = fullJson(store.getState());
+    const reimported = parseFullJson(exported);
+
+    // Ids and links are preserved exactly, not regenerated.
+    expect(reimported.contacts.map((c) => c.id)).toEqual([contact.id]);
+    expect(reimported.aircraft.map((a) => a.id)).toEqual([aircraft.id]);
+    expect(reimported.opportunities.map((o) => o.id)).toEqual([opportunity.id]);
+    expect(reimported.opportunities[0].contactId).toBe(contact.id);
+    expect(reimported.opportunities[0].aircraftId).toBe(aircraft.id);
+    expect(reimported.activities.map((a) => a.id).sort()).toEqual([noteA.id, noteB.id].sort());
+    expect(reimported.files.map((f) => f.id)).toEqual([doc.id]);
+    expect(reimported.files[0].contactId).toBe(contact.id);
+
+    // Loading it into the store does not create duplicates of anything.
+    store.replaceDatabase(reimported);
+    expect(store.getState().activities).toHaveLength(2);
+    expect(store.getState().contacts).toHaveLength(1);
+    expect(store.getState().aircraft).toHaveLength(1);
+    expect(store.getState().opportunities).toHaveLength(1);
+    expect(store.getState().files).toHaveLength(1);
+
+    // Re-importing the same export a second time is still a no-op, not a second copy.
+    const reimportedAgain = parseFullJson(exported);
+    store.replaceDatabase(reimportedAgain);
+    expect(store.getState().activities).toHaveLength(2);
+    expect(store.getState().activities.map((a) => a.id).sort()).toEqual([noteA.id, noteB.id].sort());
+  });
 });
 
 describe('insurance policies', () => {
