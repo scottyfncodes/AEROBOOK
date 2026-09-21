@@ -123,10 +123,16 @@ The mark and the footer signature are the owner's own hand, not a drawn
 imitation of it. `brand-source/signature.jpg` is traced twice: the whole
 signature, tight-cropped, for the quiet sign-off at the foot of the
 dashboard, and a close crop of just its capital "A" — peak, the long
-downstroke, the short one, the crossbar — for the logo and the home-screen
-icon, since the full signature is illegible at those sizes. Both land as
+downstroke, the short one, the crossbar — for the app-bar and splash logo,
+since the full signature is illegible at those sizes. Both land as
 `currentColor` SVGs applied through a CSS mask, so one asset works in both
 themes and takes whatever colour surrounds it.
+
+The home-screen icon set spells out "Aerobook": the same traced "A", scaled
+up and given a heavier stroke so it stays the dominant glyph, followed by
+"erobook" hand-lettered in the same forward-leaning pen — there is no
+"erobook" in the source signature to trace, so those letters are invented
+strokes built to match its lean and weight.
 
 ```bash
 npm run brand      # regenerates public/brand/ from brand-source/signature.jpg
