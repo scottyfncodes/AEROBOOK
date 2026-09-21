@@ -33,7 +33,7 @@ const TABS = [
   { to: '/', label: 'Home', Icon: IconPlane, end: true, ariaLabel: 'AEROBOOK Home' },
   { to: '/aircraft', label: 'Aircraft', Icon: IconPlane, end: false },
   { to: '/contacts', label: 'Contacts', Icon: IconUsers, end: false },
-  { to: '/follow-ups', label: 'Follow-ups', Icon: IconBell, end: false },
+  { to: '/follow-ups', label: 'Follow-up', Icon: IconBell, end: false },
   { to: '/settings', label: 'Settings', Icon: IconSettings, end: false },
 ];
 
