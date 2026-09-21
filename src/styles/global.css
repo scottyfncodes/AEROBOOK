@@ -237,10 +237,10 @@ button, input, select, textarea {
   gap: 8px;
 }
 
-/* Four across at phone width: eight actions fit in two rows, above the fold. */
+/* Three across at phone width: six actions fill two full rows with no gaps. */
 .quick-actions {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
@@ -277,7 +277,7 @@ button, input, select, textarea {
 .quick-action--primary svg { color: var(--accent-strong); }
 
 @media (min-width: 560px) {
-  .quick-actions { grid-template-columns: repeat(8, 1fr); }
+  .quick-actions { grid-template-columns: repeat(6, 1fr); }
 }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
