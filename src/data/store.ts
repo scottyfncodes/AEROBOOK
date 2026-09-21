@@ -25,7 +25,6 @@ import {
   type FollowUp,
   type ImportRecord,
   type InsurancePolicy,
-  type LayoverSpot,
   type Opportunity,
   type Settings,
 } from './types';
@@ -567,34 +566,6 @@ export function commitImport(result: {
 
 export function deleteImportRecord(id: string): void {
   set((db) => ({ ...db, imports: db.imports.filter((i) => i.id !== id) }));
-}
-
-// ------------------------------------------------------------ layover spots
-
-export function saveLayoverSpot(input: Partial<LayoverSpot> & { place: string; name: string }): LayoverSpot {
-  const now = nowIso();
-  const spot: LayoverSpot = {
-    id: input.id ?? newId('spt'),
-    place: input.place,
-    name: input.name,
-    category: input.category ?? 'Restaurant',
-    notes: input.notes ?? '',
-    url: input.url,
-    rating: input.rating,
-    createdAt: input.createdAt ?? now,
-    updatedAt: now,
-  };
-  set((db) => ({
-    ...db,
-    layoverSpots: db.layoverSpots.some((s) => s.id === spot.id)
-      ? db.layoverSpots.map((s) => (s.id === spot.id ? spot : s))
-      : [spot, ...db.layoverSpots],
-  }));
-  return spot;
-}
-
-export function deleteLayoverSpot(id: string): void {
-  set((db) => ({ ...db, layoverSpots: db.layoverSpots.filter((s) => s.id !== id) }));
 }
 
 // ----------------------------------------------------------------- settings

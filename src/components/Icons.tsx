@@ -20,6 +20,16 @@ export const IconHome = (p: P) => (
   <svg {...base} {...p}><path d="M3.5 10.5 12 3.5l8.5 7" /><path d="M5.5 9.5V20h13V9.5" /><path d="M9.5 20v-5.5h5V20" /></svg>
 );
 
+/**
+ * The Home nav mark: a capital A whose crossbar overshoots both legs like a
+ * shallow wing crossing a fuselage — an understated aeronautical cue, not a
+ * plane pasted onto a letter. Reads as "A" first at any size down to a
+ * 21px tab icon.
+ */
+export const IconAeroMark = (p: P) => (
+  <svg {...base} {...p}><path d="M4.5 20.5 13.5 3.5l5 17" /><path d="M8.3 15.3 13.9 12.4l4.7 2.9" /></svg>
+);
+
 export const IconUsers = (p: P) => (
   <svg {...base} {...p}><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19.5c0-3 2.5-5 5.5-5s5.5 2 5.5 5" /><path d="M16 5.2a3.2 3.2 0 0 1 0 5.9" /><path d="M17.5 14.9c1.9.6 3.2 2.3 3.2 4.6" /></svg>
 );

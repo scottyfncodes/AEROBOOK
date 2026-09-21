@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAYOVER_CATEGORIES, airportLinks, faaRegistryLink, layoverLink, mapsLink, marketLinks, telLink, webSearchLink } from './links';
+import { airportLinks, faaRegistryLink, mapsLink, marketLinks, telLink, webSearchLink } from './links';
 
 describe('faaRegistryLink', () => {
   it('builds the FAA N-Number inquiry URL from any spelling', () => {
@@ -45,28 +45,5 @@ describe('other links', () => {
       'https://aviationweather.gov/data/metar/?ids=KSBA&decoded=yes',
     ]);
     expect(airportLinks('')).toEqual([]);
-  });
-});
-
-describe('layover categories', () => {
-  it('covers the categories the brief asks for', () => {
-    const keys = LAYOVER_CATEGORIES.map((c) => c.key);
-    for (const k of ['michelin', 'dinner', 'coffee', 'brewery', 'bars', 'interesting', 'outdoors', 'attractions', 'gear', 'transport']) {
-      expect(keys).toContain(k);
-    }
-  });
-
-  it('builds a live search for the destination, never a stored business', () => {
-    for (const category of LAYOVER_CATEGORIES) {
-      const link = layoverLink(category, 'Santa Barbara');
-      expect(link.url.startsWith('https://')).toBe(true);
-      expect(link.url).toContain('Santa%20Barbara');
-      expect(link.isSearch).toBe(true);
-    }
-  });
-
-  it('sends Michelin queries to the Michelin Guide', () => {
-    const link = layoverLink(LAYOVER_CATEGORIES.find((c) => c.key === 'michelin')!, 'Chicago');
-    expect(link.url).toContain('guide.michelin.com');
   });
 });

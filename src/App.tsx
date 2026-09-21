@@ -3,7 +3,7 @@ import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-d
 
 import { ToastProvider } from './components/ui';
 import { Mark } from './components/Brand';
-import { IconBell, IconHome, IconPlane, IconTarget, IconTools, IconUsers } from './components/Icons';
+import { IconAeroMark, IconBell, IconPlane, IconSettings, IconUsers } from './components/Icons';
 import { useDatabase, useLoaded, useSaveError } from './data/useStore';
 
 import Home from './screens/Home';
@@ -19,23 +19,23 @@ import Import from './screens/Import';
 import ImportHistory from './screens/ImportHistory';
 import SearchScreen from './screens/Search';
 import Tools from './screens/Tools';
-import Layover from './screens/Layover';
 import Templates from './screens/Templates';
 import Settings from './screens/Settings';
 import NotFound from './screens/NotFound';
 
 /**
- * Six tabs, each a place records live. Prospects, Templates, Import and
- * Settings are reachable from the screens they belong to rather than taking
- * a tab of their own.
+ * Five tabs, each a place records live. Opportunities, Prospects, Templates,
+ * Import and Tools are reachable from the screens they belong to (Home, an
+ * aircraft, a contact, Settings) rather than taking a tab of their own. Home
+ * carries the AEROBOOK mark instead of a generic house icon and, like every
+ * tab, always returns to that section's top rather than toggling.
  */
 const TABS = [
-  { to: '/', label: 'Home', Icon: IconHome, end: true },
+  { to: '/', label: 'Home', Icon: IconAeroMark, end: true, ariaLabel: 'AEROBOOK Home' },
   { to: '/aircraft', label: 'Aircraft', Icon: IconPlane, end: false },
   { to: '/contacts', label: 'Contacts', Icon: IconUsers, end: false },
-  { to: '/opportunities', label: 'Pipeline', Icon: IconTarget, end: false },
-  { to: '/follow-ups', label: 'Tasks', Icon: IconBell, end: false },
-  { to: '/tools', label: 'Tools', Icon: IconTools, end: false },
+  { to: '/follow-ups', label: 'Follow-ups', Icon: IconBell, end: false },
+  { to: '/settings', label: 'Settings', Icon: IconSettings, end: false },
 ];
 
 function ScrollToTop() {
@@ -108,7 +108,6 @@ export default function App() {
             <Route path="/import" element={<Import />} />
             <Route path="/import/history" element={<ImportHistory />} />
             <Route path="/tools" element={<Tools />} />
-            <Route path="/layover" element={<Layover />} />
             <Route path="/templates" element={<Templates />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
@@ -123,11 +122,12 @@ export default function App() {
         )}
 
         <nav className="tabbar" aria-label="Main">
-          {TABS.map(({ to, label, Icon, end }) => (
+          {TABS.map(({ to, label, Icon, end, ariaLabel }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
+              aria-label={ariaLabel}
               className={({ isActive }) => `tabbar__item${isActive ? ' is-active' : ''}`}
             >
               <Icon aria-hidden />

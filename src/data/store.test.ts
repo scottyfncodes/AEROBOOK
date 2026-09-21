@@ -264,7 +264,6 @@ describe('export', () => {
 
     store.replaceDatabase(restored);
     expect(store.getState().policies).toHaveLength(1);
-    expect(store.getState().layoverSpots).toEqual([]);
   });
 
   it('rejects a file that is not an AEROBOOK export', () => {

@@ -475,7 +475,6 @@ for (const [path, name] of [
   ['/aircraft', '15-aircraft'],
   ['/opportunities', '16-opportunities'],
   ['/tools', '17-tools'],
-  ['/layover', '18-layover'],
   ['/templates', '19-templates'],
   ['/settings', '20-settings'],
   ['/import/history', '21-import-history'],
@@ -487,6 +486,36 @@ for (const [path, name] of [
   await shot(name);
 }
 
+// ------------------------------------------------- 10b. primary navigation
+await page.goto(BASE, { waitUntil: 'networkidle' });
+const tabs = await page.locator('.tabbar__item').evaluateAll((els) =>
+  els.map((el) => ({ label: el.querySelector('span')?.textContent, aria: el.getAttribute('aria-label') })),
+);
+log('nav tabs:', tabs.map((t) => t.label).join(' | '));
+const expectedTabs = ['Home', 'Aircraft', 'Contacts', 'Follow-ups', 'Settings'];
+if (tabs.map((t) => t.label).join('|') !== expectedTabs.join('|')) {
+  errors.push(`tab bar reads "${tabs.map((t) => t.label).join(' | ')}", expected "${expectedTabs.join(' | ')}"`);
+}
+if (tabs[0]?.aria !== 'AEROBOOK Home') errors.push(`Home tab aria-label is "${tabs[0]?.aria}", expected "AEROBOOK Home"`);
+
+await page.locator('nav.tabbar').getByRole('link', { name: 'Settings' }).click();
+await page.waitForURL(/\/settings$/);
+await page.waitForSelector('text=Data / Import');
+log('settings reached via tab');
+
+await page.getByRole('link', { name: 'Aviation & insurance calculators' }).click();
+await page.waitForURL(/\/tools$/);
+await page.waitForSelector('.filter-bar');
+log('tools reached via settings link');
+
+await page.getByRole('link', { name: 'AEROBOOK Home' }).click();
+await page.waitForURL(`${BASE}/`);
+await page.waitForSelector('.quick-actions');
+log('home tab returns to dashboard from a nested screen');
+
+await page.goto(`${BASE}/layover`, { waitUntil: 'networkidle' });
+if (!(await page.getByText('Not found').isVisible())) errors.push('/layover no longer 404s — dead route left behind');
+
 // tools: exercise a calculator
 await page.goto(`${BASE}/tools`, { waitUntil: 'networkidle' });
 await page.waitForSelector('.card');
@@ -496,15 +525,6 @@ await page.getByRole('button', { name: 'Density altitude' }).click();
 await page.waitForTimeout(200);
 log('DA tool:', (await page.locator('.card').nth(1).innerText()).replace(/\n/g, ' / '));
 await shot('23-tools-da');
-
-// layover: check a link is a live search
-await page.goto(`${BASE}/layover`, { waitUntil: 'networkidle' });
-await page.fill('input', 'Santa Barbara');
-await page.waitForTimeout(300);
-const michelin = await page.locator('a:has-text("Michelin")').first().getAttribute('href');
-log('michelin link:', michelin);
-if (!michelin?.startsWith('https://guide.michelin.com')) errors.push('michelin link wrong');
-await shot('24-layover-filled');
 
 // --------------------------------------------------------- 11. dead buttons
 await page.goto(BASE, { waitUntil: 'networkidle' });

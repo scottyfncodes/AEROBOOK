@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
 import {
-  IconBell, IconDoc, IconMail, IconMap, IconPlane, IconPlus, IconShield, IconTarget,
+  IconBell, IconDoc, IconMail, IconPlane, IconPlus, IconShield, IconTarget,
   IconUpload, IconUsers,
 } from '../components/Icons';
 import { Chip, EmptyState, Metric } from '../components/ui';
@@ -67,10 +67,6 @@ export default function Home() {
             <Link className="quick-action" to="/templates">
               <IconMail aria-hidden />
               Templates
-            </Link>
-            <Link className="quick-action" to="/layover">
-              <IconMap aria-hidden />
-              Layover
             </Link>
           </div>
         </section>

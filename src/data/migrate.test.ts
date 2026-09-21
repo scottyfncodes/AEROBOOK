@@ -46,7 +46,6 @@ const v1 = {
   templates: [],
   files: [{ id: 'f1', name: 'dec-page.pdf', mimeType: 'application/pdf', size: 1024, contactId: 'c1', aircraftId: null, opportunityId: null, createdAt: '' }],
   imports: [],
-  layoverSpots: [],
   settings: { senderName: 'Scott' },
 };
 

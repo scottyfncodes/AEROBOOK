@@ -332,19 +332,6 @@ export interface ImportRecord {
   notes: string[];
 }
 
-/** A place the user has actually been, saved from the Layover screen. */
-export interface LayoverSpot {
-  id: string;
-  place: string;
-  name: string;
-  category: string;
-  notes: string;
-  url?: string;
-  rating?: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface Settings {
   senderName: string;
   senderTitle: string;
@@ -367,7 +354,6 @@ export interface Database {
   templates: EmailTemplate[];
   files: FileRecord[];
   imports: ImportRecord[];
-  layoverSpots: LayoverSpot[];
   settings: Settings;
 }
 
@@ -385,7 +371,6 @@ export function emptyDatabase(): Database {
     templates: [],
     files: [],
     imports: [],
-    layoverSpots: [],
     settings: {
       senderName: '',
       senderTitle: '',

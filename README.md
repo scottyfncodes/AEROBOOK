@@ -76,9 +76,6 @@ the fallback when IndexedDB is unavailable. Nothing leaves the device.
 - **It ships no aviation data.** Aircraft performance, airport details and
   registrations come from the authoritative source via a link, not from a copy
   that can go stale. The calculators work on numbers the user types.
-- **It ships no restaurant list.** The layover guide opens a live search
-  against the Michelin Guide, maps or the web, because a hard-coded list is
-  wrong the day a place closes.
 - **It never discards a CSV column.** Anything unrecognised is kept as custom
   data on the record.
 - **It never silently overwrites.** An import that would replace an existing

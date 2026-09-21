@@ -186,7 +186,6 @@ export function migrate(raw: unknown): Database {
     templates: input.templates ?? [],
     files: (input.files ?? []).map((f) => ({ ...f, category: f.category ?? 'Other' })),
     imports: input.imports ?? [],
-    layoverSpots: input.layoverSpots ?? [],
     settings: { ...base.settings, ...(input.settings ?? {}) },
   };
 }

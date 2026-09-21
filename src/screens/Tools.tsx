@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
-import { IconExternal, IconMap, IconPlane, IconPlus, IconShield, IconTrash } from '../components/Icons';
+import { IconExternal, IconPlane, IconPlus, IconShield, IconTrash } from '../components/Icons';
 import { Banner, Chip, KeyValue, NumberField, SelectField, TextField } from '../components/ui';
 import { useDatabase } from '../data/useStore';
 import {
@@ -36,7 +36,7 @@ export default function Tools() {
 
   return (
     <>
-      <AppBar title="Tools" />
+      <AppBar title="Tools" back="/settings" />
       <main className="page stack">
         <div className="filter-bar">
           {TOOLS.map((t) => (
@@ -55,10 +55,6 @@ export default function Tools() {
         {tool === 'convert' ? <ConvertTool /> : null}
         {tool === 'insurance' ? <InsuranceTool /> : null}
         {tool === 'lookup' ? <LookupTool /> : null}
-
-        <Link className="btn btn--ghost btn--block" to="/layover">
-          <IconMap /> Layover guide
-        </Link>
       </main>
     </>
   );
