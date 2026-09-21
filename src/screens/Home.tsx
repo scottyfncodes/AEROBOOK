@@ -40,47 +40,49 @@ export default function Home() {
     <>
       <AppBar wordmark />
       <main className="page stack stack--lg">
-        {/* The header already carries a search icon on every screen, so this
-            row is for the actions search cannot do: creating something. */}
-        <section aria-label="Quick actions">
-          <div className="quick-actions">
-            <Link className="quick-action" to="/contacts?new=1">
-              <IconPlus aria-hidden />
-              Contact
-            </Link>
-            <Link className="quick-action" to="/aircraft?new=1">
-              <IconPlane aria-hidden />
-              Aircraft
-            </Link>
-            <Link className="quick-action" to="/opportunities?new=1">
-              <IconTarget aria-hidden />
-              Opportunity
-            </Link>
-            <Link className="quick-action quick-action--primary" to="/follow-ups?new=1">
-              <IconBell aria-hidden />
-              Follow-up
-            </Link>
-            <Link className="quick-action" to="/import">
-              <IconUpload aria-hidden />
-              Import CSV
-            </Link>
-            <Link className="quick-action" to="/templates">
-              <IconMail aria-hidden />
-              Templates
-            </Link>
-          </div>
-        </section>
-
-        {!hasData ? (
-          <section className="card">
-            <EmptyState
-              icon={<IconPlane />}
-              title="Nothing in the book yet"
-              body="Import an aircraft-owner list and AEROBOOK will build the contacts, the aircraft and the link between them."
-              action={<Link className="btn btn--primary" to="/import">Import a CSV</Link>}
-            />
+        <div className="stack stack--sm">
+          {/* The header already carries a search icon on every screen, so this
+              row is for the actions search cannot do: creating something. */}
+          <section aria-label="Quick actions">
+            <div className="quick-actions">
+              <Link className="quick-action" to="/contacts?new=1">
+                <IconPlus aria-hidden />
+                Contact
+              </Link>
+              <Link className="quick-action" to="/aircraft?new=1">
+                <IconPlane aria-hidden />
+                Aircraft
+              </Link>
+              <Link className="quick-action" to="/opportunities?new=1">
+                <IconTarget aria-hidden />
+                Opportunity
+              </Link>
+              <Link className="quick-action quick-action--primary" to="/follow-ups?new=1">
+                <IconBell aria-hidden />
+                Follow-up
+              </Link>
+              <Link className="quick-action" to="/import">
+                <IconUpload aria-hidden />
+                Import CSV
+              </Link>
+              <Link className="quick-action" to="/templates">
+                <IconMail aria-hidden />
+                Templates
+              </Link>
+            </div>
           </section>
-        ) : null}
+
+          {!hasData ? (
+            <section className="card">
+              <EmptyState
+                icon={<IconPlane />}
+                title="Nothing in the book yet"
+                body="Import an aircraft-owner list and AEROBOOK will build the contacts, the aircraft and the link between them."
+                action={<Link className="btn btn--primary" to="/import">Import a CSV</Link>}
+              />
+            </section>
+          ) : null}
+        </div>
 
         {/* ------------------------------------------------------- today */}
         <section className="stack stack--sm" aria-label="Today">
