@@ -3,7 +3,7 @@ import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-d
 
 import { ToastProvider } from './components/ui';
 import { Mark } from './components/Brand';
-import { IconAeroMark, IconBell, IconPlane, IconSettings, IconUsers } from './components/Icons';
+import { IconBell, IconPlane, IconSettings, IconUsers } from './components/Icons';
 import { useDatabase, useLoaded, useSaveError } from './data/useStore';
 
 import Home from './screens/Home';
@@ -26,12 +26,11 @@ import NotFound from './screens/NotFound';
 /**
  * Five tabs, each a place records live. Opportunities, Prospects, Templates,
  * Import and Tools are reachable from the screens they belong to (Home, an
- * aircraft, a contact, Settings) rather than taking a tab of their own. Home
- * carries the AEROBOOK mark instead of a generic house icon and, like every
- * tab, always returns to that section's top rather than toggling.
+ * aircraft, a contact, Settings) rather than taking a tab of their own.
+ * Every tab always returns to that section's top rather than toggling.
  */
 const TABS = [
-  { to: '/', label: 'Home', Icon: IconAeroMark, end: true, ariaLabel: 'AEROBOOK Home' },
+  { to: '/', label: 'Home', Icon: IconPlane, end: true, ariaLabel: 'AEROBOOK Home' },
   { to: '/aircraft', label: 'Aircraft', Icon: IconPlane, end: false },
   { to: '/contacts', label: 'Contacts', Icon: IconUsers, end: false },
   { to: '/follow-ups', label: 'Follow-ups', Icon: IconBell, end: false },
