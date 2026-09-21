@@ -136,6 +136,40 @@ describe('opportunities, activities and follow-ups', () => {
     expect(store.getState().followUps[0].completed).toBe(false);
     expect(store.getState().followUps[0].dueDate).toBe(addDays(14));
   });
+
+  it('edits a note in place — same id, same links, same createdAt, updatedAt moves', async () => {
+    const c = store.createContact({ firstName: 'John' });
+    const logged = store.logActivity({ type: 'Note', subject: 'First cut', notes: 'Wants a quote', contactId: c.id });
+    expect(logged.updatedAt).toBe(logged.createdAt);
+
+    await new Promise((r) => setTimeout(r, 2));
+    store.updateActivity(logged.id, { subject: 'First cut (revised)', notes: 'Wants a quote by Friday' });
+
+    const edited = store.getState().activities.find((a) => a.id === logged.id)!;
+    expect(store.getState().activities).toHaveLength(1); // in place, not a duplicate
+    expect(edited.id).toBe(logged.id);
+    expect(edited.contactId).toBe(c.id);
+    expect(edited.createdAt).toBe(logged.createdAt);
+    expect(edited.subject).toBe('First cut (revised)');
+    expect(edited.notes).toBe('Wants a quote by Friday');
+    expect(edited.updatedAt > edited.createdAt).toBe(true);
+  });
+
+  it('an edited note survives a reload', async () => {
+    const c = store.createContact({ firstName: 'John' });
+    const logged = store.logActivity({ type: 'Note', subject: 'Original', contactId: c.id });
+    await new Promise((r) => setTimeout(r, 2));
+    store.updateActivity(logged.id, { subject: 'Revised after the call' });
+    await store.flush();
+
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+
+    const reloaded = store.getState().activities.find((a) => a.id === logged.id)!;
+    expect(reloaded.subject).toBe('Revised after the call');
+    expect(reloaded.id).toBe(logged.id);
+    expect(reloaded.updatedAt).not.toBe(reloaded.createdAt);
+  });
 });
 
 describe('templates', () => {
@@ -200,6 +234,150 @@ describe('persistence', () => {
     await store.eraseEverything();
     expect(store.getState().contacts).toEqual([]);
     expect(store.getState().templates).toHaveLength(defaultTemplates('').length);
+  });
+
+  it('persists a v1 migration immediately, so reloading before any other edit does not regenerate it', async () => {
+    // A raw v1 document, exactly as an old version of the app would have left
+    // it on disk — nothing has migrated or saved yet.
+    const v1 = {
+      version: 1,
+      contacts: [],
+      aircraft: [],
+      opportunities: [
+        {
+          id: 'o1', contactId: null, aircraftId: null, type: 'Insurance', status: 'Open',
+          title: 'Renewal', openedAt: '', followUpDate: '2026-03-01', notes: '', createdAt: '', updatedAt: '',
+        },
+      ],
+      activities: [], followUps: [], templates: [], files: [], imports: [], settings: {},
+    };
+    await persistence.saveDatabase(v1 as never);
+
+    await store.init();
+    const firstLoadFollowUps = store.getState().followUps;
+    expect(firstLoadFollowUps).toHaveLength(1);
+
+    // Reload again without the user having touched anything in between.
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+    const secondLoadFollowUps = store.getState().followUps;
+
+    expect(secondLoadFollowUps).toHaveLength(1);
+    expect(secondLoadFollowUps[0].id).toBe(firstLoadFollowUps[0].id);
+  });
+});
+
+describe('regression: notes, documents and the timeline survive navigation and reload', () => {
+  function makeFile(name: string, contents: string): File {
+    return new File([contents], name, { type: 'text/plain' });
+  }
+
+  it('a deleted timeline item stays deleted after reload', async () => {
+    const c = store.createContact({ firstName: 'Jamie' });
+    const a1 = store.logActivity({ type: 'Note', subject: 'Keep this one', contactId: c.id });
+    const a2 = store.logActivity({ type: 'Note', subject: 'Delete this one', contactId: c.id });
+    store.deleteActivity(a2.id);
+    await store.flush();
+
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+
+    const ids = store.getState().activities.map((a) => a.id);
+    expect(ids).toContain(a1.id);
+    expect(ids).not.toContain(a2.id);
+  });
+
+  it('a follow-up deleted from the timeline stays deleted after reload', async () => {
+    const c = store.createContact({ firstName: 'Jamie' });
+    const f = store.createFollowUp({ contactId: c.id, dueDate: addDays(3), note: 'Call back' });
+    store.deleteFollowUp(f.id);
+    await store.flush();
+
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+
+    expect(store.getState().followUps.find((x) => x.id === f.id)).toBeUndefined();
+  });
+
+  it('notes added to a second contact stay attached to it, not the first', async () => {
+    const a = store.createContact({ firstName: 'Alpha' });
+    const b = store.createContact({ firstName: 'Bravo' });
+
+    store.logActivity({ type: 'Note', subject: 'About Alpha', contactId: a.id });
+    store.logActivity({ type: 'Note', subject: 'About Bravo 1', contactId: b.id });
+    store.logActivity({ type: 'Note', subject: 'About Bravo 2', contactId: b.id });
+    await store.flush();
+
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+
+    const db = store.getState();
+    const aliceNotes = db.activities.filter((x) => x.contactId === a.id);
+    const bravoNotes = db.activities.filter((x) => x.contactId === b.id);
+    expect(aliceNotes.map((n) => n.subject)).toEqual(['About Alpha']);
+    expect(bravoNotes.map((n) => n.subject).sort()).toEqual(['About Bravo 1', 'About Bravo 2']);
+  });
+
+  it('uploading two documents keeps both, attached to the right contact, after reload', async () => {
+    const a = store.createContact({ firstName: 'Alpha' });
+    const b = store.createContact({ firstName: 'Bravo' });
+
+    const docA = await store.addFile(makeFile('a.pdf', 'contents A'), { contactId: a.id });
+    const docB1 = await store.addFile(makeFile('b1.pdf', 'contents B1'), { contactId: b.id });
+    const docB2 = await store.addFile(makeFile('b2.pdf', 'contents B2'), { contactId: b.id });
+    await store.flush();
+
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+
+    const db = store.getState();
+    expect(db.files.filter((f) => f.contactId === a.id).map((f) => f.id)).toEqual([docA.id]);
+    expect(db.files.filter((f) => f.contactId === b.id).map((f) => f.id).sort()).toEqual([docB1.id, docB2.id].sort());
+
+    // The blobs themselves — not just the metadata rows — are still there.
+    const blobA = await store.getFile(docA.id);
+    const blobB2 = await store.getFile(docB2.id);
+    expect(await blobA?.text()).toBe('contents A');
+    expect(await blobB2?.text()).toBe('contents B2');
+  });
+
+  it('removing a document is durable and does not resurrect on reload', async () => {
+    const c = store.createContact({ firstName: 'Jamie' });
+    const doc = await store.addFile(makeFile('gone.pdf', 'x'), { contactId: c.id });
+    await store.removeFile(doc.id);
+    await store.flush();
+
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+
+    expect(store.getState().files.find((f) => f.id === doc.id)).toBeUndefined();
+    expect(await store.getFile(doc.id)).toBeUndefined();
+  });
+
+  it('a whole session on one contact — notes, an edit, and documents — survives leaving and returning', async () => {
+    const other = store.createContact({ firstName: 'Someone Else' });
+    store.logActivity({ type: 'Note', subject: 'Unrelated', contactId: other.id });
+
+    const c = store.createContact({ firstName: 'Working Contact' });
+    const n1 = store.logActivity({ type: 'Note', subject: 'First note', contactId: c.id });
+    store.logActivity({ type: 'Note', subject: 'Second note', contactId: c.id });
+    await new Promise((r) => setTimeout(r, 2));
+    store.updateActivity(n1.id, { subject: 'First note, revised' });
+    await store.addFile(makeFile('doc1.pdf', 'one'), { contactId: c.id });
+    await store.addFile(makeFile('doc2.pdf', 'two'), { contactId: c.id });
+
+    // Leave the contact and come back (in the real app: navigate away, then back).
+    await store.flush();
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+
+    const db = store.getState();
+    const notes = db.activities.filter((a) => a.contactId === c.id);
+    expect(notes.map((n) => n.subject).sort()).toEqual(['First note, revised', 'Second note']);
+    expect(notes.find((n) => n.id === n1.id)?.updatedAt).not.toBe(notes.find((n) => n.id === n1.id)?.createdAt);
+    expect(db.files.filter((f) => f.contactId === c.id)).toHaveLength(2);
+    // The unrelated contact's own note was not disturbed by any of this.
+    expect(db.activities.filter((a) => a.contactId === other.id)).toHaveLength(1);
   });
 });
 

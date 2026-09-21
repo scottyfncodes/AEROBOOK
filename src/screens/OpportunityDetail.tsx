@@ -14,7 +14,7 @@ import { useDatabase } from '../data/useStore';
 import { deleteActivity, deleteOpportunity, updateOpportunity } from '../data/store';
 import {
   OPPORTUNITY_STATUSES, OPPORTUNITY_TYPES,
-  type FollowUp, type OpportunityStatus, type OpportunityType,
+  type Activity, type FollowUp, type OpportunityStatus, type OpportunityType,
 } from '../data/types';
 import { nextFollowUpFor, timelineFor } from '../lib/selectors';
 import { policiesFor } from '../lib/insurance';
@@ -30,6 +30,7 @@ export default function OpportunityDetail() {
   const opportunity = db.opportunities.find((o) => o.id === id);
   const [sheet, setSheet] = useState<'edit' | 'activity' | 'followUp' | 'email' | null>(null);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
+  const [editingActivity, setEditingActivity] = useState<Activity | undefined>();
 
   const timeline = useMemo(
     () => (opportunity ? timelineFor(db, { opportunityId: opportunity.id }) : { activities: [], followUps: [] }),
@@ -130,7 +131,7 @@ export default function OpportunityDetail() {
           <button className="btn btn--primary" onClick={() => setSheet('email')} disabled={!contact}>
             <IconMail /> Email
           </button>
-          <button className="btn" onClick={() => setSheet('activity')}>
+          <button className="btn" onClick={() => { setEditingActivity(undefined); setSheet('activity'); }}>
             <IconNote /> Log activity
           </button>
           <button className="btn" onClick={() => { setEditingFollowUp(undefined); setSheet('followUp'); }}>
@@ -171,6 +172,7 @@ export default function OpportunityDetail() {
             activities={timeline.activities}
             followUps={timeline.followUps}
             onDeleteActivity={(activityId) => { deleteActivity(activityId); toast('Removed from the timeline'); }}
+            onEditActivity={(activity) => { setEditingActivity(activity); setSheet('activity'); }}
           />
         </section>
 
@@ -197,7 +199,8 @@ export default function OpportunityDetail() {
       {sheet === 'activity' ? (
         <ActivitySheet
           links={{ opportunityId: opportunity.id, contactId: contact?.id ?? null, aircraftId: aircraft?.id ?? null }}
-          onClose={() => setSheet(null)}
+          existing={editingActivity}
+          onClose={() => { setSheet(null); setEditingActivity(undefined); }}
         />
       ) : null}
       {sheet === 'followUp' ? (

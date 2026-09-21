@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
@@ -7,6 +7,7 @@ import { Banner, ConfirmButton, KeyValue, SelectField, TextField, useToast } fro
 import { Mark } from '../components/Brand';
 import { useDatabase } from '../data/useStore';
 import { eraseEverything, flush, replaceDatabase, updateSettings } from '../data/store';
+import { isStoragePersisted } from '../data/db';
 import {
   aircraftCsv, contactsCsv, downloadText, exportFilename, fullJson, opportunitiesCsv, parseFullJson,
   policiesCsv,
@@ -17,6 +18,11 @@ export default function Settings() {
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState('');
+  const [persisted, setPersisted] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void isStoragePersisted().then(setPersisted);
+  }, []);
 
   const s = db.settings;
 
@@ -175,6 +181,13 @@ export default function Settings() {
             AEROBOOK keeps everything in this browser on this device. Nothing is uploaded and there is no account.
             That means clearing your browser data deletes it — export a backup from time to time.
           </Banner>
+          {persisted === false ? (
+            <Banner tone="warn">
+              This browser has not granted AEROBOOK protected storage, so it can clear this data on its own
+              under low disk space without asking. Visiting and using the app normally usually earns that
+              protection over time; exporting a backup is the reliable safeguard either way.
+            </Banner>
+          ) : null}
           <ConfirmButton
             label="Erase all AEROBOOK data"
             confirmLabel="Tap again — this cannot be undone"

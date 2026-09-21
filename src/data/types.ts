@@ -270,6 +270,8 @@ export interface Activity {
   subject: string;
   notes: string;
   createdAt: string;
+  /** Equal to createdAt until the entry is edited in place. */
+  updatedAt: string;
 }
 
 export interface FollowUp {

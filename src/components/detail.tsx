@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import {
-  IconAlert, IconCalendar, IconCheck, IconClock, IconDoc, IconExternal, IconMail, IconNote,
+  IconAlert, IconCalendar, IconCheck, IconClock, IconDoc, IconEdit, IconExternal, IconMail, IconNote,
   IconPhone, IconPlus, IconTarget, IconTrash, IconUpload,
 } from './Icons';
 import { Banner, Chip, EmptyState, SelectField, Sheet, TextArea, TextField, useToast } from './ui';
@@ -16,7 +16,7 @@ import type {
 import { ACTIVITY_TYPES, DOCUMENT_CATEGORIES } from '../data/types';
 import {
   addFile, completeFollowUp, createFollowUp, deleteFollowUp, getFile, logActivity, removeFile,
-  updateFollowUp,
+  updateActivity, updateFollowUp,
 } from '../data/store';
 import { addDays, formatDate, relativeDue, todayKey } from '../lib/dates';
 import type { ExternalLink } from '../lib/links';
@@ -49,10 +49,12 @@ export function Timeline({
   activities,
   followUps,
   onDeleteActivity,
+  onEditActivity,
 }: {
   activities: Activity[];
   followUps: FollowUp[];
   onDeleteActivity?: (id: string) => void;
+  onEditActivity?: (activity: Activity) => void;
 }) {
   type Entry =
     | { kind: 'activity'; at: string; activity: Activity }
@@ -88,6 +90,7 @@ export function Timeline({
           }
           const a = entry.activity;
           const Icon = ACTIVITY_ICON[a.type] ?? IconNote;
+          const edited = Boolean(a.updatedAt && a.updatedAt !== a.createdAt);
           return (
             <div className="timeline__item" key={`a${a.id}`}>
               <div className="timeline__dot"><Icon /></div>
@@ -96,16 +99,32 @@ export function Timeline({
                   <span className="strong small truncate">{a.subject || a.type}</span>
                   <span className="xsmall muted nowrap">{formatDate(a.date)}</span>
                 </div>
-                <div className="xsmall muted">{a.type}</div>
+                <div className="xsmall muted">
+                  {a.type}
+                  {edited ? <span className="timeline__edited" title={`Edited ${formatDate(a.updatedAt)}`}>· Edited</span> : null}
+                </div>
                 {a.notes ? <TimelineNote text={a.notes} /> : null}
-                {onDeleteActivity ? (
-                  <button
-                    className="timeline__remove"
-                    onClick={() => onDeleteActivity(a.id)}
-                    aria-label={`Remove "${a.subject || a.type}" from the timeline`}
-                  >
-                    <IconTrash />
-                  </button>
+                {onEditActivity || onDeleteActivity ? (
+                  <div className="timeline__actions">
+                    {onEditActivity ? (
+                      <button
+                        className="timeline__edit"
+                        onClick={() => onEditActivity(a)}
+                        aria-label={`Edit "${a.subject || a.type}"`}
+                      >
+                        <IconEdit />
+                      </button>
+                    ) : null}
+                    {onDeleteActivity ? (
+                      <button
+                        className="timeline__remove"
+                        onClick={() => onDeleteActivity(a.id)}
+                        aria-label={`Remove "${a.subject || a.type}" from the timeline`}
+                      >
+                        <IconTrash />
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -157,35 +176,43 @@ export function ActivitySheet({
   links,
   defaultType = 'Note',
   defaultSubject = '',
-  title = 'Log activity',
+  title,
+  existing,
   onClose,
 }: {
   links: Links;
   defaultType?: ActivityType;
   defaultSubject?: string;
   title?: string;
+  /** Editing this entry in place, rather than logging a new one. */
+  existing?: Activity;
   onClose: () => void;
 }) {
   const toast = useToast();
-  const [type, setType] = useState<ActivityType>(defaultType);
-  const [subject, setSubject] = useState(defaultSubject);
-  const [date, setDate] = useState(todayKey());
-  const [notes, setNotes] = useState('');
+  const [type, setType] = useState<ActivityType>(existing?.type ?? defaultType);
+  const [subject, setSubject] = useState(existing?.subject ?? defaultSubject);
+  const [date, setDate] = useState(existing?.date ?? todayKey());
+  const [notes, setNotes] = useState(existing?.notes ?? '');
 
   const save = () => {
-    logActivity({ ...links, type, subject: subject.trim() || type, notes: notes.trim(), date });
-    toast(`${type} recorded`);
+    if (existing) {
+      updateActivity(existing.id, { type, subject: subject.trim() || type, notes: notes.trim(), date });
+      toast('Updated');
+    } else {
+      logActivity({ ...links, type, subject: subject.trim() || type, notes: notes.trim(), date });
+      toast(`${type} recorded`);
+    }
     onClose();
   };
 
   return (
     <Sheet
-      title={title}
+      title={title ?? (existing ? 'Edit note' : 'Log activity')}
       onClose={onClose}
       footer={
         <>
           <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn--primary" onClick={save}>Record</button>
+          <button className="btn btn--primary" onClick={save}>{existing ? 'Save' : 'Record'}</button>
         </>
       }
     >

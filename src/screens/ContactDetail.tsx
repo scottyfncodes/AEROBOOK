@@ -20,7 +20,7 @@ import { useDatabase } from '../data/useStore';
 import { deleteActivity, deleteContact, updateContact } from '../data/store';
 import {
   CONTACT_STATUSES, CONTACT_TYPES, INTENT_LEVELS, PROSPECT_STATUSES, emptyIntent, hasIntent,
-  type ContactIntent, type ContactStatus, type ContactType, type FollowUp, type IntentLevel,
+  type Activity, type ContactIntent, type ContactStatus, type ContactType, type FollowUp, type IntentLevel,
   type ProspectStatus,
 } from '../data/types';
 import { aircraftOf, nextMove, opportunitiesFor, timelineFor } from '../lib/selectors';
@@ -42,6 +42,7 @@ export default function ContactDetail() {
   >(null);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
   const [followUpNote, setFollowUpNote] = useState('');
+  const [editingActivity, setEditingActivity] = useState<Activity | undefined>();
 
   const timeline = useMemo(
     () => (contact ? timelineFor(db, { contactId: contact.id }) : { activities: [], followUps: [] }),
@@ -126,7 +127,7 @@ export default function ContactDetail() {
           >
             <IconNote /> Text
           </a>
-          <button className="btn" onClick={() => setSheet('activity')}>
+          <button className="btn" onClick={() => { setEditingActivity(undefined); setSheet('activity'); }}>
             <IconNote /> Log activity
           </button>
           <button
@@ -314,6 +315,7 @@ export default function ContactDetail() {
             activities={timeline.activities}
             followUps={timeline.followUps}
             onDeleteActivity={(activityId) => { deleteActivity(activityId); toast('Removed from the timeline'); }}
+            onEditActivity={(activity) => { setEditingActivity(activity); setSheet('activity'); }}
           />
         </section>
 
@@ -351,7 +353,8 @@ export default function ContactDetail() {
       {sheet === 'activity' ? (
         <ActivitySheet
           links={{ contactId: contact.id, aircraftId: primaryAircraft?.id ?? null }}
-          onClose={() => setSheet(null)}
+          existing={editingActivity}
+          onClose={() => { setSheet(null); setEditingActivity(undefined); }}
         />
       ) : null}
       {sheet === 'followUp' ? (

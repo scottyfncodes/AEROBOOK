@@ -479,6 +479,7 @@ export function applyImport(
       subject: `Imported from ${options.filename}`,
       notes: '',
       createdAt: now,
+      updatedAt: now,
     });
   }
 

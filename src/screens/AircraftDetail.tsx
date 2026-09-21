@@ -16,7 +16,9 @@ import {
 } from '../components/ui';
 import { useDatabase } from '../data/useStore';
 import { deleteActivity, deleteAircraft, setAircraftOwner, updateAircraft } from '../data/store';
-import { AIRCRAFT_STATUSES, type AircraftStatus, type FollowUp, type InsurancePolicy } from '../data/types';
+import {
+  AIRCRAFT_STATUSES, type Activity, type AircraftStatus, type FollowUp, type InsurancePolicy,
+} from '../data/types';
 import { isOpen, nextMove, opportunitiesFor, ownerOf, previousOwners, timelineFor } from '../lib/selectors';
 import { policiesFor, policyState } from '../lib/insurance';
 import { displayName } from '../lib/names';
@@ -38,6 +40,7 @@ export default function AircraftDetail() {
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
   const [followUpNote, setFollowUpNote] = useState('');
   const [followUpPolicyId, setFollowUpPolicyId] = useState<string | null>(null);
+  const [editingActivity, setEditingActivity] = useState<Activity | undefined>();
 
   const timeline = useMemo(
     () => (aircraft ? timelineFor(db, { aircraftId: aircraft.id }) : { activities: [], followUps: [] }),
@@ -197,7 +200,7 @@ export default function AircraftDetail() {
           >
             <IconPhone /> Call
           </a>
-          <button className="btn" onClick={() => setSheet('activity')}>
+          <button className="btn" onClick={() => { setEditingActivity(undefined); setSheet('activity'); }}>
             <IconNote /> Add note
           </button>
           <button className="btn" onClick={() => openFollowUp(`Follow up on ${aircraft.tailNumber}`)}>
@@ -294,6 +297,7 @@ export default function AircraftDetail() {
             activities={timeline.activities}
             followUps={timeline.followUps}
             onDeleteActivity={(activityId) => { deleteActivity(activityId); toast('Removed from the timeline'); }}
+            onEditActivity={(activity) => { setEditingActivity(activity); setSheet('activity'); }}
           />
         </section>
 
@@ -352,7 +356,8 @@ export default function AircraftDetail() {
         <ActivitySheet
           links={{ aircraftId: aircraft.id, contactId: owner?.id ?? null }}
           defaultSubject={aircraft.tailNumber}
-          onClose={() => setSheet(null)}
+          existing={editingActivity}
+          onClose={() => { setSheet(null); setEditingActivity(undefined); }}
         />
       ) : null}
       {sheet === 'followUp' ? (

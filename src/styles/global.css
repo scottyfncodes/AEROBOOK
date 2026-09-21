@@ -729,14 +729,19 @@ button, input, select, textarea {
 
 .sticky-actions > .btn { flex: 1; }
 
-.timeline__remove {
-  /* Block-level flex so the auto left margin pushes it to the right edge. */
+.timeline__actions {
+  display: flex;
+  margin: 6px -6px -4px auto;
+}
+
+.timeline__remove,
+.timeline__edit {
+  /* Block-level flex so the auto left margin pushes the group to the right edge. */
   display: flex;
   align-items: center;
   justify-content: center;
   width: 32px;
   height: 32px;
-  margin: 6px -6px -4px auto;
   padding: 0;
   background: none;
   border: none;
@@ -747,8 +752,13 @@ button, input, select, textarea {
   transition: opacity 0.14s var(--ease), color 0.14s var(--ease), background 0.14s var(--ease);
 }
 
-.timeline__remove svg { width: 15px; height: 15px; }
+.timeline__remove svg, .timeline__edit svg { width: 15px; height: 15px; }
 .timeline__remove:hover { opacity: 1; color: var(--danger); background: var(--danger-dim); }
+.timeline__edit:hover { opacity: 1; color: var(--accent); background: var(--accent-dim); }
+
+.timeline__edited {
+  margin-left: 6px;
+}
 
 .timeline__more {
   margin-top: 4px;

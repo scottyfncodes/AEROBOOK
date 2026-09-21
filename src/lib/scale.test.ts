@@ -108,6 +108,7 @@ function bigDatabase(): Database {
       subject: `Call ${i}`,
       notes: '',
       createdAt: '',
+      updatedAt: '',
     });
   }
   for (let i = 0; i < FOLLOW_UPS; i += 1) {

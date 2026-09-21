@@ -52,16 +52,55 @@ function openDb(): Promise<IDBDatabase> {
   return openPromise;
 }
 
+/**
+ * Resolves on the transaction's `oncomplete`, not the request's `onsuccess` —
+ * a request can report success before the transaction that carries it has
+ * actually committed. For a write that matters (this is the only place one
+ * happens), waiting for the commit is what makes "the save finished" true.
+ */
 function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   return openDb().then(
     (db) =>
       new Promise<T>((resolve, reject) => {
         const transaction = db.transaction(store, mode);
         const request = fn(transaction.objectStore(store));
-        request.onsuccess = () => resolve(request.result);
+        let result: T;
+        request.onsuccess = () => {
+          result = request.result;
+        };
         request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
+        transaction.oncomplete = () => resolve(result);
+        transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'));
+        transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'));
       }),
   );
+}
+
+/**
+ * Ask the browser not to evict this origin's storage under disk pressure.
+ * Without this, IndexedDB is "best-effort" storage that some browsers clear
+ * automatically (least-recently-used eviction, or Safari's inactivity
+ * cleanup) — which looks exactly like notes and documents "disappearing"
+ * days later, with no error and nothing in the console. This is best-effort
+ * itself: the browser can refuse, and there is no way to force it.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  try {
+    if (!navigator.storage?.persist) return false;
+    if (await navigator.storage.persisted()) return true;
+    return await navigator.storage.persist();
+  } catch {
+    return false;
+  }
+}
+
+export async function isStoragePersisted(): Promise<boolean | null> {
+  try {
+    if (!navigator.storage?.persisted) return null;
+    return await navigator.storage.persisted();
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -181,7 +220,7 @@ export function migrate(raw: unknown): Database {
     aircraft: (input.aircraft ?? []).map((a) => ({ ...a, ownerships: a.ownerships ?? [], custom: a.custom ?? {} })),
     opportunities,
     policies,
-    activities: input.activities ?? [],
+    activities: (input.activities ?? []).map((a) => ({ ...a, updatedAt: a.updatedAt ?? a.createdAt })),
     followUps,
     templates: input.templates ?? [],
     files: (input.files ?? []).map((f) => ({ ...f, category: f.category ?? 'Other' })),

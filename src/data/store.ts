@@ -120,6 +120,17 @@ export async function init(): Promise<void> {
   state = db;
   loaded = true;
   emit();
+  // loadDatabase() runs the version migration on whatever was on disk, but
+  // does not itself write the result back. Until something else happens to
+  // save, the stored document is still in its old shape — so a reload right
+  // now would migrate the same old document again, generating a *new* id for
+  // anything the migration derives (see db.ts). Saving once, right after
+  // load, makes the migration durable immediately instead of leaving that
+  // window open for however long it takes the user to make their first edit.
+  scheduleSave();
+  // Best-effort: ask the browser not to evict this origin's storage under
+  // disk pressure. Does not block first paint either way.
+  void persistence.requestPersistentStorage();
 }
 
 /** Test seam. */
@@ -392,6 +403,7 @@ export function logActivity(input: {
     subject: input.subject,
     notes: input.notes ?? '',
     createdAt: now,
+    updatedAt: now,
   };
   set((db) => ({
     ...db,
@@ -402,6 +414,20 @@ export function logActivity(input: {
         : db.contacts,
   }));
   return activity;
+}
+
+/**
+ * Edits a timeline entry in place — same id, same links, same createdAt.
+ * Only what the user can actually change through the sheet moves.
+ */
+export function updateActivity(
+  id: string,
+  patch: { type?: ActivityType; subject?: string; notes?: string; date?: string },
+): void {
+  set((db) => ({
+    ...db,
+    activities: db.activities.map((a) => (a.id === id ? { ...a, ...patch, updatedAt: nowIso() } : a)),
+  }));
 }
 
 export function deleteActivity(id: string): void {
