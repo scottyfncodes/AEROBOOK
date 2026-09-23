@@ -86,6 +86,44 @@ function set(updater: (db: Database) => Database): void {
   scheduleSave();
 }
 
+/**
+ * `set` for deleting a record: a file row the deletion dropped takes its blob
+ * with it, or the bytes would sit in IndexedDB with nothing left that could
+ * show or remove them. Only deletions do this — a backup restore also replaces
+ * the file list, and restoring a newer backup afterwards must find the blobs
+ * still there. Best-effort: a blob that fails to delete is unreachable anyway.
+ */
+function remove(updater: (db: Database) => Database): void {
+  const before = state.files;
+  set(updater);
+  const kept = new Set(state.files.map((f) => f.id));
+  for (const f of before) {
+    if (!kept.has(f.id)) persistence.deleteFileBlob(f.id).catch(() => undefined);
+  }
+}
+
+type Link = 'contactId' | 'aircraftId' | 'opportunityId';
+type Linked = Record<Link, string | null> & { insurancePolicyId?: string | null };
+
+/**
+ * Detach records from something being deleted. A record that still points at
+ * another contact, aircraft, opportunity or policy stays, with the dead link
+ * cleared — leaving it would send the user to a page that no longer exists.
+ * A record that pointed only at the deleted one goes with it.
+ */
+function unlink<T extends Linked>(records: T[], key: Link, id: string): T[] {
+  const out: T[] = [];
+  for (const r of records) {
+    if (r[key] !== id) {
+      out.push(r);
+      continue;
+    }
+    const next: T = { ...r, [key]: null };
+    if (next.contactId || next.aircraftId || next.opportunityId || next.insurancePolicyId) out.push(next);
+  }
+  return out;
+}
+
 export function subscribe(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -173,7 +211,7 @@ export function updateContact(id: string, patch: Partial<Contact>): void {
 
 /** Removes the contact and detaches it from aircraft, opportunities and tasks. */
 export function deleteContact(id: string): void {
-  set((db) => ({
+  remove((db) => ({
     ...db,
     contacts: db.contacts.filter((c) => c.id !== id),
     aircraft: db.aircraft.map((a) =>
@@ -183,8 +221,9 @@ export function deleteContact(id: string): void {
     ),
     opportunities: db.opportunities.map((o) => (o.contactId === id ? { ...o, contactId: null } : o)),
     policies: db.policies.map((p) => (p.contactId === id ? { ...p, contactId: null } : p)),
-    activities: db.activities.filter((a) => a.contactId !== id || a.aircraftId || a.opportunityId),
-    followUps: db.followUps.filter((f) => f.contactId !== id || f.aircraftId || f.opportunityId),
+    activities: unlink(db.activities, 'contactId', id),
+    followUps: unlink(db.followUps, 'contactId', id),
+    files: unlink(db.files, 'contactId', id),
   }));
 }
 
@@ -228,15 +267,21 @@ export function updateAircraft(id: string, patch: Partial<Aircraft>): void {
 }
 
 export function deleteAircraft(id: string): void {
-  set((db) => ({
-    ...db,
-    aircraft: db.aircraft.filter((a) => a.id !== id),
-    opportunities: db.opportunities.map((o) => (o.aircraftId === id ? { ...o, aircraftId: null } : o)),
+  remove((db) => {
     // A policy without its aircraft is a renewal nobody can act on.
-    policies: db.policies.filter((p) => p.aircraftId !== id),
-    activities: db.activities.filter((a) => a.aircraftId !== id || a.contactId || a.opportunityId),
-    followUps: db.followUps.filter((f) => f.aircraftId !== id || f.contactId || f.opportunityId),
-  }));
+    const gone = new Set(db.policies.filter((p) => p.aircraftId === id).map((p) => p.id));
+    const forgetPolicy = <T extends { insurancePolicyId?: string | null }>(r: T): T =>
+      r.insurancePolicyId && gone.has(r.insurancePolicyId) ? { ...r, insurancePolicyId: null } : r;
+    return {
+      ...db,
+      aircraft: db.aircraft.filter((a) => a.id !== id),
+      opportunities: db.opportunities.map((o) => (o.aircraftId === id ? { ...o, aircraftId: null } : o)),
+      policies: db.policies.filter((p) => !gone.has(p.id)),
+      activities: unlink(db.activities, 'aircraftId', id),
+      followUps: unlink(db.followUps.map(forgetPolicy), 'aircraftId', id),
+      files: unlink(db.files.map(forgetPolicy), 'aircraftId', id),
+    };
+  });
 }
 
 /** Make `contactId` the current owner, retiring the previous owner's record. */
@@ -294,13 +339,14 @@ export function updateOpportunity(id: string, patch: Partial<Opportunity>): void
 }
 
 export function deleteOpportunity(id: string): void {
-  set((db) => ({
+  remove((db) => ({
     ...db,
     opportunities: db.opportunities.filter((o) => o.id !== id),
     // The policy outlives the deal it was being worked under.
     policies: db.policies.map((p) => (p.opportunityId === id ? { ...p, opportunityId: null } : p)),
-    activities: db.activities.map((a) => (a.opportunityId === id ? { ...a, opportunityId: null } : a)),
-    followUps: db.followUps.filter((f) => f.opportunityId !== id || f.contactId || f.aircraftId),
+    activities: unlink(db.activities, 'opportunityId', id),
+    followUps: unlink(db.followUps, 'opportunityId', id),
+    files: unlink(db.files, 'opportunityId', id),
   }));
 }
 
@@ -398,7 +444,12 @@ export function logActivity(input: {
     activities: [...db.activities, activity],
     contacts:
       activity.contactId && ['Email', 'Call', 'Text', 'Meeting'].includes(activity.type)
-        ? db.contacts.map((c) => (c.id === activity.contactId ? { ...c, lastContactedAt: activity.date } : c))
+        ? db.contacts.map((c) =>
+            // A back-dated call is history, not news: it never moves the date backwards.
+            c.id === activity.contactId && (c.lastContactedAt ?? '') < activity.date
+              ? { ...c, lastContactedAt: activity.date }
+              : c,
+          )
         : db.contacts,
   }));
   return activity;

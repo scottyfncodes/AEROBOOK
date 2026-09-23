@@ -79,12 +79,12 @@ await page.waitForSelector('.quick-actions');
 log('home loaded:', await page.title());
 if (!(await page.getByText('Nothing in the book yet').isVisible())) errors.push('empty state missing on home');
 await checkOverflow('home empty');
-// The mark and the signature are CSS masks, not inline SVG: check that each
-// element has real size and that its mask actually points at the traced
-// asset (a 404'd background-image degrades silently, a 404'd mask does not
+// The footer signature is a CSS mask, not inline SVG (the app bar is plain
+// text now): check that it has real size and that its mask actually points
+// at the traced asset (a 404'd background-image degrades silently, a 404'd mask does not
 // even fail loudly — the box just renders empty).
 const markBox = await page.evaluate(() => {
-  const els = [...document.querySelectorAll('.appbar__brand .mark, .colophon .signature')];
+  const els = [...document.querySelectorAll('.colophon .signature')];
   return els.map((el) => {
     const r = el.getBoundingClientRect();
     const style = getComputedStyle(el);
@@ -93,8 +93,8 @@ const markBox = await page.evaluate(() => {
   });
 });
 if (
-  markBox.length < 2 ||
-  markBox.some((m) => m.w < 12 || m.h < 8 || !/mark\.svg|signature\.svg/.test(m.mask))
+  markBox.length < 1 ||
+  markBox.some((m) => m.w < 12 || m.h < 8 || !/signature\.svg/.test(m.mask))
 ) {
   errors.push(`brand mark did not render: ${JSON.stringify(markBox)}`);
 }
@@ -492,7 +492,7 @@ const tabs = await page.locator('.tabbar__item').evaluateAll((els) =>
   els.map((el) => ({ label: el.querySelector('span')?.textContent, aria: el.getAttribute('aria-label') })),
 );
 log('nav tabs:', tabs.map((t) => t.label).join(' | '));
-const expectedTabs = ['Home', 'Aircraft', 'Contacts', 'Follow-ups', 'Settings'];
+const expectedTabs = ['Home', 'Aircraft', 'Contacts', 'Follow-up', 'Settings'];
 if (tabs.map((t) => t.label).join('|') !== expectedTabs.join('|')) {
   errors.push(`tab bar reads "${tabs.map((t) => t.label).join(' | ')}", expected "${expectedTabs.join(' | ')}"`);
 }

@@ -120,6 +120,13 @@ describe('opportunities, activities and follow-ups', () => {
     expect(store.getState().contacts[0].lastContactedAt).toBe('2026-09-19');
   });
 
+  it('never moves last-contacted backwards for a back-dated call', () => {
+    const c = store.createContact({ firstName: 'John' });
+    store.logActivity({ type: 'Email', subject: 'RE: N917JH', contactId: c.id, date: '2026-09-19' });
+    store.logActivity({ type: 'Call', subject: 'Last month', contactId: c.id, date: '2026-08-02' });
+    expect(store.getState().contacts[0].lastContactedAt).toBe('2026-09-19');
+  });
+
   it('does not stamp last-contacted for a note', () => {
     const c = store.createContact({ firstName: 'John' });
     store.logActivity({ type: 'Note', subject: 'Thinking about it', contactId: c.id });
@@ -135,6 +142,72 @@ describe('opportunities, activities and follow-ups', () => {
     store.updateFollowUp(f.id, { dueDate: addDays(14), completed: false, completedAt: undefined });
     expect(store.getState().followUps[0].completed).toBe(false);
     expect(store.getState().followUps[0].dueDate).toBe(addDays(14));
+  });
+});
+
+describe('deleting a record', () => {
+  it('clears the dead link on records it shares with something else', () => {
+    const contact = store.createContact({ firstName: 'John' });
+    const aircraft = store.createAircraft({ tailNumber: 'N917JH' });
+    const opportunity = store.createOpportunity({ contactId: contact.id, title: 'Renewal' });
+    store.logActivity({ type: 'Email', subject: 'Both', contactId: contact.id, aircraftId: aircraft.id });
+    store.createFollowUp({ dueDate: '2026-10-01', note: 'Call', contactId: contact.id, opportunityId: opportunity.id });
+
+    store.deleteAircraft(aircraft.id);
+    store.deleteOpportunity(opportunity.id);
+
+    const [activity] = store.getState().activities;
+    expect(activity.aircraftId).toBeNull();
+    expect(activity.contactId).toBe(contact.id);
+    const [followUp] = store.getState().followUps;
+    expect(followUp.opportunityId).toBeNull();
+    expect(followUp.contactId).toBe(contact.id);
+  });
+
+  it('drops records that pointed only at the deleted one', () => {
+    const opportunity = store.createOpportunity({ title: 'Renewal' });
+    store.logActivity({ type: 'Note', subject: 'Only here', opportunityId: opportunity.id });
+    store.createFollowUp({ dueDate: '2026-10-01', note: 'Only here', opportunityId: opportunity.id });
+
+    store.deleteOpportunity(opportunity.id);
+    expect(store.getState().activities).toHaveLength(0);
+    expect(store.getState().followUps).toHaveLength(0);
+  });
+
+  it('forgets the policies that went with a deleted aircraft', () => {
+    const contact = store.createContact({ firstName: 'Jane' });
+    const aircraft = store.createAircraft({ tailNumber: 'N7PC' });
+    const policy = store.createPolicy({ aircraftId: aircraft.id, contactId: contact.id });
+    store.createFollowUp({
+      dueDate: '2026-10-01',
+      note: 'Renewal',
+      contactId: contact.id,
+      aircraftId: aircraft.id,
+      insurancePolicyId: policy.id,
+    });
+
+    store.deleteAircraft(aircraft.id);
+    const [followUp] = store.getState().followUps;
+    expect(followUp.insurancePolicyId).toBeNull();
+    expect(followUp.aircraftId).toBeNull();
+  });
+
+  it('removes a document with the only record it was attached to, blob and all', async () => {
+    const contact = store.createContact({ firstName: 'Jane' });
+    const aircraft = store.createAircraft({ tailNumber: 'N7PC' });
+    const own = await store.addFile(new File(['medical'], 'medical.pdf'), { contactId: contact.id });
+    const shared = await store.addFile(new File(['bill'], 'bill-of-sale.pdf'), {
+      contactId: contact.id,
+      aircraftId: aircraft.id,
+    });
+
+    store.deleteContact(contact.id);
+    await store.flush();
+
+    expect(store.getState().files.map((f) => f.id)).toEqual([shared.id]);
+    expect(store.getState().files[0].contactId).toBeNull();
+    await expect(store.getFile(own.id)).resolves.toBeUndefined();
+    await expect(store.getFile(shared.id)).resolves.toBeDefined();
   });
 });
 
