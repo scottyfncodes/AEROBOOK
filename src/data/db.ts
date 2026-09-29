@@ -227,6 +227,29 @@ export async function saveDatabase(db: Database): Promise<void> {
   }
 }
 
+/**
+ * A named copy of anything structured-cloneable, beside the document. The
+ * cloud copy of the data is cached here so the app opens without a signal.
+ */
+export async function loadCache<T>(key: string): Promise<T | undefined> {
+  if (!hasIndexedDb()) return undefined;
+  try {
+    return await tx<T | undefined>(DOC_STORE, 'readonly', (s) => s.get(key));
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveCache(key: string, value: unknown): Promise<void> {
+  if (!hasIndexedDb()) return;
+  await tx(DOC_STORE, 'readwrite', (s) => s.put(value, key));
+}
+
+export async function deleteCache(key: string): Promise<void> {
+  if (!hasIndexedDb()) return;
+  await tx(DOC_STORE, 'readwrite', (s) => s.delete(key));
+}
+
 export async function putFileBlob(id: string, blob: Blob): Promise<void> {
   if (!hasIndexedDb()) throw new Error('File storage needs IndexedDB, which is not available in this browser.');
   await tx(FILE_STORE, 'readwrite', (s) => s.put(blob, id));

@@ -3,14 +3,18 @@ import { mkdirSync, readFileSync } from 'node:fs';
 
 /**
  * Drives the built app in Chromium at iPhone dimensions and walks the journeys
- * the app exists for: import the supplied CSV, find the aircraft by a
+ * the app exists for: set up the first admin account, import the supplied CSV, find the aircraft by a
  * lowercase tail, generate the email, record it, set a follow-up, add an
  * insurance policy and check the renewal countdown, open a brokerage
  * opportunity and move it through the pipeline, record what the owner wants,
- * reload, re-import, and export. Fails on any console error, any horizontal
+ * reload, re-import, and export; then add a teammate who signs in on a second
+ * device and shares the same data. Fails on any console error, any horizontal
  * overflow or any link without a destination.
  *
- *   npm run build && npm run preview &
+ * Needs the full stack against an empty database, started with SETUP_TOKEN:
+ *
+ *   npm run build
+ *   DATABASE_URL=... BETTER_AUTH_SECRET=... SETUP_TOKEN=e2e-setup-token npm run serve &
  *   node e2e-check.mjs
  */
 import { dirname, resolve } from 'node:path';
@@ -21,6 +25,10 @@ const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:4173';
 const SHOTS = process.env.SHOTS_DIR ?? resolve(here, '.e2e-shots');
 const CSV = resolve(here, 'sample-data/owners-cirrus-design-corp-sr22t.csv');
 const CHROME = process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+// The server must start with an empty database and this SETUP_TOKEN.
+const SETUP_TOKEN = process.env.SETUP_TOKEN ?? 'e2e-setup-token';
+const ADMIN = { name: 'Scott Test', email: 'scott@example.com', password: 'e2e admin password' };
+const TEAMMATE = { name: 'John Teammate', email: 'john@example.com', password: 'e2e teammate password' };
 
 const errors = [];
 const log = (...a) => console.log(...a);
@@ -38,9 +46,18 @@ const page = await context.newPage();
 
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+// A large sync (an import) still in flight when the test navigates away is
+// cut off by the browser; the app resends it on the next load, and the
+// counts checked after each reload prove it arrived. Anything else failing
+// is an error.
+let abortedSyncs = 0;
 page.on('requestfailed', (r) => {
   if (!r.url().startsWith(BASE)) return;
-  errors.push(`requestfailed: ${r.url()} ${r.failure()?.errorText}`);
+  if (r.url().endsWith('/api/sync') && r.failure()?.errorText === 'net::ERR_ABORTED') {
+    abortedSyncs++;
+    return;
+  }
+  errors.push(`requestfailed: ${r.method()} ${r.url()} ${r.failure()?.errorText}`);
 });
 
 async function shot(name) {
@@ -72,6 +89,21 @@ for (const asset of [
   const res = await page.request.get(BASE + asset);
   if (!res.ok()) errors.push(`asset ${asset} returned ${res.status()}`);
 }
+
+// ------------------------------------------------------- 0b. first admin
+// Nothing opens without an account; the very first one needs the setup token.
+await page.goto(BASE, { waitUntil: 'networkidle' });
+await page.waitForSelector('text=Set up AEROBOOK');
+if (await page.locator('.tabbar').count()) errors.push('the tab bar shows before anyone has signed in');
+await shot('00-setup');
+await page.getByLabel('Setup token').fill(SETUP_TOKEN);
+await page.getByLabel('Your name').fill(ADMIN.name);
+await page.getByLabel('Email').fill(ADMIN.email);
+await page.getByLabel('Password', { exact: true }).fill(ADMIN.password);
+await page.getByLabel('Password again').fill(ADMIN.password);
+await page.getByRole('button', { name: 'Create the admin account' }).click();
+await page.waitForSelector('.quick-actions');
+log('first admin created and signed in');
 
 // ---------------------------------------------------------------- 1. empty
 await page.goto(BASE, { waitUntil: 'networkidle' });
@@ -570,7 +602,74 @@ if (!has(insCsv[1], 'N917JH') || !has(insCsv[1], 'Global Aerospace')) {
   errors.push('insurance export does not carry the aircraft and carrier');
 }
 
+// ----------------------------------------------------- 13. a second person
+// The admin adds a teammate, who signs in on another device and sees the
+// same book; what the teammate records reaches the admin.
+await page.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: 'Add person' }).click();
+await page.waitForSelector('.sheet');
+const addSheet = page.locator('.sheet');
+await addSheet.getByLabel('Name', { exact: true }).fill(TEAMMATE.name);
+await addSheet.getByLabel('Email').fill(TEAMMATE.email);
+await addSheet.getByLabel('First password').fill(TEAMMATE.password);
+await addSheet.getByRole('button', { name: 'Add', exact: true }).click();
+await page.waitForSelector(`text=${TEAMMATE.email}`);
+await shot('13-team');
+
+const other = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+const phone = await other.newPage();
+let expectingRejection = false;
+phone.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  // The wrong password below is refused on purpose, and the browser logs it.
+  if (expectingRejection && m.text().includes('401')) return;
+  errors.push(`teammate console: ${m.text()}`);
+});
+phone.on('pageerror', (e) => errors.push(`teammate pageerror: ${e.message}`));
+await phone.goto(BASE, { waitUntil: 'networkidle' });
+await phone.waitForSelector('text=Sign in');
+await phone.getByLabel('Email').fill(TEAMMATE.email);
+await phone.getByLabel('Password').fill('not the password');
+expectingRejection = true;
+await phone.getByRole('button', { name: 'Sign in' }).click();
+await phone.waitForSelector('text=do not match an account');
+expectingRejection = false;
+await phone.getByLabel('Password').fill(TEAMMATE.password);
+await phone.getByRole('button', { name: 'Sign in' }).click();
+await phone.waitForSelector('.quick-actions');
+await phone.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
+await phone.fill('input[type=search]', 'n917jh');
+await phone.waitForSelector('.tile');
+await phone.waitForTimeout(400);
+await phone.locator('.tile').first().click();
+await phone.waitForSelector('text=Corrected by the acceptance test.');
+log('teammate sees the admin’s aircraft and its edited timeline');
+if (await phone.getByRole('button', { name: 'Restore from a full export' }).count()) errors.push('restore shown to a non-admin');
+
+await phone.getByRole('button', { name: 'Add note' }).click();
+await phone.waitForSelector('.sheet');
+await phone.getByLabel('Subject').fill('Teammate called the owner');
+await phone.getByRole('button', { name: 'Record' }).click();
+await phone.waitForTimeout(800);
+const tailUrl = phone.url();
+await shot('13b-teammate');
+await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+if (await phone.getByRole('button', { name: 'Add person' }).count()) errors.push('team management shown to a non-admin');
+if (await phone.getByRole('button', { name: /Erase all/ }).count()) errors.push('erase shown to a non-admin');
+
+await page.goto(tailUrl, { waitUntil: 'networkidle' });
+await page.waitForSelector('text=Teammate called the owner', { timeout: 5000 })
+  .then(() => log('admin sees what the teammate recorded'))
+  .catch(() => errors.push('the teammate’s note did not reach the admin'));
+
+await phone.getByRole('button', { name: 'Sign out' }).click();
+await phone.waitForSelector('text=Sign in');
+await phone.goto(`${BASE}/aircraft`, { waitUntil: 'networkidle' });
+if (!(await phone.getByRole('button', { name: 'Sign in' }).isVisible())) errors.push('data still showing after sign-out');
+await other.close();
+
 // ------------------------------------------------------------------ report
+log('syncs cut off by navigation, resent on the next load:', abortedSyncs);
 await browser.close();
 log('\n=== console/page errors and layout problems ===');
 if (errors.length === 0) log('none');

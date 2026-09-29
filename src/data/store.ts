@@ -31,6 +31,17 @@ import {
 
 type Listener = () => void;
 
+/**
+ * Where changes go. By default the document is written to this device; once
+ * someone signs in, the cloud sync takes over (see cloud.ts).
+ */
+export interface Backend {
+  save(db: Database): Promise<void>;
+}
+
+const localBackend: Backend = { save: (db) => persistence.saveDatabase(db) };
+let backend: Backend = localBackend;
+
 let state: Database = emptyDatabase();
 let loaded = false;
 const listeners = new Set<Listener>();
@@ -50,8 +61,8 @@ function emit(): void {
 }
 
 function runSave(): Promise<void> {
-  return persistence
-    .saveDatabase(state)
+  return backend
+    .save(state)
     .then(() => {
       if (lastSaveError) {
         lastSaveError = null;
@@ -149,7 +160,64 @@ async function drain(): Promise<void> {
 /** Wait for every pending write to land. Used by tests and before an export. */
 export async function flush(): Promise<void> {
   await drain();
-  await persistence.saveDatabase(state);
+  await backend.save(state);
+}
+
+/** Try again after a failed save — the cloud sync calls this when it is back online. */
+export function retrySave(): void {
+  if (lastSaveError) scheduleSave();
+}
+
+/** Hand saving to another backend, or back to this device with null. */
+export async function setBackend(next: Backend | null): Promise<void> {
+  await drain();
+  backend = next ?? localBackend;
+  lastSaveError = null;
+  emit();
+}
+
+/** Replace the whole state without saving it — it came from where it is saved. */
+export function load(db: Database): void {
+  state = db;
+  loaded = true;
+  emit();
+}
+
+/** Apply changes that arrived from elsewhere, without sending them back. */
+export function applyRemote(updater: (db: Database) => Database): void {
+  const next = updater(state);
+  if (next === state) return;
+  state = next;
+  emit();
+}
+
+/** Show a save problem that did not come from a save — being offline, say. */
+export function setSaveError(message: string | null): void {
+  if (lastSaveError === message) return;
+  lastSaveError = message;
+  emit();
+}
+
+/** Close the data, as on sign-out: the next person starts from a blank screen. */
+export async function unload(): Promise<void> {
+  await drain();
+  backend = localBackend;
+  state = emptyDatabase();
+  loaded = false;
+  lastSaveError = null;
+  emit();
+}
+
+// A message for the person using the app, about something they did not do.
+const noticeListeners = new Set<(message: string) => void>();
+
+export function onNotice(listener: (message: string) => void): () => void {
+  noticeListeners.add(listener);
+  return () => noticeListeners.delete(listener);
+}
+
+export function notify(message: string): void {
+  for (const l of noticeListeners) l(message);
 }
 
 export async function init(): Promise<void> {

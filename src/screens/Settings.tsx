@@ -5,6 +5,9 @@ import { AppBar } from '../components/AppBar';
 import { IconDownload, IconMail, IconTools, IconUpload } from '../components/Icons';
 import { Banner, ConfirmButton, KeyValue, SelectField, TextField, useToast } from '../components/ui';
 import { Mark } from '../components/Brand';
+import { LocalDataBanner } from '../components/localData';
+import { AccountSection, TeamSection } from '../components/team';
+import { useCurrentUser } from '../data/session';
 import { useDatabase } from '../data/useStore';
 import { eraseEverything, flush, replaceDatabase, updateSettings } from '../data/store';
 import {
@@ -14,6 +17,8 @@ import {
 
 export default function Settings() {
   const db = useDatabase();
+  const me = useCurrentUser();
+  const isAdmin = me.role === 'admin';
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState('');
@@ -47,9 +52,17 @@ export default function Settings() {
     <>
       <AppBar title="Settings" back="/" />
       <main className="page stack stack--lg">
+        <LocalDataBanner />
+
+        <AccountSection />
+
+        {isAdmin ? <TeamSection /> : null}
+
         <section className="stack stack--sm">
           <h2 className="section-title">Profile</h2>
-          <p className="small muted">These fill in the sender variables in every email template.</p>
+          <p className="small muted">
+            These fill in the sender variables in your emails. They are yours: everyone on the team has their own.
+          </p>
           <div className="card stack stack--sm">
             <TextField label="Your name" value={s.senderName} onChange={(v) => updateSettings({ senderName: v })} autoComplete="name" />
             <TextField label="Title" value={s.senderTitle} onChange={(v) => updateSettings({ senderTitle: v })} placeholder="Aircraft Broker · Aviation Insurance" />
@@ -139,19 +152,16 @@ export default function Settings() {
             </button>
           </div>
           <p className="xsmall muted">
-            The JSON backup carries every record and every link between them, and restores into a clean
-            AEROBOOK. It lists attached documents but cannot carry the files themselves — those live in
-            this browser's storage. Keep originals of anything that matters.
+            CSV opens in any spreadsheet. The full export is JSON and carries every record and every link between
+            them. It lists attached documents but not the files themselves — for now those stay on the device they
+            were added on. Keep originals of anything that matters.
           </p>
 
-          <p className="xsmall muted">
-            CSV opens in any spreadsheet. The full export is JSON and can be restored here — it carries every record,
-            though not attached file contents.
-          </p>
-
-          <button className="btn btn--ghost btn--block" onClick={() => fileInput.current?.click()}>
-            <IconUpload /> Restore from a full export
-          </button>
+          {isAdmin ? (
+            <button className="btn btn--ghost btn--block" onClick={() => fileInput.current?.click()}>
+              <IconUpload /> Restore from a full export
+            </button>
+          ) : null}
           <input
             ref={fileInput}
             type="file"
@@ -163,24 +173,21 @@ export default function Settings() {
         </section>
 
         <section className="stack stack--sm">
-          <h2 className="section-title">Planned</h2>
-          <div className="card small muted">
-            Team, notifications and integrations arrive with the multi-user version of AEROBOOK.
-          </div>
-        </section>
-
-        <section className="stack stack--sm">
-          <h2 className="section-title">Account</h2>
-          <Banner tone="info">
-            AEROBOOK keeps everything in this browser on this device. Nothing is uploaded and there is no account.
-            That means clearing your browser data deletes it — export a backup from time to time.
-          </Banner>
-          <ConfirmButton
-            label="Erase all AEROBOOK data"
-            confirmLabel="Tap again — this cannot be undone"
-            className="btn btn--danger btn--block"
-            onConfirm={() => { void eraseEverything().then(() => toast('Everything erased')); }}
-          />
+          <h2 className="section-title">About</h2>
+          {isAdmin ? (
+            <>
+              <Banner tone="warn">
+                Restoring a backup or erasing replaces the data for <strong>everyone</strong> on the team, not just
+                this device. Only admins see these.
+              </Banner>
+              <ConfirmButton
+                label="Erase all AEROBOOK data"
+                confirmLabel="Tap again — this erases it for everyone"
+                className="btn btn--danger btn--block"
+                onConfirm={() => { void eraseEverything().then(() => toast('Everything erased')); }}
+              />
+            </>
+          ) : null}
           <div className="card small muted stack stack--sm">
             <div className="row" style={{ gap: 10, color: 'var(--accent)' }}>
               <Mark size={24} />
