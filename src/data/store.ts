@@ -560,6 +560,7 @@ export function createFollowUp(input: {
   aircraftId?: string | null;
   opportunityId?: string | null;
   insurancePolicyId?: string | null;
+  assigneeId?: string | null;
 }): FollowUp {
   const now = nowIso();
   const followUp: FollowUp = {
@@ -571,6 +572,7 @@ export function createFollowUp(input: {
     dueDate: input.dueDate,
     note: input.note,
     priority: input.priority ?? 'Normal',
+    assigneeId: input.assigneeId ?? null,
     completed: false,
     createdAt: now,
     updatedAt: now,

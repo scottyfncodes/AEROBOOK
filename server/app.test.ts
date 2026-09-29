@@ -162,6 +162,17 @@ describe.skipIf(!TEST_DB)('the API', () => {
       expect(bobId).toBeTruthy();
     });
 
+    it('lists the team for anyone signed in, names only', async () => {
+      expect((await api('/api/team')).status).toBe(401);
+      await getPool().query(`update "user" set banned = true where email = 'bob@example.com'`);
+      const { people } = await (await api('/api/team', { cookie: alice })).json();
+      expect(people).toEqual([
+        { id: expect.any(String), name: 'Alice', active: true },
+        { id: bobId, name: 'Bob', active: false },
+      ]);
+      expect(JSON.stringify(people)).not.toContain('@');
+    });
+
     it('rejects unknown collections and mismatched ids', async () => {
       const bad = [
         { collection: 'user', id: 'x', data: { id: 'x' }, baseVersion: 0 },

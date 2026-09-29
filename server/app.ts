@@ -91,6 +91,19 @@ async function setup(request: Request): Promise<Response> {
   return json({ ok: true });
 }
 
+/**
+ * Everyone on the account, by name, for choosing who a follow-up is for.
+ * Any signed-in person may see who their teammates are; managing them stays
+ * admin-only (Better Auth's admin endpoints). People whose access is off are
+ * included, marked, so their name still shows on work they were given.
+ */
+async function team(): Promise<Response> {
+  const { rows } = await getPool().query<{ id: string; name: string; banned: boolean | null }>(
+    'select id, name, banned from "user" order by name',
+  );
+  return json({ people: rows.map((r) => ({ id: r.id, name: r.name, active: !r.banned })) });
+}
+
 async function sync(request: Request, user: SessionUser): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === '/api/sync/status') return json({ empty: await isEmpty() });
@@ -117,6 +130,11 @@ export async function handle(request: Request): Promise<Response> {
       const user = await sessionUser(request);
       if (!user) return error(401, 'Sign in first');
       return await sync(request, user);
+    }
+    if (pathname === '/api/team') {
+      if (request.method !== 'GET') return error(405, 'Method not allowed');
+      if (!(await sessionUser(request))) return error(401, 'Sign in first');
+      return await team();
     }
     return error(404, 'Not found');
   } catch (e) {

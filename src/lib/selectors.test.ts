@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { documentsFor } from './selectors';
-import { emptyDatabase, type Aircraft, type Contact, type Database, type FileRecord, type Opportunity } from '../data/types';
+import { documentsFor, followUpsInView, isMine } from './selectors';
+import { emptyDatabase, type Aircraft, type Contact, type Database, type FileRecord, type FollowUp, type Opportunity } from '../data/types';
 
 const t = '2026-09-21T00:00:00.000Z';
 
@@ -70,5 +70,44 @@ describe('documentsFor', () => {
   it("does not pull in another person's documents", () => {
     expect(documentsFor(book(), { contactId: 'c2' }).map((d) => d.file.name)).toEqual(['Binder.pdf']);
     expect(documentsFor(book(), { contactId: 'c3' }).map((d) => d.file.id)).toEqual(['f5']);
+  });
+});
+
+describe('whose follow-ups', () => {
+  const now = new Date(2026, 8, 29, 12);
+  const fu = (id: string, dueDate: string, assigneeId?: string | null, completed = false): FollowUp => ({
+    id, contactId: null, aircraftId: null, opportunityId: null, dueDate, note: id, assigneeId, completed,
+    createdAt: t, updatedAt: t,
+  });
+  const db = {
+    followUps: [
+      fu('mine-late', '2026-09-20', 'me'),
+      fu('mine-soon', '2026-10-02', 'me'),
+      fu('theirs-late', '2026-09-21', 'them'),
+      fu('theirs-soon', '2026-10-03', 'them'),
+      fu('nobodys', '2026-10-01', null),
+      fu('from-before-accounts', '2026-10-01'),
+      fu('mine-done', '2026-09-01', 'me', true),
+    ],
+  };
+  const ids = (list: FollowUp[]) => list.map((f) => f.id);
+
+  it('counts unassigned work as everyone\'s until someone takes it', () => {
+    expect(isMine({ assigneeId: 'me' }, 'me')).toBe(true);
+    expect(isMine({ assigneeId: 'them' }, 'me')).toBe(false);
+    expect(isMine({ assigneeId: null }, 'me')).toBe(true);
+    expect(isMine({}, 'me')).toBe(true);
+  });
+
+  it('Mine shows my open follow-ups and the unassigned ones', () => {
+    expect(ids(followUpsInView(db, 'mine', 'me', now))).toEqual(['mine-late', 'mine-soon', 'nobodys', 'from-before-accounts']);
+  });
+
+  it('All shows every open follow-up', () => {
+    expect(followUpsInView(db, 'all', 'me', now)).toHaveLength(6);
+  });
+
+  it('Overdue shows the whole team\'s overdue work', () => {
+    expect(ids(followUpsInView(db, 'overdue', 'me', now))).toEqual(['mine-late', 'theirs-late']);
   });
 });
