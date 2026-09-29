@@ -129,7 +129,7 @@ function personFrom(extracted: ExtractedRow, order: NameOrder) {
     middleName: isOrg ? '' : parsed.middleName,
     suffix: isOrg ? '' : parsed.suffix,
     role: parsed.role,
-    company: values.company ?? (isOrg ? parsed.raw : ''),
+    company: values.company ?? (isOrg ? parsed.raw : parsed.company),
     rawName: parsed.raw,
     confidence: isOrg ? ('organization' as const) : parsed.confidence,
     needsReview: isOrg ? false : parsed.needsReview,
