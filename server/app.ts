@@ -3,7 +3,7 @@
  * one place that decides who may do what.
  */
 import { timingSafeEqual } from 'node:crypto';
-import { getAuth, sessionUser, type SessionUser } from './auth.js';
+import { getAuth, migrate, sessionUser, type SessionUser } from './auth.js';
 import { getPool } from './db.js';
 import { BadRequest, isEmpty, pull, push, validateChanges } from './sync.js';
 
@@ -44,9 +44,23 @@ async function readJson(request: Request): Promise<unknown> {
   }
 }
 
+/**
+ * How many accounts exist. On a brand-new database the tables are not there
+ * yet: the first visit creates them, so a fresh deployment needs nothing run
+ * by hand.
+ */
 async function userCount(): Promise<number> {
-  const { rows } = await getPool().query<{ n: string }>('select count(*) as n from "user"');
-  return Number(rows[0].n);
+  const count = async () => {
+    const { rows } = await getPool().query<{ n: string }>('select count(*) as n from "user"');
+    return Number(rows[0].n);
+  };
+  try {
+    return await count();
+  } catch (error) {
+    if ((error as { code?: string }).code !== '42P01') throw error; // undefined_table
+    await migrate();
+    return count();
+  }
 }
 
 function sameSecret(a: string, b: string): boolean {

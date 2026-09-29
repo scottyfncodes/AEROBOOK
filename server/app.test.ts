@@ -93,6 +93,13 @@ describe.skipIf(!TEST_DB)('the API', () => {
       expect(session.user.role).toBe('admin');
     });
 
+    it('creates the tables on a brand-new database', async () => {
+      await getPool().query('drop schema public cascade; create schema public;');
+      expect(await (await api('/api/setup')).json()).toEqual({ needsSetup: true });
+      const { rows } = await getPool().query(`select to_regclass('app_record') as t`);
+      expect(rows[0].t).toBe('app_record');
+    });
+
     it('is off when no token is configured', async () => {
       delete process.env.SETUP_TOKEN;
       await getPool().query('delete from "session"; delete from "account"; delete from "user";');
