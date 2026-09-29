@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 358 tests; the 52 API and sync tests also need:
+npm test             # 367 tests; the 60 API and sync tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -124,6 +124,23 @@ browser until it can be moved up, which the app does on its own the next time
 it opens. Without `BLOB_READ_WRITE_TOKEN` the app keeps documents in the
 browser as it used to; `npm run serve` and `npm run dev` use a `.local-files`
 folder instead.
+
+## Daily email
+
+Each morning everyone gets an email of their own follow-ups (the Mine list:
+theirs plus the unassigned): overdue, due today, and the next seven days, with
+a button into the app. Nobody gets an empty one, nor one while their access is
+off, and anyone can turn theirs off under **Settings → Daily email**, where
+**Send me today's email now** sends a copy to their own address on demand.
+
+Vercel Cron calls `GET /api/digest/run` daily at 14:00 UTC (7am in Los Angeles
+in summer, 6am in winter) with `CRON_SECRET` as a bearer token; the route
+refuses anything else. The "day" is the calendar day in `DIGEST_TIME_ZONE`
+(default `America/Los_Angeles`). A row in `app_digest` per person per day, and
+Resend's idempotency key, mean a repeated run sends nothing twice; a failed
+send is retried by the next run. Mail goes through Resend from
+`DIGEST_FROM` (default `AEROBOOK <digest@optibook.cloud>`); without
+`RESEND_API_KEY` nothing is sent.
 
 ## Activity history
 
@@ -246,4 +263,8 @@ The project needs `DATABASE_URL` (Neon's pooled connection string),
 either `BLOB_STORE_ID` (the deployment signs in with Vercel's OIDC token, and
 uploads use presigned URLs scoped to one path) or `BLOB_READ_WRITE_TOKEN`
 (uploads use client tokens); the app handles both. `APP_ORIGINS` adds a custom domain.
+The daily email needs `RESEND_API_KEY` (a Resend sending key for a verified
+domain) and `CRON_SECRET` (any long random string; Vercel sends it with each
+cron call); `APP_URL` overrides the link in it, which otherwise is the
+production URL.
 Apply `db/schema.sql` to a new database before the first deploy.

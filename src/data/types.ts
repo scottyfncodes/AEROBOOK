@@ -355,6 +355,8 @@ export interface Settings {
   /** Default assumption for owner-name column order on import. */
   defaultNameOrder: 'lastFirst' | 'firstLast';
   theme: 'system' | 'dark' | 'light';
+  /** The morning email of this person's follow-ups. Missing means on. */
+  dailyDigest?: boolean;
 }
 
 export interface Database {

@@ -328,6 +328,14 @@ button, input, select, textarea {
   accent-color: var(--accent);
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
