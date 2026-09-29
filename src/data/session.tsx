@@ -15,6 +15,9 @@ export type SessionStatus = 'checking' | 'setup' | 'signed-out' | 'ready' | 'unr
 interface SessionValue {
   status: SessionStatus;
   user: CloudUser | null;
+  /** Everyone on the account, for saying who a follow-up is for. */
+  team: auth.Person[];
+  reloadTeam(): void;
   cloud: CloudSync | null;
   /** Why the person is looking at the sign-in screen, when it is not obvious. */
   message: string;
@@ -50,7 +53,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<CloudUser | null>(null);
   const [message, setMessage] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [team, setTeam] = useState<auth.Person[]>([]);
   const cloudRef = useRef<CloudSync | null>(null);
+
+  // Offline, the list stays as it was: names are a convenience, not the data.
+  const reloadTeam = useCallback(() => {
+    auth.listPeople().then(setTeam, () => undefined);
+  }, []);
+  useEffect(() => {
+    if (status === 'ready') reloadTeam();
+  }, [status, reloadTeam]);
 
   const close = useCallback(async () => {
     cloudRef.current?.stop();
@@ -111,6 +123,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value: SessionValue = {
     status,
     user,
+    team,
+    reloadTeam,
     cloud: cloudRef.current,
     message,
     async signIn(email, password) {
@@ -143,6 +157,25 @@ export function useSession(): SessionValue {
   const value = useContext(SessionContext);
   if (!value) throw new Error('useSession outside SessionProvider');
   return value;
+}
+
+/**
+ * The team, and a way to name the person a follow-up is for. The signed-in
+ * person is always in the list, even before it has loaded.
+ */
+export function useTeam(): { people: auth.Person[]; nameOf(id: string | null | undefined): string } {
+  const { team, user } = useSession();
+  const people = user && !team.some((p) => p.id === user.id)
+    ? [{ id: user.id, name: user.name, active: true }, ...team]
+    : team;
+  return {
+    people,
+    nameOf(id) {
+      if (!id) return 'Unassigned';
+      if (id === user?.id) return 'You';
+      return people.find((p) => p.id === id)?.name ?? 'Someone else';
+    },
+  };
 }
 
 /** The signed-in person. Only for screens behind the sign-in. */

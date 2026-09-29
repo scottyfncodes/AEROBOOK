@@ -19,6 +19,7 @@ import {
   updateActivity, updateFollowUp,
 } from '../data/store';
 import { addDays, dateKey, formatDate, relativeDue, todayKey } from '../lib/dates';
+import { useCurrentUser, useTeam } from '../data/session';
 import type { ExternalLink } from '../lib/links';
 import type { LinkedDocument } from '../lib/selectors';
 
@@ -56,6 +57,8 @@ export function Timeline({
   onDeleteActivity?: (id: string) => void;
 }) {
   const [editing, setEditing] = useState<Activity | null>(null);
+  const me = useCurrentUser();
+  const { nameOf } = useTeam();
 
   type Entry =
     | { kind: 'activity'; at: string; activity: Activity }
@@ -86,6 +89,7 @@ export function Timeline({
                     <span className="xsmall muted nowrap">{relativeDue(f.dueDate)}</span>
                   </div>
                   <div className="small secondary">{f.note || 'Follow up'}</div>
+                  {f.assigneeId !== me.id ? <div className="xsmall muted">For {nameOf(f.assigneeId)}</div> : null}
                 </div>
               </div>
             );
@@ -252,19 +256,39 @@ export function FollowUpSheet({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const me = useCurrentUser();
+  const { people, nameOf } = useTeam();
   const [dueDate, setDueDate] = useState(existing?.dueDate ?? defaultDueDate ?? addDays(7));
   const [note, setNote] = useState(existing?.note ?? defaultNote);
   const [priority, setPriority] = useState<FollowUpPriority>(existing?.priority ?? 'Normal');
+  // A new follow-up is the person's own unless they give it to someone.
+  const [assigneeId, setAssigneeId] = useState(existing ? existing.assigneeId ?? '' : me.id);
+
+  // People whose access is off cannot be given new work, but one already
+  // holding this follow-up still shows, so opening the sheet changes nothing.
+  const assigneeOptions = [
+    { value: '', label: 'Unassigned — anyone can take it' },
+    ...people
+      .filter((p) => p.active || p.id === assigneeId)
+      .map((p) => ({ value: p.id, label: p.id === me.id ? `${p.name} (you)` : p.name })),
+  ];
 
   const save = () => {
+    const fields = { dueDate, note: note.trim(), priority, assigneeId: assigneeId || null };
     if (existing) {
-      updateFollowUp(existing.id, {
-        dueDate, note: note.trim(), priority, completed: false, completedAt: undefined,
-      });
-      toast('Follow-up updated');
+      updateFollowUp(existing.id, { ...fields, completed: false, completedAt: undefined });
+      toast(
+        (existing.assigneeId ?? '') !== assigneeId
+          ? assigneeId ? `Follow-up given to ${nameOf(assigneeId)}` : 'Follow-up is now unassigned'
+          : 'Follow-up updated',
+      );
     } else {
-      createFollowUp({ ...links, dueDate, note: note.trim(), priority });
-      toast(`Follow-up set for ${formatDate(dueDate)}`);
+      createFollowUp({ ...links, ...fields });
+      toast(
+        assigneeId && assigneeId !== me.id
+          ? `Follow-up for ${nameOf(assigneeId)}, ${formatDate(dueDate)}`
+          : `Follow-up set for ${formatDate(dueDate)}`,
+      );
     }
     onClose();
   };
@@ -300,6 +324,7 @@ export function FollowUpSheet({
           rows={3}
           placeholder="Check if the aircraft is still available"
         />
+        <SelectField label="For" value={assigneeId} options={assigneeOptions} onChange={setAssigneeId} />
         <div className="field">
           <span className="field__label">Priority</span>
           <div className="row" style={{ gap: 6 }}>
@@ -351,6 +376,8 @@ export function CompleteFollowUpSheet({
         dueDate: nextDate,
         note: nextNote.trim(),
         priority: followUp.priority,
+        // The next step in the same piece of work stays with the same person.
+        assigneeId: followUp.assigneeId ?? null,
       });
       toast(`Done — next one set for ${formatDate(nextDate)}`);
     } else {
@@ -413,6 +440,8 @@ export function CompleteFollowUpSheet({
 
 export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onEdit: (f: FollowUp) => void }) {
   const toast = useToast();
+  const me = useCurrentUser();
+  const { nameOf } = useTeam();
   const [completing, setCompleting] = useState<FollowUp | null>(null);
   const open = followUps.filter((f) => !f.completed);
   if (open.length === 0) return null;
@@ -424,13 +453,14 @@ export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onE
             <span className="small strong truncate">{f.note || 'Follow up'}</span>
             <Chip tone={relativeDue(f.dueDate).includes('overdue') ? 'danger' : 'info'}>{relativeDue(f.dueDate)}</Chip>
           </div>
+          {f.assigneeId !== me.id ? <div className="xsmall muted" style={{ marginTop: 4 }}>For {nameOf(f.assigneeId)}</div> : null}
           <div className="row" style={{ gap: 6, marginTop: 8 }}>
             {/* One tap completes it; the sheet is for when there is more to say. */}
             <button className="btn btn--sm grow" onClick={() => { completeFollowUp(f.id); toast('Follow-up completed'); }}>
               <IconCheck /> Done
             </button>
             <button className="btn btn--sm btn--ghost grow" onClick={() => setCompleting(f)}>Done + note</button>
-            <button className="btn btn--sm btn--ghost grow" onClick={() => onEdit(f)}>Reschedule</button>
+            <button className="btn btn--sm btn--ghost grow" onClick={() => onEdit(f)}>Edit</button>
             <button className="btn btn--sm btn--ghost" onClick={() => { deleteFollowUp(f.id); toast('Follow-up removed'); }} aria-label="Delete follow-up">
               <IconTrash />
             </button>

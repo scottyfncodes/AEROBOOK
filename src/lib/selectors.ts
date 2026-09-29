@@ -60,6 +60,35 @@ export function bucketFollowUps(followUps: FollowUp[], now = new Date()): Follow
   return buckets;
 }
 
+/** Whose list a follow-up belongs on. Unassigned ones are everyone's until taken. */
+export function isMine(f: Pick<FollowUp, 'assigneeId'>, userId: string): boolean {
+  return !f.assigneeId || f.assigneeId === userId;
+}
+
+export type FollowUpView = 'mine' | 'all' | 'overdue';
+export const FOLLOW_UP_VIEWS: { value: FollowUpView; label: string }[] = [
+  { value: 'mine', label: 'Mine' },
+  { value: 'all', label: 'All' },
+  { value: 'overdue', label: 'Overdue' },
+];
+
+/**
+ * The open follow-ups a view shows: your own (and unassigned), the whole
+ * team's, or the whole team's overdue ones — the list someone checks to see
+ * what is slipping, whoever it belongs to.
+ */
+export function followUpsInView(
+  db: Pick<Database, 'followUps'>,
+  view: FollowUpView,
+  userId: string,
+  now = new Date(),
+): FollowUp[] {
+  const open = openFollowUps(db);
+  if (view === 'mine') return open.filter((f) => isMine(f, userId));
+  if (view === 'overdue') return open.filter((f) => dueBucket(f.dueDate, now) === 'overdue');
+  return open;
+}
+
 /** Everything that needs a decision today: overdue plus due today. */
 export function dueNow(db: Pick<Database, 'followUps'>, now = new Date()): FollowUp[] {
   const buckets = bucketFollowUps(openFollowUps(db), now);

@@ -169,6 +169,22 @@ describe('opportunities, activities and follow-ups', () => {
     expect(store.getState().contacts[0].lastContactedAt).toBe('2026-09-19');
   });
 
+  it('gives a follow-up to someone, and hands it to someone else', async () => {
+    const f = store.createFollowUp({ dueDate: addDays(3), note: 'Send the quote', assigneeId: 'usr_scott' });
+    expect(store.getState().followUps[0].assigneeId).toBe('usr_scott');
+    store.updateFollowUp(f.id, { assigneeId: 'usr_john' });
+    expect(store.getState().followUps[0].assigneeId).toBe('usr_john');
+    await store.flush();
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+    expect(store.getState().followUps[0].assigneeId).toBe('usr_john');
+  });
+
+  it('leaves a follow-up unassigned when nobody is named', () => {
+    store.createFollowUp({ dueDate: addDays(3), note: 'Someone call them' });
+    expect(store.getState().followUps[0].assigneeId).toBeNull();
+  });
+
   it('completes and reschedules a follow-up', () => {
     const c = store.createContact({ firstName: 'John' });
     const f = store.createFollowUp({ contactId: c.id, dueDate: addDays(7), note: 'Follow up on SR22 quote' });

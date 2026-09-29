@@ -662,6 +662,44 @@ await page.waitForSelector('text=Teammate called the owner', { timeout: 5000 })
   .then(() => log('admin sees what the teammate recorded'))
   .catch(() => errors.push('the teammate’s note did not reach the admin'));
 
+// ---------------------------------------------- 13b. whose follow-up it is
+// The admin gives a follow-up to the teammate: it is on the teammate's list,
+// not the admin's, and the teammate can hand it back.
+const TASK = 'Call the owner back about the quote';
+await page.getByRole('button', { name: 'Follow up' }).click();
+await page.waitForSelector('.sheet');
+await page.locator('.sheet textarea').fill(TASK);
+await page.locator('.sheet').getByLabel('For', { exact: true }).selectOption({ label: TEAMMATE.name });
+await page.getByRole('button', { name: 'Set follow-up' }).click();
+await page.waitForTimeout(800);
+
+await phone.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
+await phone.waitForSelector(`text=${TASK}`, { timeout: 5000 })
+  .then(() => log('the teammate has the follow-up given to them'))
+  .catch(() => errors.push('a follow-up given to the teammate is not on their list'));
+
+await page.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
+await page.waitForSelector('[role=tablist]');
+if (await page.getByText(TASK).count()) errors.push('a follow-up given to the teammate is on the admin’s own list');
+await page.getByRole('tab', { name: /^All/ }).click();
+const allCard = page.locator('.card', { hasText: TASK });
+if (!(await allCard.count())) errors.push('the teammate’s follow-up is missing from All');
+else if (!has(await allCard.innerText(), TEAMMATE.name)) errors.push('the follow-up in All does not say who it is for');
+await shot('13c-follow-ups-all');
+
+await phone.locator('.card', { hasText: TASK }).getByRole('button', { name: 'Edit' }).click();
+await phone.waitForSelector('.sheet');
+await phone.locator('.sheet').getByLabel('For', { exact: true }).selectOption({ label: ADMIN.name });
+await phone.getByRole('button', { name: 'Save' }).click();
+await phone.waitForTimeout(800);
+if (await phone.getByText(TASK).count()) errors.push('a follow-up handed back still shows on the teammate’s list');
+
+await page.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
+await page.waitForSelector(`text=${TASK}`, { timeout: 5000 })
+  .then(() => log('the teammate handed the follow-up back to the admin'))
+  .catch(() => errors.push('a follow-up handed back did not reach the admin’s list'));
+
+await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
 await phone.getByRole('button', { name: 'Sign out' }).click();
 await phone.waitForSelector('text=Sign in');
 await phone.goto(`${BASE}/aircraft`, { waitUntil: 'networkidle' });

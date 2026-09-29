@@ -1,6 +1,10 @@
 /**
  * The working list. Overdue first, then today, then the week, then the rest,
  * because that is the order a person actually works them in.
+ *
+ * Mine is the default: your own follow-ups and the unassigned ones anyone
+ * can take. All is the whole team's; Overdue is the whole team's that have
+ * slipped, whoever they belong to.
  */
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -11,23 +15,37 @@ import { CompleteFollowUpSheet, FollowUpSheet } from '../components/detail';
 import { Chip, EmptyState, Metric, useToast } from '../components/ui';
 import { useDatabase } from '../data/useStore';
 import { completeFollowUp, deleteFollowUp } from '../data/store';
-import { bucketFollowUps, followUpSubject, openFollowUps } from '../lib/selectors';
+import {
+  bucketFollowUps, FOLLOW_UP_VIEWS, followUpsInView, followUpSubject, isMine, type FollowUpView,
+} from '../lib/selectors';
+import { useCurrentUser, useTeam } from '../data/session';
 import { formatDate, relativeDue } from '../lib/dates';
 import type { FollowUp } from '../data/types';
 
 export default function FollowUps() {
   const db = useDatabase();
   const toast = useToast();
+  const me = useCurrentUser();
+  const { nameOf } = useTeam();
   const [params, setParams] = useSearchParams();
+  const view = (FOLLOW_UP_VIEWS.some((v) => v.value === params.get('view')) ? params.get('view') : 'mine') as FollowUpView;
+  const viewParams = (next: FollowUpView): Record<string, string> => (next === 'mine' ? {} : { view: next });
+  const setView = (next: FollowUpView) => setParams(viewParams(next));
   const [showCompleted, setShowCompleted] = useState(false);
   const [editing, setEditing] = useState<FollowUp | undefined>();
   const [completing, setCompleting] = useState<FollowUp | undefined>();
   const creatingGeneral = params.get('new') === '1';
 
-  const buckets = useMemo(() => bucketFollowUps(openFollowUps(db)), [db]);
+  const buckets = useMemo(() => bucketFollowUps(followUpsInView(db, view, me.id)), [db, view, me.id]);
+  const counts = useMemo(
+    () => Object.fromEntries(FOLLOW_UP_VIEWS.map((v) => [v.value, followUpsInView(db, v.value, me.id).length])),
+    [db, me.id],
+  );
   const completed = useMemo(
-    () => db.followUps.filter((f) => f.completed).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')),
-    [db.followUps],
+    () => db.followUps
+      .filter((f) => f.completed && (view !== 'mine' || isMine(f, me.id)))
+      .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')),
+    [db.followUps, view, me.id],
   );
 
   const total = buckets.overdue.length + buckets.today.length + buckets.upcoming.length + buckets.later.length;
@@ -57,6 +75,7 @@ export default function FollowUps() {
                     {followUpSubject(db, f)}
                   </Link>
                   <div className="row" style={{ gap: 4 }}>
+                    {f.assigneeId !== me.id ? <Chip>{nameOf(f.assigneeId)}</Chip> : null}
                     {f.priority === 'High' ? <Chip tone="danger">High</Chip> : null}
                     <Chip tone={tone}>{relativeDue(f.dueDate)}</Chip>
                   </div>
@@ -76,7 +95,7 @@ export default function FollowUps() {
                     <IconCheck /> Done
                   </button>
                   <button className="btn btn--sm btn--ghost grow" onClick={() => setCompleting(f)}>Done + note</button>
-                  <button className="btn btn--sm btn--ghost grow" onClick={() => setEditing(f)}>Reschedule</button>
+                  <button className="btn btn--sm btn--ghost grow" onClick={() => setEditing(f)}>Edit</button>
                   <button
                     className="btn btn--sm btn--ghost"
                     onClick={() => { deleteFollowUp(f.id); toast('Follow-up removed'); }}
@@ -100,7 +119,7 @@ export default function FollowUps() {
         actions={
           <button
             className="btn btn--ghost btn--icon"
-            onClick={() => setParams({ new: '1' })}
+            onClick={() => setParams({ ...viewParams(view), new: '1' })}
             aria-label="New follow-up"
           >
             <IconPlus />
@@ -108,6 +127,20 @@ export default function FollowUps() {
         }
       />
       <main className="page stack stack--lg">
+        <div className="filter-bar" role="tablist" aria-label="Whose follow-ups">
+          {FOLLOW_UP_VIEWS.map((v) => (
+            <button
+              key={v.value}
+              role="tab"
+              aria-selected={view === v.value}
+              className={`filter-chip${view === v.value ? ' is-active' : ''}`}
+              onClick={() => setView(v.value)}
+            >
+              {v.label} · {counts[v.value]}
+            </button>
+          ))}
+        </div>
+
         <div className="card">
           <div className="metric-grid metric-grid--quad">
             <Metric value={buckets.overdue.length} label="Overdue" tone={buckets.overdue.length ? 'danger' : undefined} />
@@ -118,12 +151,20 @@ export default function FollowUps() {
         </div>
 
         {total === 0 ? (
-          <EmptyState
-            icon={<IconBell />}
-            title="Nothing due"
-            body="Set a follow-up from any contact, aircraft or opportunity and it shows up here and on the home screen."
-            action={<Link className="btn btn--primary" to="/prospects">Work the prospect list</Link>}
-          />
+          view === 'overdue' ? (
+            <EmptyState icon={<IconCheck />} title="Nothing overdue" body="Nobody on the team has a follow-up past its date." />
+          ) : (
+            <EmptyState
+              icon={<IconBell />}
+              title={view === 'mine' ? 'Nothing on your list' : 'Nothing due'}
+              body={
+                view === 'mine' && counts.all > 0
+                  ? 'Everything open belongs to someone else on the team. See All for the whole list.'
+                  : 'Set a follow-up from any contact, aircraft or opportunity and it shows up here and on the home screen.'
+              }
+              action={<Link className="btn btn--primary" to="/prospects">Work the prospect list</Link>}
+            />
+          )
         ) : null}
 
         <Group title="Overdue" items={buckets.overdue} tone="danger" />
@@ -171,7 +212,7 @@ export default function FollowUps() {
       {creatingGeneral ? (
         <FollowUpSheet
           links={{}}
-          onClose={() => setParams({})}
+          onClose={() => setView(view)}
         />
       ) : null}
     </>

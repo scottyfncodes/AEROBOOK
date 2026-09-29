@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 322 tests; the 29 API and sync tests also need:
+npm test             # 329 tests; the 30 API and sync tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -93,6 +93,20 @@ Everyone sees and edits the same contacts, aircraft, opportunities, policies,
 timeline, follow-ups and templates. Each person has their own profile (the
 signature on their emails) and appearance setting. Restoring a backup and
 erasing everything affect the whole team, so only admins see them.
+
+## Follow-ups
+
+Every follow-up can be for someone: whoever creates one owns it unless they
+pick someone else under **For**, and **Edit** hands it to another person or
+back to nobody. Unassigned follow-ups — including everything recorded before
+accounts — count as everyone's until someone takes one.
+
+The follow-up list has three views: **Mine** (your own and the unassigned),
+**All** (the whole team's), and **Overdue** (the whole team's that have
+slipped). Home counts only Mine. When a follow-up is completed and the next
+one scheduled, the next one stays with the same person. Names come from
+`GET /api/team`, which any signed-in person may call; managing accounts stays
+admin-only.
 
 ## Data
 

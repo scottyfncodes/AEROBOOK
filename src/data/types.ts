@@ -283,6 +283,12 @@ export interface FollowUp {
   dueDate: string;
   note: string;
   priority?: FollowUpPriority;
+  /**
+   * The person it is for, by account id. Missing or null is unassigned —
+   * everything recorded before accounts existed — which shows on everyone's
+   * own list until someone takes it.
+   */
+  assigneeId?: string | null;
   completed: boolean;
   /** What actually happened, recorded when the follow-up is completed. */
   outcome?: string;

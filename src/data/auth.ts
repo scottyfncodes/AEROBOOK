@@ -66,6 +66,18 @@ export async function setUp(input: { token: string; name: string; email: string;
   await call('/api/setup', input);
 }
 
+/** Someone on the account, as anyone on it may see them. */
+export interface Person {
+  id: string;
+  name: string;
+  /** False when an admin has turned their access off. */
+  active: boolean;
+}
+
+export async function listPeople(): Promise<Person[]> {
+  return (await call<{ people: Person[] }>('/api/team')).people;
+}
+
 // ------------------------------------------------------------ admin only
 
 export async function listTeam(): Promise<TeamMember[]> {

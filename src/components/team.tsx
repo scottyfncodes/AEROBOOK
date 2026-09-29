@@ -86,6 +86,7 @@ function ChangePasswordSheet({ onClose }: { onClose: () => void }) {
 /** Admins only — the caller decides whether to show it. */
 export function TeamSection() {
   const me = useCurrentUser();
+  const { reloadTeam } = useSession();
   const [members, setMembers] = useState<TeamMember[] | null>(null);
   const [error, setError] = useState('');
   const [adding, setAdding] = useState(false);
@@ -93,7 +94,9 @@ export function TeamSection() {
 
   const load = useCallback(() => {
     auth.listTeam().then(setMembers, (e: Error) => setError(e.message));
-  }, []);
+    // Keep the follow-up "for" picker in step with who is on the team.
+    reloadTeam();
+  }, [reloadTeam]);
   useEffect(load, [load]);
 
   return (
