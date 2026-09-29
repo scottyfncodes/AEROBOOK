@@ -133,6 +133,42 @@ describe('opportunities, activities and follow-ups', () => {
     expect(store.getState().contacts[0].lastContactedAt).toBeUndefined();
   });
 
+  it('edits a recorded entry without moving it off its records', async () => {
+    const c = store.createContact({ firstName: 'John' });
+    const a = store.createAircraft({ tailNumber: 'N917JH' });
+    const act = store.logActivity({
+      type: 'Note', subject: 'Thinkng about it', notes: 'Wants a quote', contactId: c.id, aircraftId: a.id,
+    });
+    expect(act.updatedAt).toBeUndefined();
+
+    store.updateActivity(act.id, { subject: 'Thinking about it', notes: 'Wants a quote by Friday' });
+    const edited = store.getState().activities[0];
+    expect(edited.subject).toBe('Thinking about it');
+    expect(edited.notes).toBe('Wants a quote by Friday');
+    expect(edited.date).toBe(act.date);
+    expect(edited.createdAt).toBe(act.createdAt);
+    expect(edited.updatedAt).toBeDefined();
+    expect(edited.contactId).toBe(c.id);
+    expect(edited.aircraftId).toBe(a.id);
+
+    await store.flush();
+    store.__setStateForTests(emptyDatabase());
+    await store.init();
+    expect(store.getState().activities[0].notes).toBe('Wants a quote by Friday');
+  });
+
+  it('moves last-contacted forward when an entry is corrected to a call, never back', () => {
+    const c = store.createContact({ firstName: 'John' });
+    const act = store.logActivity({ type: 'Note', subject: 'Spoke', contactId: c.id, date: '2026-09-19' });
+    expect(store.getState().contacts[0].lastContactedAt).toBeUndefined();
+
+    store.updateActivity(act.id, { type: 'Call' });
+    expect(store.getState().contacts[0].lastContactedAt).toBe('2026-09-19');
+
+    store.updateActivity(act.id, { date: '2026-08-02' });
+    expect(store.getState().contacts[0].lastContactedAt).toBe('2026-09-19');
+  });
+
   it('completes and reschedules a follow-up', () => {
     const c = store.createContact({ firstName: 'John' });
     const f = store.createFollowUp({ contactId: c.id, dueDate: addDays(7), note: 'Follow up on SR22 quote' });

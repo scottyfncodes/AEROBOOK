@@ -442,17 +442,40 @@ export function logActivity(input: {
   set((db) => ({
     ...db,
     activities: [...db.activities, activity],
-    contacts:
-      activity.contactId && ['Email', 'Call', 'Text', 'Meeting'].includes(activity.type)
-        ? db.contacts.map((c) =>
-            // A back-dated call is history, not news: it never moves the date backwards.
-            c.id === activity.contactId && (c.lastContactedAt ?? '') < activity.date
-              ? { ...c, lastContactedAt: activity.date }
-              : c,
-          )
-        : db.contacts,
+    contacts: touchLastContacted(db.contacts, activity),
   }));
   return activity;
+}
+
+/** Contact-type activities move a contact's last-contacted date forward. */
+function touchLastContacted(contacts: Contact[], activity: Activity): Contact[] {
+  if (!activity.contactId || !['Email', 'Call', 'Text', 'Meeting'].includes(activity.type)) return contacts;
+  return contacts.map((c) =>
+    // A back-dated call is history, not news: it never moves the date backwards.
+    c.id === activity.contactId && (c.lastContactedAt ?? '') < activity.date
+      ? { ...c, lastContactedAt: activity.date }
+      : c,
+  );
+}
+
+/**
+ * Correcting what was recorded. The links stay as they were: an entry edited
+ * from one record's timeline must not quietly leave another's.
+ */
+export function updateActivity(
+  id: string,
+  patch: Partial<Pick<Activity, 'type' | 'subject' | 'notes' | 'date'>>,
+): void {
+  set((db) => {
+    const current = db.activities.find((a) => a.id === id);
+    if (!current) return db;
+    const next: Activity = { ...current, ...patch, updatedAt: nowIso() };
+    return {
+      ...db,
+      activities: db.activities.map((a) => (a.id === id ? next : a)),
+      contacts: touchLastContacted(db.contacts, next),
+    };
+  });
 }
 
 export function deleteActivity(id: string): void {
