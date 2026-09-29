@@ -202,9 +202,17 @@ export class CloudSync implements store.Backend {
     return run;
   }
 
-  /** Store backend: send whatever differs from what the server has. */
-  save(db: Database): Promise<void> {
-    return this.enqueue(() => this.push(db));
+  /**
+   * Store backend: send whatever differs from what the server has.
+   *
+   * The data is read when the push runs, not when it was asked for. A push
+   * waits in line behind any pull already running; comparing the data as it
+   * was before that pull with the server's state after it would send the
+   * pull's own changes back as if they were this device's edits — bringing a
+   * record someone else just deleted back to life, or undoing their edit.
+   */
+  save(_requested: Database): Promise<void> {
+    return this.enqueue(() => this.push(store.getState()));
   }
 
   /** Fetch what others changed. Failures show as the offline banner, never throw. */

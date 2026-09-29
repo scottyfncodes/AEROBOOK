@@ -108,6 +108,53 @@ describe.skipIf(!TEST_DB)('cloud sync', () => {
     expect((await bobSees('contacts', c.id)).data.notes).toBe('Alice, after reading Bob');
   });
 
+  it('does not bring back a record someone deleted while a save was waiting behind a pull', async () => {
+    await cloud.start();
+    const plane = { id: 'air_race', tailNumber: 'N98ST', ownerships: [], custom: {} };
+    await bobPush([{ collection: 'aircraft', id: 'air_race', data: plane, baseVersion: 0 }]);
+    await cloud.refresh();
+    expect(store.getState().aircraft.map((a) => a.id)).toEqual(['air_race']);
+
+    await bobPush([{ collection: 'aircraft', id: 'air_race', data: null, baseVersion: 1 }]);
+    // A save asked for just before the pull lands, carrying the data as it
+    // was then; it runs after the pull has removed the aircraft.
+    const before = store.getState();
+    const pulling = cloud.refresh();
+    const saving = cloud.save(before);
+    await Promise.all([pulling, saving]);
+    await store.flush();
+
+    expect(store.getState().aircraft).toEqual([]);
+    const row = await bobSees('aircraft', 'air_race');
+    expect(row).toBeUndefined();
+    const { rows } = await (await import('./db.js')).getPool().query(
+      `select version, data is null as deleted from app_record where id = 'air_race'`,
+    );
+    expect(rows[0]).toEqual({ version: 2, deleted: true });
+  });
+
+  it('does not undo someone else\'s edit while a save was waiting behind a pull', async () => {
+    await cloud.start();
+    const c = store.createContact({ firstName: 'John' });
+    await store.flush();
+    const remote = await bobSees('contacts', c.id);
+    await bobPush([{ collection: 'contacts', id: c.id, data: { ...remote.data, notes: 'Bob was here' }, baseVersion: remote.version }]);
+
+    const before = store.getState();
+    const pulling = cloud.refresh();
+    const saving = cloud.save(before);
+    await Promise.all([pulling, saving]);
+    await store.flush();
+
+    expect(store.getState().contacts[0].notes).toBe('Bob was here');
+    expect((await bobSees('contacts', c.id)).data.notes).toBe('Bob was here');
+    // Not even for a moment: nobody wrote over Bob's edit.
+    const { rows } = await (await import('./db.js')).getPool().query(
+      `select user_name, action from app_audit where record_id = $1 order by id`, [c.id],
+    );
+    expect(rows).toEqual([{ user_name: 'Alice Pilot', action: 'create' }, { user_name: 'Bob', action: 'update' }]);
+  });
+
   it('keeps an unsent local edit when a pull arrives for the same record', async () => {
     await cloud.start();
     const c = store.createContact({ firstName: 'John' });
