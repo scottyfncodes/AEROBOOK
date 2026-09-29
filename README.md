@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 355 tests; the 49 API and sync tests also need:
+npm test             # 356 tests; the 50 API and sync tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -241,7 +241,9 @@ SPA, and sets `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`
 and `X-Robots-Tag: noindex`.
 
 The project needs `DATABASE_URL` (Neon's pooled connection string),
-`BETTER_AUTH_SECRET`, `BLOB_READ_WRITE_TOKEN` (set by connecting a private
-Blob store to the project), and `SETUP_TOKEN` only until the first admin
-exists. `APP_ORIGINS` adds a custom domain.
+`BETTER_AUTH_SECRET`, a private Blob store connected to the project, and
+`SETUP_TOKEN` only until the first admin exists. A connected store provides
+either `BLOB_STORE_ID` (the deployment signs in with Vercel's OIDC token, and
+uploads use presigned URLs scoped to one path) or `BLOB_READ_WRITE_TOKEN`
+(uploads use client tokens); the app handles both. `APP_ORIGINS` adds a custom domain.
 Apply `db/schema.sql` to a new database before the first deploy.

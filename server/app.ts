@@ -7,7 +7,7 @@ import { getAuth, migrate, sessionUser, type SessionUser } from './auth.js';
 import { getPool } from './db.js';
 import { BadRequest, history, isEmpty, pull, push, validateChanges } from './sync.js';
 import {
-  blobUploadToken, isFilePath, MAX_FILE_BYTES, putLocal, readStored, storageMode,
+  blobUploadToken, isFilePath, MAX_FILE_BYTES, putLocal, readStored, storageMode, uploadFlavor,
 } from './files.js';
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -115,7 +115,9 @@ async function files(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const mode = storageMode();
 
-  if (url.pathname === '/api/files/config') return json({ mode, maxBytes: MAX_FILE_BYTES });
+  if (url.pathname === '/api/files/config') {
+    return json({ mode, maxBytes: MAX_FILE_BYTES, ...(mode === 'blob' ? { upload: uploadFlavor() } : {}) });
+  }
 
   if (url.pathname === '/api/files/upload') {
     if (request.method !== 'POST') return error(405, 'Method not allowed');

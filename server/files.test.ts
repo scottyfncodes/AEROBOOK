@@ -114,5 +114,26 @@ describe.skipIf(!TEST_DB)('documents', () => {
     it('has no local upload route', async () => {
       expect((await putLocal(PATH, PDF)).status).toBe(404);
     });
+
+    it('tells the browser how to upload, token or presigned', async () => {
+      expect(await (await api('/api/files/config', { cookie })).json()).toMatchObject({ mode: 'blob', upload: 'token' });
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+      process.env.BLOB_STORE_ID = 'store_test123';
+      try {
+        expect(await (await api('/api/files/config', { cookie })).json()).toMatchObject({ mode: 'blob', upload: 'presigned' });
+        // The presigned route checks the session and the path before asking Vercel for anything.
+        const outside = await api('/api/files/upload', {
+          cookie,
+          body: { type: 'blob.generate-presigned-url', payload: { pathname: 'elsewhere/x.pdf', multipart: false, clientPayload: null } },
+        });
+        expect(outside.status).toBe(400);
+        const signedOut = await api('/api/files/upload', {
+          body: { type: 'blob.generate-presigned-url', payload: { pathname: PATH, multipart: false, clientPayload: null } },
+        });
+        expect(signedOut.status).toBe(401);
+      } finally {
+        delete process.env.BLOB_STORE_ID;
+      }
+    });
   });
 });

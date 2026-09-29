@@ -9,8 +9,8 @@
  */
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize } from 'node:path';
-import { del as blobDel, get as blobGet } from '@vercel/blob';
-import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
+import { del as blobDel, get as blobGet, issueSignedToken } from '@vercel/blob';
+import { handleUpload, handleUploadPresigned, type HandleUploadBody } from '@vercel/blob/client';
 
 export type StorageMode = 'blob' | 'local' | 'none';
 
@@ -24,10 +24,22 @@ export function isFilePath(path: string): boolean {
   return PATH_RE.test(path) && !path.includes('..');
 }
 
+/**
+ * A Blob store connected to the project either hands over a read-write token
+ * (BLOB_READ_WRITE_TOKEN) or only its id (BLOB_STORE_ID), with the deployment
+ * proving who it is through Vercel's OIDC token. The two sign uploads
+ * differently; reading and deleting work the same either way.
+ */
 export function storageMode(): StorageMode {
-  if (process.env.BLOB_READ_WRITE_TOKEN) return 'blob';
+  if (process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID) return 'blob';
   if (process.env.FILES_DIR) return 'local';
   return 'none';
+}
+
+export type UploadFlavor = 'token' | 'presigned';
+
+export function uploadFlavor(): UploadFlavor {
+  return process.env.BLOB_READ_WRITE_TOKEN ? 'token' : 'presigned';
 }
 
 export interface StoredFile {
@@ -38,6 +50,24 @@ export interface StoredFile {
 
 /** Answers the browser's request for an upload token. The caller has checked the session. */
 export async function blobUploadToken(request: Request, body: HandleUploadBody): Promise<unknown> {
+  if (uploadFlavor() === 'presigned') {
+    return handleUploadPresigned({
+      request,
+      body: body as never,
+      getSignedToken: async (pathname) => {
+        if (!isFilePath(pathname)) throw new Error('Documents are stored under files/');
+        // Good for this one path, for writing only, for ten minutes. The path
+        // already carries the record's unique id, so no suffix is needed.
+        const token = await issueSignedToken({
+          pathname,
+          operations: ['put'],
+          maximumSizeInBytes: MAX_FILE_BYTES,
+          validUntil: Date.now() + 10 * 60 * 1000,
+        });
+        return { token, urlOptions: { maximumSizeInBytes: MAX_FILE_BYTES } };
+      },
+    });
+  }
   return handleUpload({
     request,
     body,
