@@ -22,6 +22,8 @@ const TYPES: Record<string, string> = {
 };
 
 process.env.APP_ORIGINS ??= `${ORIGIN},http://localhost:${PORT}`;
+// Documents go to a folder here; on Vercel they go to Blob storage.
+process.env.FILES_DIR ??= resolve(import.meta.dirname, '../.local-files');
 
 async function staticFile(pathname: string): Promise<{ body: Buffer; type: string } | null> {
   const path = normalize(join(DIST, decodeURIComponent(pathname)));

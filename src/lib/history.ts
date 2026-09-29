@@ -28,6 +28,7 @@ const NOUNS: Record<string, [one: string, many: string]> = {
   followUps: ['follow-up', 'follow-ups'],
   templates: ['email template', 'email templates'],
   imports: ['import', 'imports'],
+  files: ['document', 'documents'],
 };
 
 export function noun(collection: string, count = 1): string {

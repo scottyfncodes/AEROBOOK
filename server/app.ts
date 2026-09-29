@@ -6,6 +6,9 @@ import { timingSafeEqual } from 'node:crypto';
 import { getAuth, migrate, sessionUser, type SessionUser } from './auth.js';
 import { getPool } from './db.js';
 import { BadRequest, history, isEmpty, pull, push, validateChanges } from './sync.js';
+import {
+  blobUploadToken, isFilePath, MAX_FILE_BYTES, putLocal, readStored, storageMode,
+} from './files.js';
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
@@ -104,6 +107,67 @@ async function team(): Promise<Response> {
   return json({ people: rows.map((r) => ({ id: r.id, name: r.name, active: !r.banned })) });
 }
 
+/**
+ * Documents. Every route needs a session; reading one also needs a document
+ * record that points at it, so only files the app itself stored can be read.
+ */
+async function files(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const mode = storageMode();
+
+  if (url.pathname === '/api/files/config') return json({ mode, maxBytes: MAX_FILE_BYTES });
+
+  if (url.pathname === '/api/files/upload') {
+    if (request.method !== 'POST') return error(405, 'Method not allowed');
+    if (mode !== 'blob') return error(404, 'Uploads go through /api/files/local here');
+    const refused = checkWrite(request);
+    if (refused) return refused;
+    try {
+      return json(await blobUploadToken(request, (await readJson(request)) as never));
+    } catch (e) {
+      return error(400, (e as Error).message);
+    }
+  }
+
+  if (url.pathname === '/api/files/local') {
+    if (request.method !== 'PUT') return error(405, 'Method not allowed');
+    if (mode !== 'local') return error(404, 'Not available');
+    const origin = request.headers.get('origin');
+    if (origin && origin !== url.origin) return error(403, 'Cross-origin request refused');
+    const path = url.searchParams.get('path') ?? '';
+    if (!isFilePath(path)) return error(400, 'Bad document path');
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.length > MAX_FILE_BYTES) return error(413, 'Document too large');
+    await putLocal(path, bytes);
+    return json({ pathname: path });
+  }
+
+  if (url.pathname === '/api/files/content') {
+    if (request.method !== 'GET') return error(405, 'Method not allowed');
+    const path = url.searchParams.get('path') ?? '';
+    if (!isFilePath(path)) return error(400, 'Bad document path');
+    const { rows } = await getPool().query<{ name: string | null; type: string | null }>(
+      `select data->>'name' as name, data->>'mimeType' as type from app_record
+        where collection = 'files' and data is not null and data->>'blobPath' = $1 limit 1`,
+      [path],
+    );
+    if (!rows[0]) return error(404, 'No such document');
+    const stored = await readStored(path);
+    if (!stored) return error(404, 'The document is missing from storage');
+    const name = (rows[0].name ?? 'document').replace(/["\\\r\n]/g, '');
+    return new Response(stored.body as BodyInit, {
+      headers: {
+        'content-type': rows[0].type || 'application/octet-stream',
+        // Always a download, never rendered as a page on this site.
+        'content-disposition': `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+        'x-content-type-options': 'nosniff',
+        'cache-control': 'private, no-store',
+      },
+    });
+  }
+  return error(404, 'Not found');
+}
+
 async function sync(request: Request, user: SessionUser): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === '/api/sync/status') return json({ empty: await isEmpty() });
@@ -139,6 +203,10 @@ export async function handle(request: Request): Promise<Response> {
       const before = raw === null ? undefined : Number(raw);
       if (before !== undefined && (!Number.isInteger(before) || before < 1)) return error(400, 'Bad cursor');
       return json(await history(before));
+    }
+    if (pathname.startsWith('/api/files/')) {
+      if (!(await sessionUser(request))) return error(401, 'Sign in first');
+      return await files(request);
     }
     if (pathname === '/api/team') {
       if (request.method !== 'GET') return error(405, 'Method not allowed');

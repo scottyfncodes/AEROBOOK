@@ -160,8 +160,8 @@ export default function Settings() {
           </div>
           <p className="xsmall muted">
             CSV opens in any spreadsheet. The full export is JSON and carries every record and every link between
-            them. It lists attached documents but not the files themselves — for now those stay on the device they
-            were added on. Keep originals of anything that matters.
+            them. It lists attached documents but not the files themselves, which stay in AEROBOOK's private
+            document storage. Keep originals of anything that matters.
           </p>
 
           {isAdmin ? (

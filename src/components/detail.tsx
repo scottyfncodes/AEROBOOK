@@ -560,8 +560,8 @@ export function FilesSection({
         <input type="file" multiple hidden onChange={(e) => { void onPick(e.target.files); e.target.value = ''; }} />
       </label>
       <p className="xsmall muted">
-        For now, documents stay on the device they were attached on — the rest of the team will not see
-        them yet. Clearing this site's data removes them, and a JSON backup carries the list but not the files.
+        Documents are stored privately in the cloud: everyone on the team can open them, and only people
+        signed in to AEROBOOK. A JSON backup carries the list but not the files.
       </p>
     </div>
   );
