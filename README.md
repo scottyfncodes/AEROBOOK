@@ -1,6 +1,7 @@
 # AEROBOOK
 
-A personal CRM for an aircraft broker who also sells aviation insurance.
+A CRM for an aircraft broker who also sells aviation insurance, shared by a
+small team (sized for up to about ten people).
 Aircraft and insurance policies are first-class records, not custom fields on
 a contact.
 
@@ -16,16 +17,28 @@ when you next owe them something.
 
 ## Running it
 
+Everything needs a Postgres database. Put these in `.env.local`:
+
 ```bash
-npm install
-npm run dev        # development server
-npm test           # 277 tests
-npm run build      # production build into dist/
-npm run preview    # serve the build, then in another shell:
-npm run e2e        # drive it in Chromium at iPhone dimensions
+DATABASE_URL=postgres://...            # any Postgres; Neon in production
+BETTER_AUTH_SECRET=...                 # long random string: openssl rand -base64 32
+SETUP_TOKEN=...                        # only needed to create the first admin
 ```
 
-`npm run e2e` takes `BASE_URL` and `CHROME_PATH` from the environment.
+```bash
+npm install
+npm run db:migrate   # create the tables
+npm run dev          # app and API together on one port
+npm test             # 314 tests; the 28 API and sync tests also need:
+npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
+npm run build        # production build into dist/
+npm run serve        # serve the build and the API the way Vercel does
+npm run e2e          # drive it in Chromium at iPhone dimensions
+```
+
+`npm run e2e` expects `npm run serve` running against an **empty** database
+with `SETUP_TOKEN=e2e-setup-token`; it creates the first admin itself, and
+takes `BASE_URL` and `CHROME_PATH` from the environment.
 
 `npm run build` needs nothing but Node. Chromium and potrace are only used by
 the brand script below, which is not part of the build.
@@ -33,6 +46,12 @@ the brand script below, which is not part of the build.
 ## How it is put together
 
 ```
+api/index.ts      the one Vercel Function; every /api path lands here
+server/           the API: sign-in, sync, first-time setup
+  auth.ts         Better Auth — invite-only email and password, admin/user
+  sync.ts         pull and push of records, with versions and history
+  app.ts          routing, and who may do what
+db/schema.sql     the whole database schema
 src/lib/          domain logic, all pure and tested
   csv.ts          RFC 4180 reader that never throws on malformed input
   mapping.ts      scored header detection onto AEROBOOK fields
@@ -45,7 +64,7 @@ src/lib/          domain logic, all pure and tested
   search.ts       one index across contacts, aircraft and opportunities
   aviation.ts     ISA atmosphere, wind triangle, weight and balance, premiums
   links.ts        external links, built from stable endpoints only
-src/data/         types, IndexedDB persistence, the store
+src/data/         types, the store, cloud sync, the device cache
 src/components/   shared UI
 src/screens/      one file per screen
 ```
@@ -62,12 +81,42 @@ only the user can know — renewal in progress, quote received, bound — are ke
 as chosen. Inside sixty days the countdown reads *"Renewal in 43 days"*; beyond
 that it reads as a date, because a count that large is not a countdown.
 
+## Accounts
+
+There is no sign-up. The first admin is created once, on the setup screen,
+with the `SETUP_TOKEN` set on the deployment; after that, an admin adds each
+person under **Settings → Team**, sets or resets their password, makes them
+an admin, or turns their access off. Turning access off keeps their name on
+everything they recorded. Sign-in attempts are rate-limited.
+
+Everyone sees and edits the same contacts, aircraft, opportunities, policies,
+timeline, follow-ups and templates. Each person has their own profile (the
+signature on their emails) and appearance setting. Restoring a backup and
+erasing everything affect the whole team, so only admins see them.
+
 ## Data
 
-The whole dataset is a single JSON document in IndexedDB. A personal CRM is a
-few thousand records, so keeping it in memory and writing the document on
-change is simpler and faster than a row-per-record schema. `localStorage` is
-the fallback when IndexedDB is unavailable. Nothing leaves the device.
+The app still keeps the whole dataset in memory — a few thousand records —
+and every screen reads it synchronously. What changed is where it is saved.
+
+Each record is a row in Postgres (`app_record`), stored as the same JSON the
+app works with, with a version number. After every change the app compares
+the new state with what the server last agreed and sends only the records
+that differ, each with the version it was edited from. If someone else saved
+that record first, theirs stands and the app says so. Other people's changes
+arrive when the app regains focus and every 30 seconds. Every create, edit
+and delete is also written to `app_audit` with who did it, for the activity
+history to come.
+
+A copy is cached on the device, so the app opens offline — marked as such —
+and changes that were on their way when the app closed are sent the next time
+it opens.
+
+**Documents are the exception, for now.** A file and its row stay on the
+device that attached them, as before, until they move to cloud storage.
+
+A device that used AEROBOOK before accounts shows a one-time **Upload** banner
+while the account is still empty, and sends everything it held.
 
 ## Things it deliberately does not do
 
@@ -80,9 +129,9 @@ the fallback when IndexedDB is unavailable. Nothing leaves the device.
   data on the record.
 - **It never silently overwrites.** An import that would replace an existing
   value shows the conflict and waits for a decision.
-- **It does not pretend a document is safe.** Attachments are stored in this
-  browser and nowhere else. The JSON backup carries the list of them, not the
-  files, and the export screen says so.
+- **It does not pretend a document is safe.** Attachments are, for now, stored
+  in the browser that attached them and nowhere else. The JSON backup carries
+  the list of them, not the files, and the screens say so.
 - **It has no notifications.** Reminders are in-app, on the home screen and the
   task list, because a browser cannot deliver a background notification on iOS
   reliably enough to build a working day on.
@@ -142,6 +191,12 @@ Run it only when the source signature changes.
 ## Deployment
 
 Vercel, from this repository — a push to the production branch deploys it.
-The build is a plain static bundle; `vercel.json` handles the SPA rewrite and
-sets `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and
-`X-Robots-Tag: noindex`.
+The page is a static bundle; `api/index.ts` is a Vercel Function, and
+`vercel.json` sends every `/api/*` path to it, rewrites everything else to the
+SPA, and sets `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`
+and `X-Robots-Tag: noindex`.
+
+The project needs three environment variables: `DATABASE_URL` (Neon's pooled
+connection string), `BETTER_AUTH_SECRET`, and `SETUP_TOKEN` (which can be
+removed once the first admin exists). `APP_ORIGINS` adds a custom domain.
+Apply `db/schema.sql` to a new database before the first deploy.

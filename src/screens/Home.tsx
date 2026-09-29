@@ -7,6 +7,7 @@
  */
 import { Link } from 'react-router-dom';
 
+import { LocalDataBanner } from '../components/localData';
 import { AppBar } from '../components/AppBar';
 import {
   IconBell, IconDoc, IconMail, IconPlane, IconPlus, IconShield, IconTarget,
@@ -40,6 +41,7 @@ export default function Home() {
     <>
       <AppBar wordmark />
       <main className="page stack stack--lg">
+        <LocalDataBanner />
         <div className="stack stack--sm">
           {/* The header already carries a search icon on every screen, so this
               row is for the actions search cannot do: creating something. */}

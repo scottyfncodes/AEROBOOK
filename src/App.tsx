@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
-import { ToastProvider } from './components/ui';
+import { ToastProvider, useToast } from './components/ui';
 import { Mark } from './components/Brand';
 import { IconBell, IconHome, IconPlane, IconSettings, IconUsers } from './components/Icons';
 import { useDatabase, useLoaded, useSaveError } from './data/useStore';
+import { onNotice } from './data/store';
+import { SessionProvider, useSession } from './data/session';
 
 import Home from './screens/Home';
 import Contacts from './screens/Contacts';
@@ -22,6 +24,7 @@ import Tools from './screens/Tools';
 import Templates from './screens/Templates';
 import Settings from './screens/Settings';
 import NotFound from './screens/NotFound';
+import SignIn from './screens/SignIn';
 
 /**
  * Five tabs, each a place records live. Opportunities, Prospects, Templates,
@@ -56,6 +59,13 @@ function ThemeSync() {
   return null;
 }
 
+/** Things that happened elsewhere — someone else's edit winning, say — arrive as toasts. */
+function Notices() {
+  const toast = useToast();
+  useEffect(() => onNotice(toast), [toast]);
+  return null;
+}
+
 function SaveErrorBanner() {
   const error = useSaveError();
   if (!error) return null;
@@ -71,6 +81,22 @@ function SaveErrorBanner() {
 }
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <SessionProvider>
+        <Gate />
+      </SessionProvider>
+    </ToastProvider>
+  );
+}
+
+/** Nothing but the sign-in screen until someone is signed in and their data is open. */
+function Gate() {
+  const { status } = useSession();
+  return status === 'ready' ? <Shell /> : <SignIn />;
+}
+
+function Shell() {
   const loaded = useLoaded();
   const navigate = useNavigate();
 
@@ -87,7 +113,8 @@ export default function App() {
   }, [navigate]);
 
   return (
-    <ToastProvider>
+    <>
+      <Notices />
       <ThemeSync />
       <ScrollToTop />
       <div className="app">
@@ -135,6 +162,6 @@ export default function App() {
           ))}
         </nav>
       </div>
-    </ToastProvider>
+    </>
   );
 }

@@ -11,15 +11,22 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b --noEmit",
     "e2e": "node e2e-check.mjs",
-    "brand": "node scripts/build-brand.mjs"
+    "brand": "node scripts/build-brand.mjs",
+    "serve": "tsx server/local.ts",
+    "db:migrate": "tsx scripts/schema.ts",
+    "db:schema": "tsx scripts/schema.ts --print",
+    "test:server": "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgres://postgres:postgres@localhost:5432/aerobook_test} vitest run server"
   },
   "dependencies": {
+    "better-auth": "^1.7.6",
+    "pg": "^8.23.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
@@ -27,6 +34,7 @@
     "jsdom": "^27.0.0",
     "playwright": "^1.63.0",
     "potrace": "^2.1.8",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.2",
     "vite": "^7.1.5",
     "vitest": "^3.2.4"

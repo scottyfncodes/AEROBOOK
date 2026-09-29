@@ -529,8 +529,8 @@ export function FilesSection({
         <input type="file" multiple hidden onChange={(e) => { void onPick(e.target.files); e.target.value = ''; }} />
       </label>
       <p className="xsmall muted">
-        Documents are stored on this device only, inside the browser. Clearing this site's data removes
-        them, and a JSON backup carries the list but not the files themselves.
+        For now, documents stay on the device they were attached on — the rest of the team will not see
+        them yet. Clearing this site's data removes them, and a JSON backup carries the list but not the files.
       </p>
     </div>
   );
