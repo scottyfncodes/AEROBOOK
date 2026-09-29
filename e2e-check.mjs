@@ -709,6 +709,7 @@ await page.waitForSelector('[role=tablist]');
 if (await page.getByText(TASK).count()) errors.push('a follow-up given to the teammate is on the admin’s own list');
 await page.getByRole('tab', { name: /^All/ }).click();
 const allCard = page.locator('.card', { hasText: TASK });
+await allCard.first().waitFor({ timeout: 5000 }).catch(() => undefined);
 if (!(await allCard.count())) errors.push('the teammate’s follow-up is missing from All');
 else if (!has(await allCard.innerText(), TEAMMATE.name)) errors.push('the follow-up in All does not say who it is for');
 await shot('13c-follow-ups-all');
