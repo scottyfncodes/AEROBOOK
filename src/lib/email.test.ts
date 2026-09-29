@@ -90,6 +90,16 @@ describe('renderEmail', () => {
     expect(e.missing).toContain('tail');
   });
 
+  it('drops the separator an empty tail leaves behind', () => {
+    // A live account sent "RE: — quote follow-up" to a contact with no aircraft on file.
+    const e = renderEmail(tpl({ subject: 'RE: {{tail}} — quote follow-up' }), { contact });
+    expect(e.subject).toBe('RE: Quote follow-up');
+    const lead = renderEmail(tpl({ subject: '{{tail}} - {{model}} - update' }), { contact });
+    expect(lead.subject).toBe('Update');
+    const whole = renderEmail(tpl({ subject: 'RE: {{tail}} — quote follow-up' }), { contact, aircraft });
+    expect(whole.subject).toBe('RE: N917JH — quote follow-up');
+  });
+
   it('reports the fields it could not fill', () => {
     const e = renderEmail(tpl({ body: 'Hi {{firstName}}, your {{model}} in {{city}}.' }), {
       contact: { ...contact, city: '' },

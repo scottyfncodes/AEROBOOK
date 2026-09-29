@@ -17,7 +17,7 @@ import {
 import { useDatabase } from '../data/useStore';
 import { deleteActivity, deleteAircraft, setAircraftOwner, updateAircraft } from '../data/store';
 import { AIRCRAFT_STATUSES, type AircraftStatus, type FollowUp, type InsurancePolicy } from '../data/types';
-import { isOpen, nextMove, opportunitiesFor, ownerOf, previousOwners, timelineFor } from '../lib/selectors';
+import { documentsFor, isOpen, nextMove, opportunitiesFor, ownerOf, previousOwners, timelineFor } from '../lib/selectors';
 import { policiesFor, policyState } from '../lib/insurance';
 import { displayName } from '../lib/names';
 import { formatPhone } from '../lib/phone';
@@ -75,7 +75,7 @@ export default function AircraftDetail() {
   const policies = policiesFor(db, { aircraftId: aircraft.id });
   const primaryPolicy = policies[0];
   const move = nextMove(db, { aircraftId: aircraft.id });
-  const files = db.files.filter((f) => f.aircraftId === aircraft.id);
+  const documents = documentsFor(db, { aircraftId: aircraft.id });
   const history = previousOwners(db, aircraft);
   const description = [aircraft.year, aircraft.make, aircraft.model].filter(Boolean).join(' ');
 
@@ -326,7 +326,7 @@ export default function AircraftDetail() {
 
         <section className="stack stack--sm">
           <h2 className="section-title">Documents</h2>
-          <FilesSection files={files} links={{ aircraftId: aircraft.id }} defaultCategory="Aircraft" />
+          <FilesSection documents={documents} links={{ aircraftId: aircraft.id }} defaultCategory="Aircraft" />
         </section>
 
         <ExternalLinkList links={links} title="Links" />

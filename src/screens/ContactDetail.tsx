@@ -23,7 +23,7 @@ import {
   type ContactIntent, type ContactStatus, type ContactType, type FollowUp, type IntentLevel,
   type ProspectStatus,
 } from '../data/types';
-import { aircraftOf, nextMove, opportunitiesFor, timelineFor } from '../lib/selectors';
+import { aircraftOf, documentsFor, nextMove, opportunitiesFor, timelineFor } from '../lib/selectors';
 import { policiesFor } from '../lib/insurance';
 import { displayName } from '../lib/names';
 import { formatPhone, formatZip } from '../lib/phone';
@@ -62,7 +62,7 @@ export default function ContactDetail() {
   const owned = aircraftOf(db, contact.id);
   const opportunities = opportunitiesFor(db, { contactId: contact.id });
   const policies = policiesFor(db, { contactId: contact.id });
-  const files = db.files.filter((f) => f.contactId === contact.id);
+  const documents = documentsFor(db, { contactId: contact.id });
   const primaryAircraft = owned[0] ?? null;
   const move = nextMove(db, { contactId: contact.id });
   const intent = contact.intent;
@@ -326,7 +326,7 @@ export default function ContactDetail() {
 
         <section className="stack stack--sm">
           <h2 className="section-title">Documents</h2>
-          <FilesSection files={files} links={{ contactId: contact.id }} />
+          <FilesSection documents={documents} links={{ contactId: contact.id }} />
         </section>
 
         <ExternalLinkList links={links} title="Links" />
