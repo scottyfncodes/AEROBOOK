@@ -148,4 +148,9 @@ describe('migrate v1 → v2', () => {
     expect(partial.aircraft).toEqual([]);
     expect(partial.contacts).toHaveLength(1);
   });
+
+  it('drops the list a removed feature left behind', () => {
+    const db = migrate({ ...emptyDatabase(), layoverSpots: [] });
+    expect('layoverSpots' in db).toBe(false);
+  });
 });

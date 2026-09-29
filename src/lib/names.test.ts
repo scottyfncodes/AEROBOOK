@@ -48,6 +48,21 @@ describe('parseOwnerName — FAA last-name-first order', () => {
     expect(p.role).toBe('Trustee');
   });
 
+  it('does not read a DBA as part of the name', () => {
+    // From a live FAA export, where the trade name was cut off after "Dba".
+    const cut = parseOwnerName('Spatz Tony William Dba');
+    expect(cut.firstName).toBe('Tony');
+    expect(cut.middleName).toBe('William');
+    expect(cut.lastName).toBe('Spatz');
+    expect(cut.company).toBe('');
+    expect(cut.confidence).toBe('high');
+
+    const full = parseOwnerName('Spatz Tony D/B/A Tulsa Aero');
+    expect(full.firstName).toBe('Tony');
+    expect(full.middleName).toBe('');
+    expect(full.company).toBe('Tulsa Aero');
+  });
+
   it('keeps a middle initial', () => {
     const p = parseOwnerName('Heine John C');
     expect(p.firstName).toBe('John');

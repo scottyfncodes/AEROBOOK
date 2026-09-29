@@ -173,9 +173,12 @@ export function migrate(raw: unknown): Database {
     } satisfies Opportunity;
   });
 
+  // Layover was removed from the app; its empty list rode along in every save.
+  const { layoverSpots: _layover, ...kept } = input as Partial<Database> & { layoverSpots?: unknown };
+
   return {
     ...base,
-    ...input,
+    ...kept,
     version: DB_VERSION,
     contacts: input.contacts ?? [],
     aircraft: (input.aircraft ?? []).map((a) => ({ ...a, ownerships: a.ownerships ?? [], custom: a.custom ?? {} })),

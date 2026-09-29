@@ -16,7 +16,7 @@ import {
   OPPORTUNITY_STATUSES, OPPORTUNITY_TYPES,
   type FollowUp, type OpportunityStatus, type OpportunityType,
 } from '../data/types';
-import { nextFollowUpFor, timelineFor } from '../lib/selectors';
+import { documentsFor, nextFollowUpFor, timelineFor } from '../lib/selectors';
 import { policiesFor } from '../lib/insurance';
 import { displayName } from '../lib/names';
 import { formatDate, relativeDue } from '../lib/dates';
@@ -50,7 +50,7 @@ export default function OpportunityDetail() {
   const contact = opportunity.contactId ? db.contacts.find((c) => c.id === opportunity.contactId) : undefined;
   const aircraft = opportunity.aircraftId ? db.aircraft.find((a) => a.id === opportunity.aircraftId) : undefined;
   const policies = policiesFor(db, { opportunityId: opportunity.id });
-  const files = db.files.filter((f) => f.opportunityId === opportunity.id);
+  const documents = documentsFor(db, { opportunityId: opportunity.id });
   const nextFollowUp = nextFollowUpFor(db, { opportunityId: opportunity.id });
   const isInsurance = opportunity.type.includes('Insurance');
 
@@ -177,7 +177,7 @@ export default function OpportunityDetail() {
         <section className="stack stack--sm">
           <h2 className="section-title">Documents</h2>
           <FilesSection
-            files={files}
+            documents={documents}
             links={{ opportunityId: opportunity.id }}
             defaultCategory={isInsurance ? 'Insurance' : 'Brokerage'}
           />

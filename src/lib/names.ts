@@ -120,13 +120,22 @@ export function parseOwnerName(input: string | null | undefined, order: NameOrde
     };
   }
 
-  const isJoint = JOINT_RE.test(raw);
+  // "D/B/A" is one word, not a slash between joint owners.
+  const named = raw.replace(/\bD\/B\/A\b/gi, 'DBA');
+  const isJoint = JOINT_RE.test(named);
   // Parse only the first named person; the raw value keeps the rest.
-  const primary = isJoint ? raw.split(JOINT_RE)[0].trim() : raw;
+  const primary = isJoint ? named.split(JOINT_RE)[0].trim() : named;
 
   const hasComma = primary.includes(',');
   let tokens = primary.split(/[\s,]+/).map(clean).filter(Boolean);
   if (tokens.length === 0) return emptyResult(raw);
+
+  // "Spatz Tony William Dba Tulsa Aero" — everything from DBA on is the trade
+  // name, not part of the person's name. The FAA field is often cut off right
+  // after the DBA, leaving nothing to keep.
+  const dbaIdx = tokens.findIndex((t, i) => i > 0 && /^DBA$/i.test(t));
+  const tradeName = dbaIdx === -1 ? '' : tokens.slice(dbaIdx + 1).join(' ');
+  if (dbaIdx !== -1) tokens = tokens.slice(0, dbaIdx);
 
   // Strip role words ("Trustee") before anything else so they can't be mistaken
   // for a given name or a surname.
@@ -195,7 +204,7 @@ export function parseOwnerName(input: string | null | undefined, order: NameOrde
     suffix,
     role,
     fullName,
-    company: '',
+    company: tradeName ? titleCase(tradeName) : '',
     isOrganization: false,
     isJoint,
     confidence,
