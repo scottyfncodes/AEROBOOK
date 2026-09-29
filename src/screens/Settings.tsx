@@ -9,6 +9,7 @@ import { LocalDataBanner } from '../components/localData';
 import { AccountSection, TeamSection } from '../components/team';
 import { useCurrentUser } from '../data/session';
 import { useDatabase } from '../data/useStore';
+import { sendDigestNow } from '../data/auth';
 import { eraseEverything, flush, replaceDatabase, updateSettings } from '../data/store';
 import {
   aircraftCsv, contactsCsv, downloadText, exportFilename, fullJson, opportunitiesCsv, parseFullJson,
@@ -22,8 +23,22 @@ export default function Settings() {
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState('');
+  const [sending, setSending] = useState(false);
+  const [digestError, setDigestError] = useState('');
 
   const s = db.settings;
+
+  const sendDigest = async () => {
+    setSending(true);
+    setDigestError('');
+    try {
+      toast(`Sent to ${await sendDigestNow()}`);
+    } catch (e) {
+      setDigestError((e as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
 
   const exportCsv = (kind: string, text: string) => {
     downloadText(exportFilename(kind, 'csv'), 'text/csv', text);
@@ -107,6 +122,26 @@ export default function Settings() {
               ]}
               onChange={(v) => updateSettings({ defaultNameOrder: v as typeof s.defaultNameOrder })}
             />
+          </div>
+        </section>
+
+        <section className="stack stack--sm">
+          <h2 className="section-title">Daily email</h2>
+          <div className="card stack stack--sm">
+            <label className="checkbox-row">
+              <input
+                className="checkbox"
+                type="checkbox"
+                checked={s.dailyDigest !== false}
+                onChange={(e) => updateSettings({ dailyDigest: e.target.checked })}
+              />
+              <span>Email me each morning with my overdue, today's and this week's follow-ups</span>
+            </label>
+            <p className="muted">Sent to {me.email}. Nothing is sent on a day with nothing due.</p>
+            {digestError ? <Banner tone="danger">{digestError}</Banner> : null}
+            <button className="btn btn--ghost btn--block" disabled={sending} onClick={() => void sendDigest()}>
+              <IconMail /> {sending ? 'Sending…' : 'Send me today’s email now'}
+            </button>
           </div>
         </section>
 

@@ -9,6 +9,7 @@ import { BadRequest, history, isEmpty, pull, push, validateChanges } from './syn
 import {
   blobUploadToken, isFilePath, MAX_FILE_BYTES, putLocal, readStored, storageMode, uploadFlavor,
 } from './files.js';
+import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
@@ -170,6 +171,48 @@ async function files(request: Request): Promise<Response> {
   return error(404, 'Not found');
 }
 
+/**
+ * The daily email. Vercel Cron calls /api/digest/run with CRON_SECRET as a
+ * bearer token; anyone else is turned away. A signed-in person can preview
+ * their own digest, or have it sent to themselves now.
+ */
+async function digest(request: Request): Promise<Response> {
+  const { pathname } = new URL(request.url);
+  if (pathname === '/api/digest/run') {
+    if (request.method !== 'GET' && request.method !== 'POST') return error(405, 'Method not allowed');
+    const secret = process.env.CRON_SECRET;
+    if (!secret) return error(503, 'The daily email is not scheduled on this deployment');
+    const given = request.headers.get('authorization') ?? '';
+    if (!sameSecret(given, `Bearer ${secret}`)) return error(401, 'Not allowed');
+    return json(await runDigest());
+  }
+
+  const user = await sessionUser(request);
+  if (!user) return error(401, 'Sign in first');
+  if (pathname === '/api/digest/preview') {
+    if (request.method !== 'GET') return error(405, 'Method not allowed');
+    const [mine] = await buildDigests(new Date(), { userId: user.id });
+    if (!mine) return error(404, 'No digest for this account');
+    return json({ enabled: emailEnabled(), empty: isEmptyDigest(mine), to: mine.email, ...renderDigest(mine) });
+  }
+  if (pathname === '/api/digest/send') {
+    if (request.method !== 'POST') return error(405, 'Method not allowed');
+    const refused = checkWrite(request);
+    if (refused) return refused;
+    const [mine] = await buildDigests(new Date(), { userId: user.id });
+    if (!mine) return error(404, 'No digest for this account');
+    try {
+      // Only ever to the signed-in person's own address.
+      await sendEmail(mine.email, renderDigest(mine));
+    } catch (e) {
+      if (e instanceof EmailError) return error(emailEnabled() ? 502 : 503, e.message);
+      throw e;
+    }
+    return json({ sentTo: mine.email });
+  }
+  return error(404, 'Not found');
+}
+
 async function sync(request: Request, user: SessionUser): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === '/api/sync/status') return json({ empty: await isEmpty() });
@@ -210,6 +253,7 @@ export async function handle(request: Request): Promise<Response> {
       if (!(await sessionUser(request))) return error(401, 'Sign in first');
       return await files(request);
     }
+    if (pathname.startsWith('/api/digest/')) return await digest(request);
     if (pathname === '/api/team') {
       if (request.method !== 'GET') return error(405, 'Method not allowed');
       if (!(await sessionUser(request))) return error(401, 'Sign in first');

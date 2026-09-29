@@ -59,4 +59,12 @@ create table if not exists app_audit (
   summary text not null default ''
 );
 create index if not exists app_audit_at_idx on app_audit (at desc);
+
+-- Who has had today's email, so a repeated cron run sends nothing twice.
+create table if not exists app_digest (
+  user_id text not null,
+  day date not null,
+  sent_at timestamptz not null default now(),
+  primary key (user_id, day)
+);
 `;

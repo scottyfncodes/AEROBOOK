@@ -620,10 +620,13 @@ await shot('13-team');
 const other = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 const phone = await other.newPage();
 let expectingRejection = false;
+let expectingNoEmail = false;
 phone.on('console', (m) => {
   if (m.type() !== 'error') return;
   // The wrong password below is refused on purpose, and the browser logs it.
   if (expectingRejection && m.text().includes('401')) return;
+  // So is the daily email while no email service is set up.
+  if (expectingNoEmail && m.text().includes('503')) return;
   errors.push(`teammate console: ${m.text()}`);
 });
 phone.on('pageerror', (e) => errors.push(`teammate pageerror: ${e.message}`));
@@ -761,7 +764,22 @@ else log('the document is still there after signing out and back in');
 const leaked = await (await browser.newContext()).request.get(`${BASE}/api/files/content?path=files/fil_abcd/x.pdf`);
 if (leaked.status() !== 401) errors.push(`a signed-out request for a document got ${leaked.status()}`);
 
+// Daily email: the choice is kept, and without an API key nothing is sent.
 await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+const digestBox = phone.getByRole('checkbox', { name: /Email me each morning/ });
+if (!(await digestBox.isChecked())) errors.push('the daily email was not on by default');
+await digestBox.uncheck();
+await phone.waitForTimeout(1500);
+await phone.reload({ waitUntil: 'networkidle' });
+if (await phone.getByRole('checkbox', { name: /Email me each morning/ }).isChecked()) errors.push('turning the daily email off did not stick');
+else log('the daily email can be turned off, and stays off');
+await phone.getByRole('checkbox', { name: /Email me each morning/ }).check();
+expectingNoEmail = true;
+await phone.getByRole('button', { name: /Send me today/ }).click();
+await phone.waitForSelector('text=not set up', { timeout: 5000 }).catch(() => errors.push('no message when email is not set up'));
+expectingNoEmail = false;
+await phone.locator('section', { hasText: 'Daily email' }).first().screenshot({ path: `${SHOTS}/settings-daily-email.png` });
+
 await phone.getByRole('button', { name: 'Sign out' }).click();
 await phone.waitForSelector('text=Sign in');
 await phone.goto(`${BASE}/aircraft`, { waitUntil: 'networkidle' });

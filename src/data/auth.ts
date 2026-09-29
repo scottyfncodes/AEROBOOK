@@ -84,6 +84,11 @@ export async function fetchHistory(before?: number): Promise<{ entries: HistoryE
   return call(`/api/history${before ? `?before=${before}` : ''}`);
 }
 
+/** Sends today's digest to the signed-in person's own address, now. */
+export async function sendDigestNow(): Promise<string> {
+  return (await call<{ sentTo: string }>('/api/digest/send', {})).sentTo;
+}
+
 // ------------------------------------------------------------ admin only
 
 export async function listTeam(): Promise<TeamMember[]> {
