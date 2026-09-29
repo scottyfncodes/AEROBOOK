@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 342 tests; the 36 API and sync tests also need:
+npm test             # 355 tests; the 49 API and sync tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -108,6 +108,23 @@ one scheduled, the next one stays with the same person. Names come from
 `GET /api/team`, which any signed-in person may call; managing accounts stays
 admin-only.
 
+## Documents
+
+A document is a record in the shared data (name, type, size, what it is
+attached to) plus the file in **private Vercel Blob storage** — never in
+Postgres, never at a public URL. The browser uploads straight to Blob with a
+short-lived token from `POST /api/files/upload`, which is only issued to
+someone signed in and only for a path under `files/`, up to 25 MB. Opening a
+document goes through `GET /api/files/content`, which checks the session and
+that a document record points at that file, and always serves it as a
+download. Deleting the document's record deletes the file, on the server.
+
+A document attached before cloud storage (or while offline) stays in that
+browser until it can be moved up, which the app does on its own the next time
+it opens. Without `BLOB_READ_WRITE_TOKEN` the app keeps documents in the
+browser as it used to; `npm run serve` and `npm run dev` use a `.local-files`
+folder instead.
+
 ## Activity history
 
 **Settings → Activity history** lists every change anyone on the team saved,
@@ -139,8 +156,8 @@ A copy is cached on the device, so the app opens offline — marked as such —
 and changes that were on their way when the app closed are sent the next time
 it opens.
 
-**Documents are the exception, for now.** A file and its row stay on the
-device that attached them, as before, until they move to cloud storage.
+**Documents** are records like the rest, with the file itself in private
+cloud storage (see Documents).
 
 A device that used AEROBOOK before accounts shows a one-time **Upload** banner
 while the account is still empty, and sends everything it held.
@@ -156,9 +173,9 @@ while the account is still empty, and sends everything it held.
   data on the record.
 - **It never silently overwrites.** An import that would replace an existing
   value shows the conflict and waits for a decision.
-- **It does not pretend a document is safe.** Attachments are, for now, stored
-  in the browser that attached them and nowhere else. The JSON backup carries
-  the list of them, not the files, and the screens say so.
+- **It never makes a document public.** Files sit in private storage and are
+  only ever read through the app, by someone signed in. The JSON backup
+  carries the list of them, not the files, and the screens say so.
 - **It has no notifications.** Reminders are in-app, on the home screen and the
   task list, because a browser cannot deliver a background notification on iOS
   reliably enough to build a working day on.
@@ -223,7 +240,8 @@ The page is a static bundle; `api/index.ts` is a Vercel Function, and
 SPA, and sets `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`
 and `X-Robots-Tag: noindex`.
 
-The project needs three environment variables: `DATABASE_URL` (Neon's pooled
-connection string), `BETTER_AUTH_SECRET`, and `SETUP_TOKEN` (which can be
-removed once the first admin exists). `APP_ORIGINS` adds a custom domain.
+The project needs `DATABASE_URL` (Neon's pooled connection string),
+`BETTER_AUTH_SECRET`, `BLOB_READ_WRITE_TOKEN` (set by connecting a private
+Blob store to the project), and `SETUP_TOKEN` only until the first admin
+exists. `APP_ORIGINS` adds a custom domain.
 Apply `db/schema.sql` to a new database before the first deploy.

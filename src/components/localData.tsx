@@ -48,7 +48,7 @@ export function LocalDataBanner() {
         <div>
           <strong>This device has AEROBOOK data from before accounts:</strong> {local.contacts.length} contacts,{' '}
           {local.aircraft.length} aircraft, {local.followUps.length} follow-ups. Upload it so everyone on the account
-          can see it. Attached documents stay on this device for now.
+          can see it. Attached documents go up with it.
         </div>
         <button className="btn btn--primary" disabled={busy} onClick={() => void upload()}>
           <IconUpload /> {busy ? 'Uploading…' : 'Upload it to the account'}

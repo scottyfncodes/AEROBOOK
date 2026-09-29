@@ -15,6 +15,7 @@ function api(): Plugin {
         if (!req.url?.startsWith('/api/')) return next();
         const origin = `http://${req.headers.host}`;
         process.env.APP_ORIGINS ??= origin;
+        process.env.FILES_DIR ??= `${process.cwd()}/.local-files`;
         const { handle } = await server.ssrLoadModule('/server/app.ts');
         const { toRequest, sendResponse } = await server.ssrLoadModule('/server/node.ts');
         await sendResponse(res, await handle(await toRequest(req, origin)));

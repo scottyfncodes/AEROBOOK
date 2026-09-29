@@ -6,8 +6,10 @@
  * others changed over both. Pushes and pulls run one at a time, in order, so
  * neither ever works from a base the other is halfway through changing.
  *
- * Documents are the exception: until they move to cloud storage, a file and
- * its row stay on the device that added them, as they always have.
+ * Documents are records like any other, with the file itself in private
+ * cloud storage (Vercel Blob), fetched through the API when opened. A document
+ * attached before cloud storage, or while offline, stays in this browser until
+ * it can be moved up — which happens on its own the next time the app opens.
  */
 import { defaultTemplates } from '../lib/email';
 import { nowIso } from '../lib/id';
@@ -17,7 +19,7 @@ import {
   applyRecords, diffDatabases, findRecord, recordKey, sameRecord,
   type RecordChange, type RemoteRecord,
 } from './sync';
-import { emptyDatabase, type Database } from './types';
+import { emptyDatabase, type Database, type FileRecord } from './types';
 
 export interface CloudUser {
   id: string;
@@ -48,6 +50,22 @@ interface Cache {
    * version it was made from.
    */
   pending?: { changes: RecordChange[]; versions: [string, number][] };
+  /** Documents still only in this browser, not yet in cloud storage. */
+  localFiles?: FileRecord[];
+}
+
+type StorageMode = 'blob' | 'local' | 'none';
+
+/** Documents in a cache that never reached cloud storage, from either shape of cache. */
+function browserOnlyFiles(cache: Cache | undefined): FileRecord[] {
+  const all = [...(cache?.localFiles ?? []), ...(cache?.base.files ?? [])].filter((f) => !f.blobPath);
+  return all.filter((f, i) => all.findIndex((g) => g.id === f.id) === i);
+}
+
+/** A file name that is safe as the last part of a storage path. */
+export function storageName(name: string): string {
+  const cleaned = name.replace(/[\/\\\u0000-\u001f]/g, '_').replace(/^\.+/, '').trim().slice(-150);
+  return cleaned || 'document';
 }
 
 const cacheKey = (userId: string) => `cloud:${userId}`;
@@ -57,6 +75,8 @@ export class CloudSync implements store.Backend {
   private versions = new Map<string, number>();
   private cursor = 0;
   private queue: Promise<unknown> = Promise.resolve();
+  private storage: StorageMode = 'none';
+  private moving: Promise<number> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly onWake = () => {
     if (typeof document === 'undefined' || document.visibilityState === 'visible') void this.refresh();
@@ -78,6 +98,7 @@ export class CloudSync implements store.Backend {
    */
   async start(): Promise<void> {
     const cache = await persistence.loadCache<Cache>(cacheKey(this.user.id));
+    const localFiles = cache?.userId === this.user.id ? browserOnlyFiles(cache) : [];
     let db: Database;
     let offline: string | null = null;
     try {
@@ -91,14 +112,14 @@ export class CloudSync implements store.Backend {
         more = page.more;
       }
       this.versions = new Map(records.map((r) => [recordKey(r.collection, r.id), r.version]));
-      this.base = { ...applyRecords(emptyDatabase(), records), files: cache?.base.files ?? [] };
+      this.base = applyRecords(emptyDatabase(), records);
       db = this.withDefaults(this.base, records);
     } catch (error) {
       if (error instanceof SessionExpired || !cache || cache.userId !== this.user.id) throw error;
-      this.base = cache.base;
+      this.base = { ...cache.base, files: cache.base.files.filter((f) => f.blobPath) };
       this.versions = new Map(cache.versions);
       this.cursor = cache.cursor;
-      db = cache.base;
+      db = this.base;
       offline = 'You are offline, so this is the copy saved on this device.';
     }
     const unsent = cache?.userId === this.user.id ? cache.pending : undefined;
@@ -114,9 +135,18 @@ export class CloudSync implements store.Backend {
       }
       db = applyRecords(db, unsent.changes);
     }
+    if (localFiles.length) {
+      db = { ...db, files: [...db.files, ...localFiles.filter((f) => !db.files.some((g) => g.id === f.id))] };
+    }
     store.load(db);
     await store.setBackend(this);
     store.setSaveError(offline);
+    if (!offline) {
+      this.storage = await this.request('/api/files/config')
+        .then((r) => r.json() as Promise<{ mode: StorageMode }>)
+        .then((c) => c.mode, () => 'none' as const);
+      void this.moveBrowserFiles();
+    }
     // Anything withDefaults added goes up now rather than on the next edit.
     if (db !== this.base) await this.save(db).catch((e: Error) => store.setSaveError(e.message));
     this.startPolling();
@@ -320,12 +350,83 @@ export class CloudSync implements store.Backend {
   private async saveCache(db: Database, pending?: RecordChange[]): Promise<void> {
     const cache: Cache = {
       userId: this.user.id,
-      base: { ...this.base, files: db.files },
+      base: this.base,
+      localFiles: db.files.filter((f) => !f.blobPath),
       versions: [...this.versions],
       cursor: this.cursor,
       pending: pending?.length ? { changes: pending, versions: [...this.versions] } : undefined,
     };
     await persistence.saveCache(cacheKey(this.user.id), cache).catch(() => undefined);
+  }
+
+  // ------------------------------------------------------------ documents
+
+  /**
+   * Store backend: put a document in cloud storage. Null keeps it in this
+   * browser instead — when there is no cloud storage, or the upload failed
+   * (no signal, say); it is moved up later rather than lost.
+   */
+  async storeFile(id: string, file: File): Promise<string | null> {
+    const path = `files/${id}/${storageName(file.name)}`;
+    try {
+      if (this.storage === 'blob') {
+        const { upload } = await import('@vercel/blob/client');
+        const result = await upload(path, file, {
+          access: 'private',
+          handleUploadUrl: '/api/files/upload',
+          contentType: file.type || undefined,
+          multipart: file.size > 8 * 1024 * 1024,
+        });
+        return result.pathname;
+      }
+      if (this.storage === 'local') {
+        const r = await this.request(`/api/files/local?path=${encodeURIComponent(path)}`, { method: 'PUT', body: file });
+        return ((await r.json()) as { pathname: string }).pathname;
+      }
+    } catch (error) {
+      if (error instanceof SessionExpired) this.expire();
+      store.notify(`${file.name} is saved on this device for now; it will be shared when it can be uploaded.`);
+    }
+    return null;
+  }
+
+  /** Store backend: fetch a document from cloud storage. */
+  async loadFile(record: FileRecord): Promise<Blob | undefined> {
+    if (!record.blobPath) return undefined;
+    try {
+      const r = await this.request(`/api/files/content?path=${encodeURIComponent(record.blobPath)}`);
+      return await r.blob();
+    } catch (error) {
+      if (error instanceof SessionExpired) this.expire();
+      throw error;
+    }
+  }
+
+  /**
+   * Move documents that are only in this browser up to cloud storage, so the
+   * team can open them and they survive signing out. Runs on its own after
+   * the app opens; anything that fails simply waits for next time.
+   */
+  moveBrowserFiles(): Promise<number> {
+    if (this.storage === 'none') return Promise.resolve(0);
+    // One move at a time; asking again while one runs waits for that one.
+    this.moving ??= this.moveNow().finally(() => { this.moving = null; });
+    return this.moving;
+  }
+
+  private async moveNow(): Promise<number> {
+    let moved = 0;
+    for (const f of store.getState().files.filter((x) => !x.blobPath)) {
+      const blob = await persistence.getFileBlob(f.id);
+      if (!blob) continue;
+      const path = await this.storeFile(f.id, new File([blob], f.name, { type: f.mimeType }));
+      if (!path) break;
+      store.markFileStored(f.id, path);
+      await persistence.deleteFileBlob(f.id).catch(() => undefined);
+      moved += 1;
+    }
+    if (moved) store.notify(moved === 1 ? '1 document moved to cloud storage.' : `${moved} documents moved to cloud storage.`);
+    return moved;
   }
 
   /** Whether the account has any shared data yet. */
@@ -341,6 +442,8 @@ export class CloudSync implements store.Backend {
   async uploadLocalData(local: Database): Promise<void> {
     if (!(await this.isAccountEmpty())) throw new Error('The account already has data, so nothing was uploaded.');
     store.replaceDatabase({ ...local, files: [...store.getState().files, ...local.files] });
+    await store.flush();
+    await this.moveBrowserFiles();
     await store.flush();
   }
 }

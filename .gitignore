@@ -7,3 +7,4 @@ coverage
 .e2e-shots
 *.tsbuildinfo
 public/brand/.*-ink.png
+.local-files

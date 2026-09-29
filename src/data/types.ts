@@ -318,6 +318,12 @@ export interface FileRecord {
   opportunityId: string | null;
   insurancePolicyId?: string | null;
   category?: DocumentCategory;
+  /**
+   * Where the file is kept in cloud storage. Missing means it is still only
+   * in this browser — a document attached before cloud storage, not yet
+   * moved up.
+   */
+  blobPath?: string;
   createdAt: string;
 }
 

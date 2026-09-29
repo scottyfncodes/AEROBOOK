@@ -37,6 +37,10 @@ type Listener = () => void;
  */
 export interface Backend {
   save(db: Database): Promise<void>;
+  /** Put a document in shared storage; its path there, or null to keep it in this browser. */
+  storeFile?(id: string, file: File): Promise<string | null>;
+  /** Fetch a document from shared storage. */
+  loadFile?(record: FileRecord): Promise<Blob | undefined>;
 }
 
 const localBackend: Backend = { save: (db) => persistence.saveDatabase(db) };
@@ -675,20 +679,35 @@ export async function addFile(
     category,
     createdAt: nowIso(),
   };
-  // The blob is written first: a row pointing at a file that was never stored
-  // would be a lie the user could not see.
-  await persistence.putFileBlob(record.id, file);
+  // The file is stored first: a row pointing at a file that was never stored
+  // would be a lie the user could not see. With cloud storage the whole team
+  // gets it; without, it stays in this browser as before.
+  const blobPath = backend.storeFile ? await backend.storeFile(record.id, file) : null;
+  if (blobPath) record.blobPath = blobPath;
+  else await persistence.putFileBlob(record.id, file);
   set((db) => ({ ...db, files: [...db.files, record] }));
   return record;
 }
 
+/**
+ * Removing a stored document's row is enough: the server deletes the file
+ * when the deletion reaches it.
+ */
 export async function removeFile(id: string): Promise<void> {
-  await persistence.deleteFileBlob(id);
+  const record = state.files.find((f) => f.id === id);
+  if (!record?.blobPath) await persistence.deleteFileBlob(id);
   set((db) => ({ ...db, files: db.files.filter((f) => f.id !== id) }));
 }
 
-export function getFile(id: string): Promise<Blob | undefined> {
+export async function getFile(id: string): Promise<Blob | undefined> {
+  const record = state.files.find((f) => f.id === id);
+  if (record?.blobPath && backend.loadFile) return backend.loadFile(record);
   return persistence.getFileBlob(id);
+}
+
+/** A document that was only in this browser is now in shared storage. */
+export function markFileStored(id: string, blobPath: string): void {
+  set((db) => ({ ...db, files: db.files.map((f) => (f.id === id ? { ...f, blobPath } : f)) }));
 }
 
 // ------------------------------------------------------------------ imports

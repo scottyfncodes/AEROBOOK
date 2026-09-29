@@ -12,7 +12,7 @@ import type { Database, Settings } from './types';
 /** Shared by everyone on the account. Mirrors SHARED_COLLECTIONS on the server. */
 export const SYNCED_COLLECTIONS = [
   'contacts', 'aircraft', 'opportunities', 'policies', 'activities',
-  'followUps', 'templates', 'imports',
+  'followUps', 'templates', 'imports', 'files',
 ] as const;
 export type SyncedCollection = (typeof SYNCED_COLLECTIONS)[number];
 
@@ -54,12 +54,20 @@ function same(a: unknown, b: unknown): boolean {
   return a === b || canonical(a) === canonical(b);
 }
 
+/**
+ * A document still only in this browser is not shared yet: nobody else could
+ * open it. It is sent once its file is in cloud storage.
+ */
+function shared(collection: SyncedCollection, rows: Row[]): Row[] {
+  return collection === 'files' ? rows.filter((r) => (r as { blobPath?: string }).blobPath) : rows;
+}
+
 export function diffDatabases(before: Database, after: Database, userId: string): RecordChange[] {
   const changes: RecordChange[] = [];
   for (const collection of SYNCED_COLLECTIONS) {
-    const prev = new Map((before[collection] as Row[]).map((r) => [r.id, r]));
+    const prev = new Map(shared(collection, before[collection] as Row[]).map((r) => [r.id, r]));
     const seen = new Set<string>();
-    for (const row of after[collection] as Row[]) {
+    for (const row of shared(collection, after[collection] as Row[])) {
       seen.add(row.id);
       const old = prev.get(row.id);
       if (!old || !same(old, row)) {

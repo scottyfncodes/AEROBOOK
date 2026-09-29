@@ -725,6 +725,41 @@ await page.waitForSelector(`text=${TASK}`, { timeout: 5000 })
   .then(() => log('the teammate handed the follow-up back to the admin'))
   .catch(() => errors.push('a follow-up handed back did not reach the admin’s list'));
 
+// ------------------------------------------------ 13c. a shared document
+// The admin attaches a PDF; the teammate, on their own device, sees it and
+// downloads the same bytes. It is still there after they sign out and in.
+const DOC = { name: 'e2e-binder.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 e2e binder') };
+await page.goto(tailUrl, { waitUntil: 'networkidle' });
+await page.locator('input[type=file]').setInputFiles(DOC);
+await page.waitForSelector(`text=${DOC.name}`, { timeout: 10000 });
+await page.waitForTimeout(800);
+
+const openDoc = async (who) => {
+  await who.goto(tailUrl, { waitUntil: 'networkidle' });
+  const found = await who.waitForSelector(`text=${DOC.name}`, { timeout: 10000 }).then(() => true, () => false);
+  if (!found) return null;
+  const download = who.waitForEvent('download');
+  await who.getByRole('button', { name: new RegExp(DOC.name.replace('.', '\\.')) }).first().click();
+  return readFileSync(await (await download).path(), 'utf8');
+};
+const teammateCopy = await openDoc(phone);
+if (teammateCopy === null) errors.push('the teammate does not see the document the admin attached');
+else if (teammateCopy !== DOC.buffer.toString()) errors.push('the teammate downloaded different bytes');
+else log('the teammate opened the document the admin attached');
+
+await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+await phone.getByRole('button', { name: 'Sign out' }).click();
+await phone.waitForSelector('text=Sign in');
+await phone.getByLabel('Email').fill(TEAMMATE.email);
+await phone.getByLabel('Password').fill(TEAMMATE.password);
+await phone.getByRole('button', { name: 'Sign in' }).click();
+// Signing in again returns to the page they left, not necessarily Home.
+await phone.waitForSelector('nav.tabbar');
+if ((await openDoc(phone)) !== DOC.buffer.toString()) errors.push('the document was gone after signing out and back in');
+else log('the document is still there after signing out and back in');
+const leaked = await (await browser.newContext()).request.get(`${BASE}/api/files/content?path=files/fil_abcd/x.pdf`);
+if (leaked.status() !== 401) errors.push(`a signed-out request for a document got ${leaked.status()}`);
+
 await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
 await phone.getByRole('button', { name: 'Sign out' }).click();
 await phone.waitForSelector('text=Sign in');

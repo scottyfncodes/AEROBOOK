@@ -11,12 +11,13 @@
  * reports it as a conflict and hands back what is there now.
  */
 import { getPool } from './db.js';
+import { deleteStored } from './files.js';
 import type { SessionUser } from './auth.js';
 
 /** Collections everyone on the account shares. */
 export const SHARED_COLLECTIONS = [
   'contacts', 'aircraft', 'opportunities', 'policies', 'activities',
-  'followUps', 'templates', 'imports',
+  'followUps', 'templates', 'imports', 'files',
 ] as const;
 
 /** Collections with one record per person, keyed by their user id. */
@@ -117,6 +118,8 @@ export async function push(user: SessionUser, changes: Change[]): Promise<{
     await client.query('select pg_advisory_xact_lock($1)', [WRITE_LOCK]);
     const applied: { collection: Collection; id: string; version: number }[] = [];
     const conflicts: RemoteRecord[] = [];
+    // Stored documents whose record went, to delete once the change is committed.
+    const orphaned: string[] = [];
 
     for (const change of changes) {
       const { rows } = await client.query<{ data: Record<string, unknown> | null; version: number }>(
@@ -142,6 +145,9 @@ export async function push(user: SessionUser, changes: Change[]): Promise<{
       );
       applied.push({ collection: change.collection, id: change.id, version });
 
+      const oldPath = change.collection === 'files' ? current?.data?.blobPath : undefined;
+      if (typeof oldPath === 'string' && oldPath !== change.data?.blobPath) orphaned.push(oldPath);
+
       if (!PERSONAL.has(change.collection)) {
         const action = change.data === null ? 'delete' : !current?.data ? 'create' : 'update';
         await client.query(
@@ -153,6 +159,7 @@ export async function push(user: SessionUser, changes: Change[]): Promise<{
     }
 
     await client.query('commit');
+    await deleteStored(orphaned);
     // No cursor comes back: this device has not seen what others wrote before
     // it, and its next pull will return its own writes at versions it holds.
     return { applied, conflicts };
