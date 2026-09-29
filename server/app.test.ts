@@ -196,6 +196,71 @@ describe.skipIf(!TEST_DB)('the API', () => {
       ]);
     });
 
+    describe('the activity history', () => {
+      const historyAs = (cookie?: string, query = '') => api(`/api/history${query}`, { cookie });
+
+      it('is only for people who are signed in', async () => {
+        expect((await historyAs()).status).toBe(401);
+        expect((await historyAs(undefined, '?before=5')).status).toBe(401);
+      });
+
+      it('cannot be written to or deleted', async () => {
+        for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+          const r = await api('/api/history', { method, cookie: alice, body: method === 'DELETE' ? undefined : {} });
+          expect(r.status).toBe(405);
+        }
+      });
+
+      it('says who did what to which record, newest first', async () => {
+        await pushAs(alice, [{ collection: 'aircraft', id: 'air_1', data: { id: 'air_1', tailNumber: 'N917JH' }, baseVersion: 0 }]);
+        await pushAs(bob, [{ collection: 'aircraft', id: 'air_1', data: { id: 'air_1', tailNumber: 'N917JH', notes: 'x' }, baseVersion: 1 }]);
+        await pushAs(bob, [{ collection: 'followUps', id: 'fup_1', data: { id: 'fup_1', note: 'Call client' }, baseVersion: 0 }]);
+        await pushAs(bob, [{ collection: 'followUps', id: 'fup_1', data: null, baseVersion: 1 }]);
+
+        const { entries, more } = await (await historyAs(bob)).json();
+        expect(more).toBe(false);
+        expect(entries.map((e: { userName: string; action: string; collection: string; recordId: string; summary: string }) =>
+          [e.userName, e.action, e.collection, e.recordId, e.summary])).toEqual([
+          ['Bob', 'delete', 'followUps', 'fup_1', 'Call client'],
+          ['Bob', 'create', 'followUps', 'fup_1', 'Call client'],
+          ['Bob', 'update', 'aircraft', 'air_1', 'N917JH'],
+          ['Alice', 'create', 'aircraft', 'air_1', 'N917JH'],
+        ]);
+        expect(entries[0].userId).toBe(bobId);
+        expect(new Date(entries[0].at).getTime()).toBeGreaterThanOrEqual(new Date(entries[3].at).getTime());
+        // Everyone on the team reads the same history.
+        expect((await (await historyAs(alice)).json()).entries).toEqual(entries);
+      });
+
+      it('never lists personal settings', async () => {
+        const aliceId = (await (await api('/api/auth/get-session', { cookie: alice })).json()).user.id;
+        await pushAs(alice, [{ collection: 'settings', id: aliceId, data: { senderName: 'A' }, baseVersion: 0 }]);
+        expect((await (await historyAs(alice)).json()).entries).toEqual([]);
+      });
+
+      it('pages back through older entries without gaps or repeats', async () => {
+        const changes = Array.from({ length: 130 }, (_, i) => ({
+          collection: 'contacts', id: `con_${i}`, data: { id: `con_${i}`, firstName: `P${i}` }, baseVersion: 0,
+        }));
+        await pushAs(alice, changes);
+        const first = await (await historyAs(alice)).json();
+        expect(first.entries).toHaveLength(100);
+        expect(first.more).toBe(true);
+        const second = await (await historyAs(alice, `?before=${first.entries.at(-1).id}`)).json();
+        expect(second.entries).toHaveLength(30);
+        expect(second.more).toBe(false);
+        const ids = [...first.entries, ...second.entries].map((e: { recordId: string }) => e.recordId);
+        expect(new Set(ids).size).toBe(130);
+        expect(ids[0]).toBe('con_129');
+        expect(ids.at(-1)).toBe('con_0');
+      });
+
+      it('refuses a nonsense cursor', async () => {
+        expect((await historyAs(alice, '?before=abc')).status).toBe(400);
+        expect((await historyAs(alice, '?before=0')).status).toBe(400);
+      });
+    });
+
     it('reports whether the shared data is empty', async () => {
       const status = () => api('/api/sync/status', { cookie: alice }).then((r) => r.json());
       expect(await status()).toEqual({ empty: true });

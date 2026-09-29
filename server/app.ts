@@ -5,7 +5,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { getAuth, migrate, sessionUser, type SessionUser } from './auth.js';
 import { getPool } from './db.js';
-import { BadRequest, isEmpty, pull, push, validateChanges } from './sync.js';
+import { BadRequest, history, isEmpty, pull, push, validateChanges } from './sync.js';
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
@@ -130,6 +130,15 @@ export async function handle(request: Request): Promise<Response> {
       const user = await sessionUser(request);
       if (!user) return error(401, 'Sign in first');
       return await sync(request, user);
+    }
+    if (pathname === '/api/history') {
+      // Read-only: there is no way to change what was recorded.
+      if (request.method !== 'GET') return error(405, 'Method not allowed');
+      if (!(await sessionUser(request))) return error(401, 'Sign in first');
+      const raw = new URL(request.url).searchParams.get('before');
+      const before = raw === null ? undefined : Number(raw);
+      if (before !== undefined && (!Number.isInteger(before) || before < 1)) return error(400, 'Bad cursor');
+      return json(await history(before));
     }
     if (pathname === '/api/team') {
       if (request.method !== 'GET') return error(405, 'Method not allowed');

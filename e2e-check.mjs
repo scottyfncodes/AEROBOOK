@@ -522,6 +522,7 @@ for (const [path, name] of [
   ['/templates', '19-templates'],
   ['/settings', '20-settings'],
   ['/import/history', '21-import-history'],
+  ['/history', '21b-activity-history'],
   ['/nope', '22-notfound'],
 ]) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
@@ -662,6 +663,31 @@ await page.waitForSelector('text=Teammate called the owner', { timeout: 5000 })
   .then(() => log('admin sees what the teammate recorded'))
   .catch(() => errors.push('the teammate’s note did not reach the admin'));
 
+// ---------------------------------------------------- 13a. activity history
+// The teammate's note is in the history under the teammate's name, and the
+// import shows as one line rather than a hundred.
+await page.goto(`${BASE}/history`, { waitUntil: 'networkidle' });
+await page.waitForSelector('.history__item', { timeout: 10000 });
+const firstPageLines = await page.locator('.history__item').count();
+// Page back to the import, which is older than the first page.
+while (await page.getByRole('button', { name: 'Show older' }).count()) {
+  await page.getByRole('button', { name: 'Show older' }).click();
+  await page.waitForFunction((n) => document.querySelectorAll('.history__item').length > n, firstPageLines);
+}
+const historyText = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
+if (!has(historyText, `${TEAMMATE.name} added timeline entry “Teammate called the owner”`)) {
+  errors.push('the activity history does not show the teammate adding their note');
+}
+if (!/Scott Test created \d{3} contacts/.test(historyText)) errors.push('the import is not one grouped line in the history');
+const firstLine = await page.locator('.history__item').first().innerText();
+if (!has(firstLine, TEAMMATE.name)) errors.push(`newest history line is not the teammate's note: ${firstLine}`);
+if (await page.locator('main').getByRole('button', { name: /delete|remove|edit/i }).count()) {
+  errors.push('the activity history offers a way to change it');
+}
+log('activity history:', firstLine.replace(/\n/g, ' / '));
+await shot('13a-history');
+await page.goto(tailUrl, { waitUntil: 'networkidle' });
+
 // ---------------------------------------------- 13b. whose follow-up it is
 // The admin gives a follow-up to the teammate: it is on the teammate's list,
 // not the admin's, and the teammate can hand it back.
@@ -704,6 +730,10 @@ await phone.getByRole('button', { name: 'Sign out' }).click();
 await phone.waitForSelector('text=Sign in');
 await phone.goto(`${BASE}/aircraft`, { waitUntil: 'networkidle' });
 if (!(await phone.getByRole('button', { name: 'Sign in' }).isVisible())) errors.push('data still showing after sign-out');
+await phone.goto(`${BASE}/history`, { waitUntil: 'networkidle' });
+if (!(await phone.getByRole('button', { name: 'Sign in' }).isVisible())) errors.push('history showing after sign-out');
+const signedOutHistory = await phone.request.get(`${BASE}/api/history`);
+if (signedOutHistory.status() !== 401) errors.push(`history API answered ${signedOutHistory.status()} when signed out`);
 await other.close();
 
 // ------------------------------------------------------------------ report

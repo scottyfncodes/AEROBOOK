@@ -25,6 +25,7 @@ import Templates from './screens/Templates';
 import Settings from './screens/Settings';
 import NotFound from './screens/NotFound';
 import SignIn from './screens/SignIn';
+import History from './screens/History';
 
 /**
  * Five tabs, each a place records live. Opportunities, Prospects, Templates,
@@ -136,6 +137,7 @@ function Shell() {
             <Route path="/tools" element={<Tools />} />
             <Route path="/templates" element={<Templates />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/history" element={<History />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         ) : (

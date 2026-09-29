@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
-import { IconDownload, IconMail, IconTools, IconUpload } from '../components/Icons';
+import { IconClock, IconDownload, IconMail, IconTools, IconUpload } from '../components/Icons';
 import { Banner, ConfirmButton, KeyValue, SelectField, TextField, useToast } from '../components/ui';
 import { Mark } from '../components/Brand';
 import { LocalDataBanner } from '../components/localData';
@@ -57,6 +57,13 @@ export default function Settings() {
         <AccountSection />
 
         {isAdmin ? <TeamSection /> : null}
+
+        <section className="stack stack--sm">
+          <h2 className="section-title">History</h2>
+          <Link className="btn btn--block btn--ghost" to="/history">
+            <IconClock /> Activity history
+          </Link>
+        </section>
 
         <section className="stack stack--sm">
           <h2 className="section-title">Profile</h2>

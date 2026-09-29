@@ -164,6 +164,51 @@ export async function push(user: SessionUser, changes: Change[]): Promise<{
   }
 }
 
+export interface HistoryEntry {
+  id: number;
+  at: string;
+  userId: string | null;
+  userName: string;
+  action: 'create' | 'update' | 'delete';
+  collection: string;
+  recordId: string;
+  summary: string;
+}
+
+export const HISTORY_PAGE = 100;
+
+/**
+ * The activity history, newest first. It is read straight from what push()
+ * recorded; nothing here writes. `before` is the id of the last entry already
+ * shown — ids only ever grow, so paging by them never skips or repeats one.
+ */
+export async function history(before?: number): Promise<{ entries: HistoryEntry[]; more: boolean }> {
+  const { rows } = await getPool().query<{
+    id: string; at: Date; user_id: string | null; user_name: string | null;
+    action: HistoryEntry['action']; collection: string; record_id: string; summary: string;
+  }>(
+    `select id, at, user_id, user_name, action, collection, record_id, summary from app_audit
+      where ($1::bigint is null or id < $1)
+      order by id desc
+      limit $2`,
+    [before ?? null, HISTORY_PAGE + 1],
+  );
+  const more = rows.length > HISTORY_PAGE;
+  return {
+    entries: rows.slice(0, HISTORY_PAGE).map((r) => ({
+      id: Number(r.id),
+      at: r.at.toISOString(),
+      userId: r.user_id,
+      userName: r.user_name ?? 'Someone',
+      action: r.action,
+      collection: r.collection,
+      recordId: r.record_id,
+      summary: r.summary,
+    })),
+    more,
+  };
+}
+
 /** A few words that say which record this was, for the activity history. */
 export function describe(data: Record<string, unknown> | null): string {
   if (!data) return '';

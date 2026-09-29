@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 329 tests; the 30 API and sync tests also need:
+npm test             # 342 tests; the 36 API and sync tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -107,6 +107,19 @@ slipped). Home counts only Mine. When a follow-up is completed and the next
 one scheduled, the next one stays with the same person. Names come from
 `GET /api/team`, which any signed-in person may call; managing accounts stays
 admin-only.
+
+## Activity history
+
+**Settings → Activity history** lists every change anyone on the team saved,
+newest first, grouped by day: "Scott edited aircraft N917JH", linked to the
+record while it still exists and saying what a note or follow-up was on. A
+burst of the same thing — an import creating a hundred contacts — reads as one
+line with a count that expands.
+
+It is read-only. It comes from `app_audit`, which the server writes as each
+change is saved (see Data); `GET /api/history` returns it in pages of 100 to
+anyone signed in and answers any other method with 405. Personal settings are
+never recorded.
 
 ## Data
 
