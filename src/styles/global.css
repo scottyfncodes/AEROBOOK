@@ -725,6 +725,13 @@ button, input, select, textarea {
 }
 .team-row:last-child { border-bottom: none; }
 
+/* Activity history: one sentence per line, the time at the right. */
+.history { display: flex; flex-direction: column; }
+.history__item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.history__item:first-child { padding-top: 0; }
+.history__item:last-child { border-bottom: none; padding-bottom: 0; }
+.history__list { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
 /* The sign-in screen stands alone: no app bar, no tab bar. */
 .signin {
   max-width: 420px;

@@ -3,6 +3,7 @@
  * purpose: the server decides who may do what; this only asks.
  */
 import type { CloudUser } from './cloud';
+import type { HistoryEntry } from '../lib/history';
 
 export interface TeamMember extends CloudUser {
   banned: boolean;
@@ -76,6 +77,11 @@ export interface Person {
 
 export async function listPeople(): Promise<Person[]> {
   return (await call<{ people: Person[] }>('/api/team')).people;
+}
+
+/** A page of the activity history, newest first; `before` continues an earlier page. */
+export async function fetchHistory(before?: number): Promise<{ entries: HistoryEntry[]; more: boolean }> {
+  return call(`/api/history${before ? `?before=${before}` : ''}`);
 }
 
 // ------------------------------------------------------------ admin only
