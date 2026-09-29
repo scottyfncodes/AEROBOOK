@@ -76,6 +76,7 @@ export class CloudSync implements store.Backend {
   private cursor = 0;
   private queue: Promise<unknown> = Promise.resolve();
   private storage: StorageMode = 'none';
+  private uploadFlavor: 'token' | 'presigned' = 'token';
   private moving: Promise<number> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly onWake = () => {
@@ -142,9 +143,11 @@ export class CloudSync implements store.Backend {
     await store.setBackend(this);
     store.setSaveError(offline);
     if (!offline) {
-      this.storage = await this.request('/api/files/config')
-        .then((r) => r.json() as Promise<{ mode: StorageMode }>)
-        .then((c) => c.mode, () => 'none' as const);
+      const config = await this.request('/api/files/config')
+        .then((r) => r.json() as Promise<{ mode: StorageMode; upload?: 'token' | 'presigned' }>)
+        .catch(() => ({ mode: 'none' as const, upload: undefined }));
+      this.storage = config.mode;
+      this.uploadFlavor = config.upload ?? 'token';
       void this.moveBrowserFiles();
     }
     // Anything withDefaults added goes up now rather than on the next edit.
@@ -370,8 +373,9 @@ export class CloudSync implements store.Backend {
     const path = `files/${id}/${storageName(file.name)}`;
     try {
       if (this.storage === 'blob') {
-        const { upload } = await import('@vercel/blob/client');
-        const result = await upload(path, file, {
+        const client = await import('@vercel/blob/client');
+        const send = this.uploadFlavor === 'presigned' ? client.uploadPresigned : client.upload;
+        const result = await send(path, file, {
           access: 'private',
           handleUploadUrl: '/api/files/upload',
           contentType: file.type || undefined,
