@@ -20,6 +20,7 @@ import {
 } from '../data/store';
 import { addDays, dateKey, formatDate, relativeDue, todayKey } from '../lib/dates';
 import type { ExternalLink } from '../lib/links';
+import type { LinkedDocument } from '../lib/selectors';
 
 type Links = {
   contactId?: string | null;
@@ -444,11 +445,11 @@ export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onE
 // ----------------------------------------------------------------- files
 
 export function FilesSection({
-  files,
+  documents,
   links,
   defaultCategory = 'Other',
 }: {
-  files: FileRecord[];
+  documents: LinkedDocument[];
   links: Links;
   defaultCategory?: DocumentCategory;
 }) {
@@ -499,17 +500,17 @@ export function FilesSection({
 
   return (
     <div className="stack stack--sm">
-      {files.length === 0 ? (
+      {documents.length === 0 ? (
         <div className="card small muted">No documents attached.</div>
       ) : (
         <div className="list list--flush">
-          {files.map((f) => (
+          {documents.map(({ file: f, via }) => (
             <div className="link-row" key={f.id}>
               <IconDoc className="muted" style={{ width: 17, height: 17, flex: 'none' }} />
               <button className="grow truncate" style={{ background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', padding: 0 }} onClick={() => open(f)}>
                 <div className="small truncate">{f.name}</div>
                 <div className="xsmall muted">
-                  {[f.category ?? 'Other', formatBytes(f.size), formatDate(f.createdAt)].join(' · ')}
+                  {[via ? `On ${via}` : '', f.category ?? 'Other', formatBytes(f.size), formatDate(f.createdAt)].filter(Boolean).join(' · ')}
                 </div>
               </button>
               <button

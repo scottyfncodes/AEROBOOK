@@ -130,6 +130,27 @@ export interface RenderedEmail {
  * A subject that rendered down to nothing meaningful — "" or a dangling
  * "RE:" because the aircraft had no tail — is replaced rather than sent.
  */
+const SEP = '[—–\\-:|,]';
+
+/**
+ * An empty variable next to a separator leaves the separator stranded:
+ * "RE: {{tail}} — quote follow-up" with no aircraft becomes "RE: — quote
+ * follow-up". Drop the stranded separator and let the rest stand.
+ */
+function tidySubject(subject: string): string {
+  const prefix = /^((?:re|fwd?):\s*)/i.exec(subject)?.[1] ?? '';
+  let rest = subject.slice(prefix.length);
+  rest = rest
+    .replace(new RegExp(`^(\\s*${SEP})+\\s*`), '')
+    .replace(new RegExp(`(\\s*${SEP})+\\s*$`), '')
+    .replace(new RegExp(`\\s+${SEP}\\s+${SEP}\\s+`, 'g'), ' — ')
+    .trim();
+  if (rest && rest !== subject.slice(prefix.length).trim()) {
+    rest = rest.charAt(0).toUpperCase() + rest.slice(1);
+  }
+  return `${prefix}${rest}`.trim();
+}
+
 function subjectIsEmpty(subject: string): boolean {
   const letters = subject.replace(/[^a-z0-9]/gi, '');
   return letters === '' || /^(re|fw|fwd)$/i.test(letters);
@@ -138,7 +159,7 @@ function subjectIsEmpty(subject: string): boolean {
 export function renderEmail(template: EmailTemplate, ctx: EmailContext): RenderedEmail {
   const vars = buildVariables(ctx);
   const tail = vars.tail;
-  let subject = tidy(renderTemplate(template.subject, vars));
+  let subject = tidySubject(tidy(renderTemplate(template.subject, vars)));
   if (subjectIsEmpty(subject)) subject = tail ? `RE: ${tail}` : 'Following up';
   const body = tidy(renderTemplate(template.body, vars));
   return {
