@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import {
-  IconAlert, IconCalendar, IconCheck, IconClock, IconDoc, IconExternal, IconMail, IconNote,
+  IconAlert, IconCalendar, IconCheck, IconClock, IconDoc, IconEdit, IconExternal, IconMail, IconNote,
   IconPhone, IconPlus, IconTarget, IconTrash, IconUpload,
 } from './Icons';
 import { Banner, Chip, EmptyState, SelectField, Sheet, TextArea, TextField, useToast } from './ui';
@@ -16,9 +16,9 @@ import type {
 import { ACTIVITY_TYPES, DOCUMENT_CATEGORIES } from '../data/types';
 import {
   addFile, completeFollowUp, createFollowUp, deleteFollowUp, getFile, logActivity, removeFile,
-  updateFollowUp,
+  updateActivity, updateFollowUp,
 } from '../data/store';
-import { addDays, formatDate, relativeDue, todayKey } from '../lib/dates';
+import { addDays, dateKey, formatDate, relativeDue, todayKey } from '../lib/dates';
 import type { ExternalLink } from '../lib/links';
 import type { LinkedDocument } from '../lib/selectors';
 
@@ -55,6 +55,8 @@ export function Timeline({
   followUps: FollowUp[];
   onDeleteActivity?: (id: string) => void;
 }) {
+  const [editing, setEditing] = useState<Activity | null>(null);
+
   type Entry =
     | { kind: 'activity'; at: string; activity: Activity }
     | { kind: 'followUp'; at: string; followUp: FollowUp };
@@ -70,6 +72,7 @@ export function Timeline({
 
   return (
     <div className="card">
+      {editing ? <ActivitySheet links={{}} existing={editing} onClose={() => setEditing(null)} /> : null}
       <div className="timeline">
         {entries.map((entry) => {
           if (entry.kind === 'followUp') {
@@ -97,17 +100,29 @@ export function Timeline({
                   <span className="strong small truncate">{a.subject || a.type}</span>
                   <span className="xsmall muted nowrap">{formatDate(a.date)}</span>
                 </div>
-                <div className="xsmall muted">{a.type}</div>
+                <div className="xsmall muted">
+                  {a.type}
+                  {a.updatedAt ? ` · edited ${formatDate(a.updatedAt)}` : ''}
+                </div>
                 {a.notes ? <TimelineNote text={a.notes} /> : null}
-                {onDeleteActivity ? (
+                <div className="timeline__actions">
                   <button
-                    className="timeline__remove"
-                    onClick={() => onDeleteActivity(a.id)}
-                    aria-label={`Remove "${a.subject || a.type}" from the timeline`}
+                    className="timeline__action"
+                    onClick={() => setEditing(a)}
+                    aria-label={`Edit "${a.subject || a.type}"`}
                   >
-                    <IconTrash />
+                    <IconEdit />
                   </button>
-                ) : null}
+                  {onDeleteActivity ? (
+                    <button
+                      className="timeline__action timeline__action--remove"
+                      onClick={() => onDeleteActivity(a.id)}
+                      aria-label={`Remove "${a.subject || a.type}" from the timeline`}
+                    >
+                      <IconTrash />
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           );
@@ -156,37 +171,49 @@ function TimelineNote({ text }: { text: string }) {
 
 export function ActivitySheet({
   links,
+  existing,
   defaultType = 'Note',
   defaultSubject = '',
   title = 'Log activity',
   onClose,
 }: {
   links: Links;
+  /** An entry already on the timeline, to correct rather than record anew. */
+  existing?: Activity;
   defaultType?: ActivityType;
   defaultSubject?: string;
   title?: string;
   onClose: () => void;
 }) {
   const toast = useToast();
-  const [type, setType] = useState<ActivityType>(defaultType);
-  const [subject, setSubject] = useState(defaultSubject);
-  const [date, setDate] = useState(todayKey());
-  const [notes, setNotes] = useState('');
+  const [type, setType] = useState<ActivityType>(existing?.type ?? defaultType);
+  const [subject, setSubject] = useState(existing?.subject ?? defaultSubject);
+  // Recorded dates are full timestamps; the field edits the day. An untouched
+  // date keeps its time, so saving a text fix does not reorder the timeline.
+  const originalDay = existing ? dateKey(existing.date) : undefined;
+  const [date, setDate] = useState(originalDay ?? todayKey());
+  const [notes, setNotes] = useState(existing?.notes ?? '');
 
   const save = () => {
-    logActivity({ ...links, type, subject: subject.trim() || type, notes: notes.trim(), date });
-    toast(`${type} recorded`);
+    const fields = { type, subject: subject.trim() || type, notes: notes.trim() };
+    if (existing) {
+      updateActivity(existing.id, date === originalDay ? fields : { ...fields, date });
+      toast('Entry updated');
+    } else {
+      logActivity({ ...links, ...fields, date });
+      toast(`${type} recorded`);
+    }
     onClose();
   };
 
   return (
     <Sheet
-      title={title}
+      title={existing ? 'Edit entry' : title}
       onClose={onClose}
       footer={
         <>
           <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn--primary" onClick={save}>Record</button>
+          <button className="btn btn--primary" onClick={save}>{existing ? 'Save' : 'Record'}</button>
         </>
       }
     >

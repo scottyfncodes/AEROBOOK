@@ -185,6 +185,18 @@ log('timeline entries:', timeline.length);
 if (!has(timeline.join(' '), 'RE: N917JH')) errors.push('email activity not on the timeline');
 await shot('08-timeline');
 
+// a recorded entry can be corrected in place
+await page.locator('button[aria-label^="Edit \\"RE: N917JH"]').first().click();
+await page.waitForSelector('.sheet textarea');
+await page.fill('.sheet textarea', 'Corrected by the acceptance test.');
+await page.getByRole('button', { name: 'Save' }).click();
+await page.waitForTimeout(300);
+const editedTimeline = (await page.locator('.timeline__item').allInnerTexts()).join(' ');
+if (!has(editedTimeline, 'Corrected by the acceptance test.')) errors.push('edited timeline entry did not save');
+if (!has(editedTimeline, 'edited')) errors.push('edited timeline entry is not marked as edited');
+log('timeline entry edited');
+await shot('08b-timeline-edited');
+
 // ---------------------------------------------------------- 6. follow up
 await page.getByRole('button', { name: 'Follow up' }).click();
 await page.waitForSelector('.sheet');

@@ -270,6 +270,8 @@ export interface Activity {
   subject: string;
   notes: string;
   createdAt: string;
+  /** Set only when the entry is changed after it was recorded. */
+  updatedAt?: string;
 }
 
 export interface FollowUp {
