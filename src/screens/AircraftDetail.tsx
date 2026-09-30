@@ -9,6 +9,7 @@ import {
   ActivitySheet, ExternalLinkList, FilesSection, FollowUpList, FollowUpSheet, Timeline,
 } from '../components/detail';
 import { InsuranceSection } from '../components/insurance';
+import { AircraftComments } from '../components/comments';
 import { NewOpportunitySheet } from '../components/opportunity';
 import { EmailComposer } from '../components/EmailComposer';
 import {
@@ -212,6 +213,8 @@ export default function AircraftDetail() {
             </button>
           ) : null}
         </section>
+
+        <AircraftComments aircraftId={aircraft.id} />
 
         <section className="stack stack--sm">
           <h2 className="section-title">Owner</h2>

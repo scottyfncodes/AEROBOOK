@@ -139,3 +139,11 @@ export const IconFilter = (p: P) => (
 export const IconCoffee = (p: P) => (
   <svg {...base} {...p}><path d="M4.5 8.5h12V15a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4z" /><path d="M16.5 10h1.5a2.5 2.5 0 0 1 0 5h-1.5" /><path d="M7 3v2M11 3v2" /></svg>
 );
+
+export const IconChat = (p: P) => (
+  <svg {...base} {...p}><path d="M4.5 5.5h15a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H10l-4.5 3.5v-3.5h-1a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1Z" /><path d="M8 10h8M8 13h5" /></svg>
+);
+
+export const IconSend = (p: P) => (
+  <svg {...base} {...p}><path d="M4 12 20 4l-4.5 16-3.5-6.5Z" /><path d="m12 13.5 8-9.5" /></svg>
+);

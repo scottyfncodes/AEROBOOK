@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 367 tests; the 60 API and sync tests also need:
+npm test             # 484 tests; the 157 API, sync and messaging tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -51,6 +51,12 @@ server/           the API: sign-in, sync, first-time setup
   auth.ts         Better Auth — invite-only email and password, admin/user
   sync.ts         pull and push of records, with versions and history
   app.ts          routing, and who may do what
+  chat.ts         conversations and groups, members only
+  comments.ts     comments on an aircraft
+  notify.ts       who hears about a message or comment, and whether by push
+  push.ts         web push subscriptions and sending
+  inbox.ts        unread counts and new events, polled by the open app
+  messaging.ts    the routes for all of the above
 db/schema.sql     the whole database schema
 src/lib/          domain logic, all pure and tested
   csv.ts          RFC 4180 reader that never throws on malformed input; the
@@ -199,6 +205,120 @@ it opens. Without `BLOB_READ_WRITE_TOKEN` the app keeps documents in the
 browser as it used to; `npm run serve` and `npm run dev` use a `.local-files`
 folder instead.
 
+## Chat
+
+**Chat** (its own tab) is for talking to the rest of the team: one-to-one
+conversations, and named groups. Anyone can message anyone on the team whose
+access is on. In a group, any member can rename it and add people, anyone can
+leave, and whoever started it (or an admin) can remove someone; someone who
+leaves or is removed can no longer open it, and what they wrote stays.
+Messages cannot be edited or deleted — chat is a record of what was said.
+
+**Group history is shared with whoever is in the group.** Someone added to an
+existing group sees its whole history, including everything said before they
+joined. Someone who leaves (or is removed) loses access to all of it, and if
+they are added back later they see the whole history again, including what
+was said while they were away. This is deliberate: AEROBOOK's chat is the
+team's internal chat, and a group's history is the context a newcomer needs.
+There is no per-message visibility by when someone joined, so do not put
+anything in a group that the people who may later be added to it should not
+read. Someone added later does not start with the old messages counted as
+unread; they start from where the group is when they join.
+
+Conversations are **not** part of the shared data that every device syncs:
+they live in their own tables (`app_conversation`, `app_conversation_member`,
+`app_message`) and are fetched only by their members. Every chat route starts
+by checking that the signed-in person is a current member, and answers
+anything else exactly as it answers an id that does not exist (404), so a
+guessed or copied id reveals nothing — admins included.
+
+The tab shows how many messages are unread, and so does the Home Screen icon
+where the device supports it.
+
+## Comments on an aircraft
+
+Every aircraft has a **Comments** section, near the top of its page: the
+discussion about that tail, kept on its record rather than in chat. Comments
+are multi-line, oldest first, with who wrote them and when. Their author can
+edit them (they are then marked *edited*, and what they said before is kept
+in `app_aircraft_comment_revision`); their author or an admin can delete
+them, which only marks them — the words stay in the database.
+
+Who may read and write them follows the rest of AEROBOOK: everyone signed in
+whose access is on sees every aircraft, so everyone sees its comments. The
+server checks every time that the aircraft exists and has not been deleted,
+and finds a comment only through the aircraft in the address, so an id
+copied from another aircraft finds nothing. Comments on a deleted aircraft
+are kept, and come back if it does.
+
+Comments since you last looked are marked new — a gold dot on the aircraft in
+the list, "2 new" on the section — and count as read once the section has
+been on screen.
+
+The activity history records comments by tail ("Scott added a comment on
+N123AB"), never by what they say; group changes are recorded for admins
+(`app_audit`, collection `chat`) but not shown in the history, and messages
+are never recorded there. The audit log is not a second copy of anyone's
+conversations.
+
+## Notifications
+
+One notification layer (`server/notify.ts`) serves chat and comments alike.
+When a message or comment is saved it works out who should hear about it,
+writes one `app_notification` row for each, and decides for each person
+whether their devices also get a push:
+
+- **Who.** A direct message: the other person. A group: its current members.
+  A comment: everyone **watching** that aircraft — commenting starts watching
+  (unless you have said otherwise), and anyone can Watch or stop watching an
+  aircraft from its Comments section. So a comment reaches the people in that
+  aircraft's discussion, never the whole team. Never the author, and never
+  anyone whose access is off.
+- **In the app.** While AEROBOOK is open it checks every few seconds
+  (`POST /api/inbox`; quicker in an open conversation, slower when nobody has
+  touched the screen for a while, and not at all in the background). Something
+  new elsewhere pops up at the top of the screen; the conversation already on
+  screen just shows the new message.
+- **Push.** Not while the person has AEROBOOK open and in use on any device —
+  the open app tells the server where it is, and a device counts as away 45
+  seconds after it last did. Not again for the same conversation or aircraft
+  within two minutes of the last push while it is still unread; the next one
+  says how many are waiting ("3 new messages · latest from Scott"). If that
+  last push reached none of the person's devices (the push service turned it
+  down), the newest message held back behind it is pushed in its place, so a
+  failed push never silences what comes after it. A newer
+  notification for the same conversation replaces the older one on the
+  device. None of this touches unread counts, which come from what each
+  person has read, so holding back a push never hides a message.
+
+Each person turns push on per device under **Settings → Notifications**, and
+can send themselves a test or turn it off again. Signing out turns it off on
+that device. Subscriptions are only accepted for real push services (Apple,
+Google, Mozilla, Microsoft), and one a push service reports as gone is
+forgotten. The server makes the request to whatever endpoint it stores, so
+the check is strict: `https://`, a host that is *exactly* one of the push
+services' hosts (`fcm.googleapis.com`, `web.push.apple.com`,
+`updates.push.services.mozilla.com`, or one `*.notify.windows.com` host), no
+port or user, and nothing in the URL that Node's legacy `url.parse()` — which
+`web-push` uses to connect — could read differently from the browser's URL
+parser. It is checked again just before every send. The service worker (`public/sw.js`) only shows notifications and
+opens the app on the right page when one is tapped — a conversation, or the
+aircraft scrolled to its comments; it caches nothing.
+
+**iPhone and iPad** (iOS/iPadOS 16.4 or later): web push only works for
+AEROBOOK added to the Home Screen and opened from there — in a Safari tab the
+Notifications section says so. Permission is asked for only when **Turn on
+notifications** is tapped. Focus modes and Low Power Mode can delay or hold
+back notifications, as they do for any app. Desktop Chrome, Edge and Firefox
+work from a normal tab; Safari on the Mac from a normal tab too (or a Dock
+web app).
+
+Push needs `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (see
+Deployment). Without them everything else — chat, comments, the in-app
+pop-ups — works the same, and the app says push is not set up. There are no
+email notifications for messages; the notification layer has one place
+(`deliver()`) where another way of delivering would go.
+
 ## Daily email
 
 Each morning everyone gets an email of their own follow-ups (the Mine list:
@@ -282,9 +402,10 @@ while the account is still empty, and sends everything it held.
 - **It never makes a document public.** Files sit in private storage and are
   only ever read through the app, by someone signed in. The JSON backup
   carries the list of them, not the files, and the screens say so.
-- **It has no notifications.** Reminders are in-app, on the home screen and the
-  task list, because a browser cannot deliver a background notification on iOS
-  reliably enough to build a working day on.
+- **Its notifications never say what was written.** A push says who, and
+  where — "New message from Scott", "New comment on N123AB from Scott" — and
+  the words stay inside the app. Follow-up reminders are still in-app, on the
+  home screen and the task list, and in the daily email.
 
 ## The supplied sample file
 
@@ -361,6 +482,12 @@ The daily email needs `RESEND_API_KEY` (a Resend sending key for a verified
 domain) and `CRON_SECRET` (any long random string; Vercel sends it with each
 cron call); `APP_URL` overrides the link in it, which otherwise is the
 production URL.
+Push notifications need `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` (a key
+pair made once with `npx web-push generate-vapid-keys`; the private key is a
+secret, the public one is handed to browsers) and `VAPID_SUBJECT` (a contact
+for the push services, e.g. `mailto:you@yourdomain.com`). If the keys are
+changed, each device picks up the new ones the next time AEROBOOK is opened
+there; until then it gets no pushes.
 Apply `db/schema.sql` to a new database before the first deploy. Later
 additions to AEROBOOK's own tables are applied by the server itself before
 its first write. Changes to the sign-in tables are not: each is a file in

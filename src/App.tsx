@@ -3,10 +3,11 @@ import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-d
 
 import { ToastProvider, useToast } from './components/ui';
 import { IntroSplash, Splash } from './components/Brand';
-import { IconBell, IconHome, IconPlane, IconSettings, IconUsers } from './components/Icons';
+import { IconBell, IconChat, IconHome, IconPlane, IconSettings, IconUsers } from './components/Icons';
 import { useDatabase, useLoaded, useSaveError } from './data/useStore';
 import { onNotice } from './data/store';
 import { SessionProvider, useSession } from './data/session';
+import { InboxProvider, useInbox } from './data/inbox';
 
 import Home from './screens/Home';
 import Contacts from './screens/Contacts';
@@ -26,9 +27,11 @@ import Settings from './screens/Settings';
 import NotFound from './screens/NotFound';
 import SignIn from './screens/SignIn';
 import History from './screens/History';
+import Chat from './screens/Chat';
+import Conversation from './screens/Conversation';
 
 /**
- * Five tabs, each a place records live. Opportunities, Prospects, Templates,
+ * Six tabs: five places records live, and Chat. Opportunities, Prospects, Templates,
  * Import and Tools are reachable from the screens they belong to (Home, an
  * aircraft, a contact, Settings) rather than taking a tab of their own.
  * Every tab always returns to that section's top rather than toggling.
@@ -38,6 +41,7 @@ const TABS = [
   { to: '/aircraft', label: 'Aircraft', Icon: IconPlane, end: false },
   { to: '/contacts', label: 'Contacts', Icon: IconUsers, end: false },
   { to: '/follow-ups', label: 'Follow-up', Icon: IconBell, end: false },
+  { to: '/chat', label: 'Chat', Icon: IconChat, end: false },
   { to: '/settings', label: 'Settings', Icon: IconSettings, end: false },
 ];
 
@@ -101,6 +105,7 @@ function Gate() {
 function Shell() {
   const loaded = useLoaded();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   // Cmd/Ctrl-K opens search, the way every tool the user already has does.
   useEffect(() => {
@@ -115,11 +120,11 @@ function Shell() {
   }, [navigate]);
 
   return (
-    <>
+    <InboxProvider>
       <Notices />
       <ThemeSync />
       <ScrollToTop />
-      <div className="app">
+      <div className={`app${/^\/chat\/[^/]+/.test(pathname) ? ' app--conversation' : ''}`}>
         <SaveErrorBanner />
         {loaded ? (
           <Routes>
@@ -139,27 +144,42 @@ function Shell() {
             <Route path="/templates" element={<Templates />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/history" element={<History />} />
+            <Route path="/chat" element={<Chat />} />
+            <Route path="/chat/:id" element={<Conversation />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         ) : (
           <Splash />
         )}
 
-        <nav className="tabbar" aria-label="Main">
-          {TABS.map(({ to, label, Icon, end, ariaLabel }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              aria-label={ariaLabel}
-              className={({ isActive }) => `tabbar__item${isActive ? ' is-active' : ''}`}
-            >
-              <Icon aria-hidden />
-              <span>{label}</span>
-            </NavLink>
-          ))}
-        </nav>
+        <TabBar />
       </div>
-    </>
+    </InboxProvider>
+  );
+}
+
+/** The tabs, with Chat's unread count on its icon. */
+function TabBar() {
+  const { chatUnread } = useInbox();
+  return (
+    <nav className="tabbar" aria-label="Main">
+      {TABS.map(({ to, label, Icon, end, ariaLabel }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={end}
+          aria-label={ariaLabel}
+          className={({ isActive }) => `tabbar__item${isActive ? ' is-active' : ''}`}
+        >
+          <span className="tabbar__icon">
+            <Icon aria-hidden />
+            {to === '/chat' && chatUnread > 0 ? (
+              <span className="tabbar__badge" aria-label={`${chatUnread} unread`}>{chatUnread > 99 ? '99+' : chatUnread}</span>
+            ) : null}
+          </span>
+          <span>{label}</span>
+        </NavLink>
+      ))}
+    </nav>
   );
 }

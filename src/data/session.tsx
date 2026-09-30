@@ -9,6 +9,8 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import * as auth from './auth';
 import { CloudSync, forgetCache, SessionExpired, type CloudUser } from './cloud';
 import * as store from './store';
+import { forgetDevice } from './push';
+import { stopInbox } from './inbox';
 
 export type SessionStatus = 'checking' | 'setup' | 'signed-out' | 'ready' | 'unreachable';
 
@@ -144,6 +146,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async signOut() {
       // Whatever is still on its way up goes before the door closes.
       await store.flush().catch(() => undefined);
+      // This device stops getting notifications for the account it is leaving.
+      await stopInbox();
+      await forgetDevice().catch(() => undefined);
       await auth.signOut().catch(() => undefined);
       const leaving = user;
       await close();

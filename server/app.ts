@@ -11,44 +11,10 @@ import {
   blobUploadToken, isFilePath, MAX_FILE_BYTES, purgeTrash, putLocal, readStored, storageMode, uploadFlavor,
 } from './files.js';
 import { servedType } from '../src/lib/documents.js';
+import { checkWrite, error, HttpError, json, readJson } from './http.js';
+import { isMessagingPath, messaging } from './messaging.js';
+import { pruneNotifications } from './notify.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
-
-const MAX_BODY_BYTES = 4 * 1024 * 1024;
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
-  });
-}
-
-const error = (status: number, message: string) => json({ error: message }, status);
-
-/**
- * Writes must be same-origin JSON. A page on another site can make a
- * browser send cookies with a form post, but not with this content type
- * without asking first, and not with this site's Origin.
- */
-function checkWrite(request: Request): Response | null {
-  const origin = request.headers.get('origin');
-  if (origin && origin !== new URL(request.url).origin) return error(403, 'Cross-origin request refused');
-  if (!(request.headers.get('content-type') ?? '').startsWith('application/json')) {
-    return error(415, 'Expected application/json');
-  }
-  const length = Number(request.headers.get('content-length') ?? 0);
-  if (length > MAX_BODY_BYTES) return error(413, 'Request too large');
-  return null;
-}
-
-async function readJson(request: Request): Promise<unknown> {
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) throw new BadRequest('Request too large');
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new BadRequest('Invalid JSON');
-  }
-}
 
 /**
  * How many accounts exist. On a brand-new database the tables are not there
@@ -321,8 +287,12 @@ export async function handle(request: Request): Promise<Response> {
     }
     if (pathname.startsWith('/api/digest/')) return await digest(request);
     if (pathname === '/api/maintenance/run') {
-      // Clears out the files of documents deleted long enough ago.
-      return checkCron(request, 'Maintenance') ?? json(await purgeTrash());
+      // Clears out the files of documents deleted long enough ago, and old notifications.
+      const refused = checkCron(request, 'Maintenance');
+      if (refused) return refused;
+      const purged = await purgeTrash();
+      await pruneNotifications();
+      return json(purged);
     }
     if (pathname === '/api/team') {
       if (request.method !== 'GET') return error(405, 'Method not allowed');
@@ -330,9 +300,15 @@ export async function handle(request: Request): Promise<Response> {
       return await team();
     }
     if (pathname === '/api/team/reset-two-factor') return await resetTwoFactorRoute(request);
+    if (isMessagingPath(pathname)) {
+      const user = await sessionUser(request);
+      if (!user) return error(401, 'Sign in first');
+      return await messaging(request, user);
+    }
     return error(404, 'Not found');
   } catch (e) {
     if (e instanceof BadRequest) return error(400, e.message);
+    if (e instanceof HttpError) return error(e.status, e.message);
     console.error(e);
     return error(500, 'Something went wrong on the server');
   }
