@@ -10,7 +10,9 @@
  *     the pop-up instead);
  *   - not again for the same conversation or aircraft within two minutes of
  *     the last one, while they still have not opened it (the next one, when
- *     it comes, says how many are waiting);
+ *     it comes, says how many are waiting) — unless that last one failed to
+ *     reach any device, in which case the newest one held back behind it is
+ *     sent in its place;
  *   - never to someone whose access is off.
  *
  * None of this touches unread counts, which come from what each person has
@@ -224,10 +226,69 @@ async function payloadFor(userId: string, event: NotifyEvent, thread: string): P
 
 /** Sends to someone's devices; the one place a new way of delivering would go. */
 async function deliver(userId: string, event: NotifyEvent, thread: string, notificationId: number): Promise<PushStatus> {
-  const { sent } = await pushToUser(userId, await payloadFor(userId, event, thread), topicFor(thread));
+  let sent = 0;
+  try {
+    sent = (await pushToUser(userId, await payloadFor(userId, event, thread), topicFor(thread))).sent;
+  } catch (e) {
+    console.error('push failed', e);
+  }
   if (sent > 0) return 'sent';
-  await getPool().query(`update app_notification set push_status = 'failed' where id = $1`, [notificationId]);
+
+  // This push was claimed as 'sent' before it went, so anything that arrived
+  // meanwhile was held back behind it. It did not arrive; the newest of those
+  // goes now instead, saying how many are waiting.
+  try {
+    const next = await handOff(userId, thread, notificationId);
+    if (next) {
+      const actor = { id: next.actorId ?? '', name: next.actorName ?? '' };
+      await deliver(userId, { ...event, sourceId: next.sourceId, actor }, thread, next.id);
+    }
+  } catch (e) {
+    console.error('push hand-off failed', e);
+  }
   return 'failed';
+}
+
+/**
+ * Marks a push that reached no device as failed and, in the same step (under
+ * the same lock as decide()), claims the newest notification that was
+ * grouped behind it — still unread, still inside the grouping window, and
+ * only if the person is not in the app right now.
+ */
+async function handOff(userId: string, thread: string, failedId: number): Promise<{
+  id: number; sourceId: number; actorId: string | null; actorName: string | null;
+} | null> {
+  const read = await lastRead(userId, thread);
+  const client = await getPool().connect();
+  try {
+    await client.query('begin');
+    await client.query('select pg_advisory_xact_lock(hashtext($1), hashtext($2))', [userId, thread]);
+    await client.query(`update app_notification set push_status = 'failed' where id = $1`, [failedId]);
+    const present = await client.query(
+      `select 1 from app_presence where user_id = $1 and seen_at > now() - make_interval(secs => $2) limit 1`,
+      [userId, PRESENCE_SECONDS],
+    );
+    const { rows } = present.rows.length ? { rows: [] } : await client.query<{
+      id: string; source_id: string; actor_id: string | null; actor_name: string | null;
+    }>(
+      `select n.id, n.source_id, n.actor_id, u.name as actor_name
+         from app_notification n left join "user" u on u.id = n.actor_id
+        where n.user_id = $1 and n.thread = $2 and n.id > $3 and n.push_status = 'grouped'
+          and n.source_id > $4 and n.created_at > now() - make_interval(secs => $5)
+        order by n.id desc
+        limit 1`,
+      [userId, thread, failedId, read, GROUP_SECONDS],
+    );
+    const row = rows[0];
+    if (row) await client.query(`update app_notification set push_status = 'sent' where id = $1`, [row.id]);
+    await client.query('commit');
+    return row ? { id: Number(row.id), sourceId: Number(row.source_id), actorId: row.actor_id, actorName: row.actor_name } : null;
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 /**

@@ -211,10 +211,15 @@ async function overDeleteLimit(client: PoolClient, user: SessionUser, changes: C
   const deleting = changes.filter((c) => c.data === null && !PERSONAL.has(c.collection)).length;
   if (deleting === 0) return false;
   if (deleting > MEMBER_DELETE_LIMIT) return true;
+  // Only deletions of shared records count — the same kind this push is
+  // making. Other things share the audit table under their own collection
+  // (comments, chat groups, security events) and have their own rules: a
+  // deleted comment or someone leaving a group does not use up the allowance.
   const { rows } = await client.query<{ n: number }>(
     `select count(*)::int as n from app_audit
-      where user_id = $1 and action = 'delete' and at > now() - $2::interval`,
-    [user.id, MEMBER_DELETE_WINDOW],
+      where user_id = $1 and action = 'delete' and collection = any($3::text[])
+        and at > now() - $2::interval`,
+    [user.id, MEMBER_DELETE_WINDOW, [...SHARED_COLLECTIONS]],
   );
   return rows[0].n + deleting > MEMBER_DELETE_LIMIT;
 }

@@ -181,6 +181,66 @@ describe.skipIf(!TEST_DB)('chat', () => {
       expect(renamed.title).toBe('Deals 2026');
     });
 
+    describe('history is shared with whoever is in the group (a deliberate rule)', () => {
+      const add = (cookie: string, id: string, userIds: string[]) =>
+        api(`/api/chat/conversations/${id}/members`, { cookie, body: { userIds } });
+      const texts = async (cookie: string, id: string, query = '') =>
+        (await history(cookie, id, query)).messages.map((m: { body: string }) => m.body);
+      const chatUnread = async (cookie: string) => (await body(await api('/api/inbox', { cookie, body: {} }))).chatUnread;
+
+      it('shows someone added to an existing group everything said before they joined', async () => {
+        const convo = await body(await group(alice, 'Deals', [bobId]));
+        await send(alice, convo.id, 'before carol 1');
+        await send(bob, convo.id, 'before carol 2');
+        expect((await add(alice, convo.id, [carolId])).status).toBe(200);
+        await send(alice, convo.id, 'after carol');
+        expect(await texts(carol, convo.id)).toEqual(['before carol 1', 'before carol 2', 'after carol']);
+        // The earlier messages are there to read, not counted as new.
+        expect(await chatUnread(carol)).toBe(1);
+      });
+
+      it('pages back through the whole history for someone added later', async () => {
+        const convo = await body(await group(alice, 'Deals', [bobId]));
+        for (let i = 0; i < 55; i++) await send(alice, convo.id, `m${i}`);
+        await add(bob, convo.id, [carolId]);
+        const first = await history(carol, convo.id);
+        expect(first.more).toBe(true);
+        const older = await history(carol, convo.id, `?before=${first.messages[0].id}`);
+        expect([...older.messages, ...first.messages].map((m: { body: string }) => m.body))
+          .toEqual(Array.from({ length: 55 }, (_, i) => `m${i}`));
+      });
+
+      it('takes all of it away from someone who leaves, and gives all of it back if they rejoin', async () => {
+        const convo = await body(await group(alice, 'Deals', [bobId, carolId]));
+        await send(alice, convo.id, 'while carol is in');
+        await api(`/api/chat/conversations/${convo.id}/leave`, { cookie: carol, body: {} });
+        await send(alice, convo.id, 'while carol is away');
+        expect((await api(`/api/chat/conversations/${convo.id}/messages`, { cookie: carol })).status).toBe(404);
+
+        await add(bob, convo.id, [carolId]);
+        await send(bob, convo.id, 'carol is back');
+        expect(await texts(carol, convo.id)).toEqual(['while carol is in', 'while carol is away', 'carol is back']);
+        expect(await chatUnread(carol)).toBe(1);
+      });
+
+      it('does the same for someone removed and added back', async () => {
+        const convo = await body(await group(alice, 'Deals', [bobId, daveId]));
+        await send(dave, convo.id, 'dave was here');
+        await api(`/api/chat/conversations/${convo.id}/remove`, { cookie: alice, body: { userId: daveId } });
+        await send(alice, convo.id, 'about dave');
+        expect((await api(`/api/chat/conversations/${convo.id}`, { cookie: dave })).status).toBe(404);
+        await add(alice, convo.id, [daveId]);
+        expect(await texts(dave, convo.id)).toEqual(['dave was here', 'about dave']);
+      });
+
+      it('never widens to anyone who is not in the group', async () => {
+        const convo = await body(await group(alice, 'Deals', [bobId]));
+        await send(alice, convo.id, 'members only');
+        expect((await api(`/api/chat/conversations/${convo.id}/messages`, { cookie: carol })).status).toBe(404);
+        expect((await api(`/api/chat/conversations/${convo.id}/messages`, { cookie: dave })).status).toBe(404);
+      });
+    });
+
     it('lets someone leave, after which they cannot read or send', async () => {
       const convo = await body(await group(alice, 'Deals', [bobId, carolId]));
       expect((await api(`/api/chat/conversations/${convo.id}/leave`, { cookie: bob, body: {} })).status).toBe(200);
@@ -368,6 +428,62 @@ describe.skipIf(!TEST_DB)('aircraft comments', () => {
     expect((await api(`/api/aircraft/air_one/comments/${first.id}/edit`, { cookie: bob, body: { body: 'back' } })).status).toBe(409);
     const { rows } = await getPool().query('select body, deleted_by from app_aircraft_comment order by id');
     expect(rows.map((r) => r.body)).toEqual(['first', 'second']);
+  });
+
+  it('checks an edit like a new comment, and keeps an unchanged edit off the record', async () => {
+    const { comment: c } = await body(await comment(bob, 'air_one', 'first words'));
+    const edit = (text: unknown) => api(`/api/aircraft/air_one/comments/${c.id}/edit`, { cookie: bob, body: { body: text } });
+    expect((await edit('   \n  ')).status).toBe(400);
+    expect((await edit('x'.repeat(5001))).status).toBe(400);
+    expect((await edit(42)).status).toBe(400);
+    const same = await body(await edit('first words'));
+    expect(same.comment.editedAt).toBeNull();
+    const twice = async (text: string) => (await body(await edit(text))).comment;
+    await twice('second words');
+    expect((await twice('third words\nwith a second line')).body).toBe('third words\nwith a second line');
+    const { rows } = await getPool().query('select body from app_aircraft_comment_revision where comment_id = $1 order by id', [c.id]);
+    expect(rows.map((r) => r.body)).toEqual(['first words', 'second words']);
+    const audit = await getPool().query(`select action from app_audit where collection = 'aircraftComments' order by id`);
+    expect(audit.rows.map((r) => r.action)).toEqual(['create', 'update', 'update']);
+  });
+
+  it('deletes once, keeps a deleted comment out of the new count, and stops a disabled author', async () => {
+    const inbox = async (cookie: string) => body(await api('/api/inbox', { cookie, body: {} }));
+    const { comment: c } = await body(await comment(alice, 'air_one', 'soon gone'));
+    await comment(alice, 'air_one', 'stays');
+    expect((await inbox(bob)).aircraftUnread).toEqual({ air_one: 2 });
+    const del = () => api(`/api/aircraft/air_one/comments/${c.id}/delete`, { cookie: alice, body: {} });
+    expect((await del()).status).toBe(200);
+    // Deleting again is a no-op, not a second entry in the log.
+    expect((await del()).status).toBe(200);
+    const audit = await getPool().query(`select count(*)::int as n from app_audit where collection = 'aircraftComments' and action = 'delete'`);
+    expect(audit.rows[0].n).toBe(1);
+    expect((await inbox(bob)).aircraftUnread).toEqual({ air_one: 1 });
+
+    const { comment: mine } = await body(await comment(bob, 'air_one', 'mine'));
+    await getPool().query('update "user" set banned = true where id = $1', [bobId]);
+    expect((await api(`/api/aircraft/air_one/comments/${mine.id}/edit`, { cookie: bob, body: { body: 'x' } })).status).toBe(401);
+    expect((await api(`/api/aircraft/air_one/comments/${mine.id}/delete`, { cookie: bob, body: {} })).status).toBe(401);
+  });
+
+  it('reports Watch / Watching per person, and starts watching on commenting unless told otherwise', async () => {
+    const watching = async (cookie: string) => (await body(await comments(cookie, 'air_one'))).watching;
+    const watch = (cookie: string, value: unknown, id = 'air_one') => api(`/api/aircraft/${id}/watch`, { cookie, body: { watching: value } });
+    expect(await watching(bob)).toBe(false);
+    await comment(bob, 'air_one', 'hello');
+    expect(await watching(bob)).toBe(true);
+    expect(await watching(carol)).toBe(false);
+    expect(await body(await watch(bob, false))).toEqual({ watching: false });
+    expect(await watching(bob)).toBe(false);
+    await comment(bob, 'air_one', 'again');
+    expect(await watching(bob)).toBe(false);
+    expect(await body(await watch(carol, true))).toEqual({ watching: true });
+    expect(await watching(carol)).toBe(true);
+    // Watching one aircraft is not watching another.
+    expect((await body(await comments(carol, 'air_two'))).watching).toBe(false);
+    expect((await watch(carol, 'yes')).status).toBe(400);
+    expect((await watch('', true)).status).toBe(401);
+    expect((await watch(carol, true, 'air_missing')).status).toBe(404);
   });
 
   it('shows how many are new since each person last looked', async () => {

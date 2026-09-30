@@ -124,6 +124,75 @@ describe.skipIf(!TEST_DB)('safeguards', () => {
       expect(history.entries[0]).not.toHaveProperty('before');
     });
 
+    describe('alongside comments and chat groups', () => {
+      /** Bob writes and deletes his own comments on an aircraft, n times. */
+      const commentAndDelete = async (n: number) => {
+        for (let i = 0; i < n; i++) {
+          const r = await (await api('/api/aircraft/air_one/comments', { cookie: bob, body: { body: `note ${i}` } })).json();
+          expect((await api(`/api/aircraft/air_one/comments/${r.comment.id}/delete`, { cookie: bob, body: {} })).status).toBe(200);
+        }
+      };
+      /** Bob adds Carol to his group and takes her out again, n times; then leaves it himself. */
+      const addAndRemove = async (n: number) => {
+        const carolId = (await createUser('Carol', 'carol@example.com')).id;
+        const group = await (await api('/api/chat/conversations', {
+          cookie: bob, body: { kind: 'group', name: 'Deals', memberIds: [carolId] },
+        })).json();
+        for (let i = 0; i < n; i++) {
+          expect((await api(`/api/chat/conversations/${group.id}/remove`, { cookie: bob, body: { userId: carolId } })).status).toBe(200);
+          expect((await api(`/api/chat/conversations/${group.id}/members`, { cookie: bob, body: { userIds: [carolId] } })).status).toBe(200);
+        }
+        expect((await api(`/api/chat/conversations/${group.id}/leave`, { cookie: bob, body: {} })).status).toBe(200);
+      };
+      const deleteEvents = async (collection: string) => Number((await getPool().query(
+        `select count(*) as n from app_audit where user_id = $1 and action = 'delete' and collection = $2`, [bobId, collection],
+      )).rows[0].n);
+
+      beforeEach(async () => {
+        await push(alice, [{ collection: 'aircraft', id: 'air_one', data: { id: 'air_one', tailNumber: 'N123AB' }, baseVersion: 0 }]);
+      });
+
+      it('still counts every ordinary record deletion', async () => {
+        await create(alice, ids(MEMBER_DELETE_LIMIT + 1));
+        expect((await (await remove(bob, ids(MEMBER_DELETE_LIMIT))).json()).applied).toHaveLength(MEMBER_DELETE_LIMIT);
+        expect(await deleteEvents('contacts')).toBe(MEMBER_DELETE_LIMIT);
+        const next = await (await remove(bob, ids(1, MEMBER_DELETE_LIMIT))).json();
+        expect(next.applied).toHaveLength(0);
+        expect(next.refused.message).toBe(DELETE_LIMIT_MESSAGE);
+      });
+
+      it('does not use up the allowance on deleted comments', async () => {
+        await commentAndDelete(MEMBER_DELETE_LIMIT + 5);
+        expect(await deleteEvents('aircraftComments')).toBe(MEMBER_DELETE_LIMIT + 5);
+        await create(alice, ids(MEMBER_DELETE_LIMIT));
+        const body = await (await remove(bob, ids(MEMBER_DELETE_LIMIT))).json();
+        expect(body.refused).toBeUndefined();
+        expect(body.applied).toHaveLength(MEMBER_DELETE_LIMIT);
+      });
+
+      it('does not use up the allowance on leaving a group or removing someone from it', async () => {
+        await addAndRemove(MEMBER_DELETE_LIMIT);
+        expect(await deleteEvents('chat')).toBe(MEMBER_DELETE_LIMIT + 1);
+        await create(alice, ids(MEMBER_DELETE_LIMIT));
+        const body = await (await remove(bob, ids(MEMBER_DELETE_LIMIT))).json();
+        expect(body.refused).toBeUndefined();
+        expect(body.applied).toHaveLength(MEMBER_DELETE_LIMIT);
+      });
+
+      it('still stops a bulk erase sent in pieces between comment and group clean-up', async () => {
+        await create(alice, ids(MEMBER_DELETE_LIMIT + 10));
+        await commentAndDelete(20);
+        expect((await (await remove(bob, ids(60))).json()).applied).toHaveLength(60);
+        await addAndRemove(20);
+        expect((await (await remove(bob, ids(40, 60))).json()).applied).toHaveLength(40);
+        await commentAndDelete(5);
+        const over = await (await remove(bob, ids(10, 100))).json();
+        expect(over.applied).toHaveLength(0);
+        expect(over.refused.records).toHaveLength(10);
+        expect(await live()).toBe(10);
+      });
+    });
+
     it('gives a refused deletion back to the app, which shows the records again', async () => {
       await create(alice, ids(MEMBER_DELETE_LIMIT + 5));
       await store.unload();

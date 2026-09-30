@@ -70,6 +70,9 @@ page.on('requestfailed', (r) => {
   // The inbox check and "I've left" note are sent every few seconds and as
   // the page goes; a navigation cuts some off, and the next one catches up.
   if (/\/api\/(inbox|presence)$/.test(r.url()) && r.failure()?.errorText === 'net::ERR_ABORTED') return;
+  // So is an aircraft page's comments refresh (a read, on a timer): going
+  // straight to another page can cut it off. Writes are never let through.
+  if (r.method() === 'GET' && /\/api\/aircraft\/[^/]+\/comments$/.test(r.url()) && r.failure()?.errorText === 'net::ERR_ABORTED') return;
   errors.push(`requestfailed: ${r.method()} ${r.url()} ${r.failure()?.errorText}`);
 });
 

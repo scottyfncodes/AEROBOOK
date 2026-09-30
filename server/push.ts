@@ -8,6 +8,7 @@
  * deployment, push is off: nothing is sent and the app says so. Everything
  * else — chat, comments, the in-app pop-ups — works the same.
  */
+import { parse as parseUrl } from 'node:url';
 import webpush from 'web-push';
 import { ensureAppSchema, getPool } from './db.js';
 import { HttpError } from './http.js';
@@ -51,6 +52,9 @@ export type PushSender = (subscription: StoredSubscription, payload: PushPayload
 const webPushSender: PushSender = async (subscription, payload, topic) => {
   const config = pushConfig();
   if (!config) return 'failed';
+  // Checked again here, at the point of sending: a stored endpoint that does
+  // not pass today's rules is forgotten rather than connected to.
+  if (!isPushEndpoint(subscription.endpoint)) return 'gone';
   try {
     await webpush.sendNotification(
       { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
@@ -85,28 +89,66 @@ export function setPushSender(next: PushSender | null): void {
  * Where a subscription may point. The server sends to the endpoint it is
  * given, so it must be a real push service — not an address inside some
  * network the server can reach and the browser cannot.
+ *
+ * web-push reads the endpoint with Node's legacy url.parse(), which does not
+ * split a URL the way the WHATWG URL parser does: in
+ * "https://169.254.169.254;.fcm.googleapis.com/" one sees a Google host and
+ * the other connects to 169.254.169.254. So an endpoint is accepted only when
+ *
+ *   1. it is written in a plain form with nothing either parser could read
+ *      two ways — https://, a host of lowercase letters, digits, dots and
+ *      hyphens, then a path starting with "/" — no user, port, fragment,
+ *      backslash, space, percent-escape in the host or non-ASCII anywhere;
+ *   2. that host is exactly one of the push services below; and
+ *   3. url.parse() (what web-push connects to) and new URL() both come out
+ *      with that same host, no port and no credentials.
+ *
+ * The same check runs again just before each send, so a subscription stored
+ * under older rules can never be used to reach anywhere else.
  */
-const PUSH_HOSTS = [
+const PUSH_HOSTS = new Set([
   'fcm.googleapis.com',
   'android.googleapis.com',
   'updates.push.services.mozilla.com',
   'push.services.mozilla.com',
   'web.push.apple.com',
   'push.apple.com',
-  'notify.windows.com',
-];
+]);
+/** Windows hands out one host per region: exactly one label in front of notify.windows.com. */
+const WNS_HOST = /^[a-z0-9]+(?:-[a-z0-9]+)*\.notify\.windows\.com$/;
+
+/**
+ * RFC 3986 path and query characters, minus anything a parser reads specially
+ * or rewrites: no backslash, quote, "#", space, or "%" without two hex digits.
+ */
+const PLAIN_ENDPOINT = /^https:\/\/([a-z0-9.-]+)(\/(?:[A-Za-z0-9\-._~!$&()*+,;=:@/]|%[0-9A-Fa-f]{2})*)(\?(?:[A-Za-z0-9\-._~!$&()*+,;=:@/?]|%[0-9A-Fa-f]{2})*)?$/;
+
+export function isPushHost(host: string): boolean {
+  return PUSH_HOSTS.has(host) || WNS_HOST.test(host);
+}
 
 export function isPushEndpoint(value: unknown): value is string {
   if (typeof value !== 'string' || value.length > 1000) return false;
+  const plain = PLAIN_ENDPOINT.exec(value);
+  if (!plain) return false;
+  const host = plain[1];
+  if (!isPushHost(host)) return false;
+
+  // What web-push will actually connect to.
+  const legacy = parseUrl(value);
+  if (legacy.protocol !== 'https:' || legacy.hostname !== host || legacy.host !== host
+    || legacy.port || legacy.auth || legacy.hash) return false;
+  if (legacy.path !== plain[2] + (plain[3] ?? '')) return false;
+
+  // And what everything else (the browser, fetch) would read.
   let url: URL;
   try {
     url = new URL(value);
   } catch {
     return false;
   }
-  if (url.protocol !== 'https:' || url.port || url.username || url.password) return false;
-  const host = url.hostname.toLowerCase();
-  return PUSH_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+  return url.protocol === 'https:' && url.hostname === host && url.host === host
+    && !url.port && !url.username && !url.password && !url.hash;
 }
 
 const KEY = /^[A-Za-z0-9_-]+={0,2}$/;

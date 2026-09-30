@@ -214,6 +214,17 @@ leave, and whoever started it (or an admin) can remove someone; someone who
 leaves or is removed can no longer open it, and what they wrote stays.
 Messages cannot be edited or deleted — chat is a record of what was said.
 
+**Group history is shared with whoever is in the group.** Someone added to an
+existing group sees its whole history, including everything said before they
+joined. Someone who leaves (or is removed) loses access to all of it, and if
+they are added back later they see the whole history again, including what
+was said while they were away. This is deliberate: AEROBOOK's chat is the
+team's internal chat, and a group's history is the context a newcomer needs.
+There is no per-message visibility by when someone joined, so do not put
+anything in a group that the people who may later be added to it should not
+read. Someone added later does not start with the old messages counted as
+unread; they start from where the group is when they join.
+
 Conversations are **not** part of the shared data that every device syncs:
 they live in their own tables (`app_conversation`, `app_conversation_member`,
 `app_message`) and are fetched only by their members. Every chat route starts
@@ -272,7 +283,10 @@ whether their devices also get a push:
   the open app tells the server where it is, and a device counts as away 45
   seconds after it last did. Not again for the same conversation or aircraft
   within two minutes of the last push while it is still unread; the next one
-  says how many are waiting ("3 new messages · latest from Scott"). A newer
+  says how many are waiting ("3 new messages · latest from Scott"). If that
+  last push reached none of the person's devices (the push service turned it
+  down), the newest message held back behind it is pushed in its place, so a
+  failed push never silences what comes after it. A newer
   notification for the same conversation replaces the older one on the
   device. None of this touches unread counts, which come from what each
   person has read, so holding back a push never hides a message.
@@ -281,7 +295,13 @@ Each person turns push on per device under **Settings → Notifications**, and
 can send themselves a test or turn it off again. Signing out turns it off on
 that device. Subscriptions are only accepted for real push services (Apple,
 Google, Mozilla, Microsoft), and one a push service reports as gone is
-forgotten. The service worker (`public/sw.js`) only shows notifications and
+forgotten. The server makes the request to whatever endpoint it stores, so
+the check is strict: `https://`, a host that is *exactly* one of the push
+services' hosts (`fcm.googleapis.com`, `web.push.apple.com`,
+`updates.push.services.mozilla.com`, or one `*.notify.windows.com` host), no
+port or user, and nothing in the URL that Node's legacy `url.parse()` — which
+`web-push` uses to connect — could read differently from the browser's URL
+parser. It is checked again just before every send. The service worker (`public/sw.js`) only shows notifications and
 opens the app on the right page when one is tapped — a conversation, or the
 aircraft scrolled to its comments; it caches nothing.
 

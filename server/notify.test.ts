@@ -225,6 +225,155 @@ describe.skipIf(!TEST_DB)('notifications', () => {
       expect((await body(await api('/api/inbox', { cookie: bob, body: {} }))).chatUnread).toBe(1);
     });
 
+    describe('when a push fails', () => {
+      const chatUnread = async (cookie: string) => (await body(await api('/api/inbox', { cookie, body: {} }))).chatUnread;
+
+      /** A push service that holds each push until the test says how it went. */
+      function heldPushes() {
+        const waiting: { endpoint: string; body: string; settle: (o: PushOutcome) => void }[] = [];
+        let arrived: () => void = () => undefined;
+        setPushSender((subscription, payload) => new Promise<PushOutcome>((settle) => {
+          waiting.push({ endpoint: subscription.endpoint, body: payload.body, settle });
+          arrived();
+        }));
+        const next = () => new Promise<void>((resolve) => { arrived = resolve; });
+        return { waiting, next };
+      }
+
+      it('groups the next message normally when the first push succeeded', async () => {
+        await subscribe(bob, endpoint('bob-phone'));
+        const id = await direct(alice, bobId);
+        await send(alice, id, 'one');
+        await send(alice, id, 'two');
+        expect((await notifications()).map((n) => n.push_status)).toEqual(['sent', 'grouped']);
+        expect(sent).toHaveLength(1);
+        expect(await chatUnread(bob)).toBe(2);
+      });
+
+      it('pushes the next message when the push before it failed', async () => {
+        await subscribe(bob, endpoint('bob-phone'));
+        const id = await direct(alice, bobId);
+        outcome = () => 'failed';
+        await send(alice, id, 'one');
+        outcome = () => 'sent';
+        await send(alice, id, 'two');
+        expect((await notifications()).map((n) => n.push_status)).toEqual(['failed', 'sent']);
+        expect(sent).toHaveLength(2);
+        expect(sent[1].payload.body).toBe('2 new messages · latest from Alice');
+        expect(await chatUnread(bob)).toBe(2);
+      });
+
+      it('pushes a message held back behind a push that then fails', async () => {
+        await subscribe(bob, endpoint('bob-phone'));
+        const id = await direct(alice, bobId);
+        const held = heldPushes();
+
+        // The first push is on its way when the second message arrives...
+        let arrived = held.next();
+        const first = send(alice, id, 'one');
+        await arrived;
+        expect((await send(alice, id, 'two')).status).toBe(200);
+        expect((await notifications()).map((n) => n.push_status)).toEqual(['sent', 'grouped']);
+        expect(held.waiting).toHaveLength(1);
+
+        // ...and then the push service turns the first one down.
+        arrived = held.next();
+        held.waiting[0].settle('failed');
+        await arrived;
+        expect(held.waiting).toHaveLength(2);
+        expect(held.waiting[1].body).toBe('2 new messages · latest from Alice');
+        held.waiting[1].settle('sent');
+        expect((await first).status).toBe(200);
+
+        expect((await notifications()).map((n) => n.push_status)).toEqual(['failed', 'sent']);
+        expect(await chatUnread(bob)).toBe(2);
+      });
+
+      it('sends one push for everything held back behind a failed one, naming the latest sender', async () => {
+        await subscribe(bob, endpoint('bob-phone'));
+        const id = await group(alice, [bobId, carolId]);
+        const held = heldPushes();
+
+        let arrived = held.next();
+        const first = send(alice, id, 'one');
+        await arrived;
+        await send(alice, id, 'two');
+        await send(carol, id, 'three');
+        await send(carol, id, 'four');
+        expect(held.waiting).toHaveLength(1);
+
+        arrived = held.next();
+        held.waiting[0].settle('failed');
+        await arrived;
+        held.waiting[1].settle('sent');
+        await first;
+        expect(held.waiting.map((w) => w.body)).toEqual([
+          'New message in Sales team from Alice',
+          '4 new messages in Sales team · latest from Carol',
+        ]);
+        const bobs = (await notifications()).filter((n) => n.user_id === bobId).map((n) => n.push_status);
+        expect(bobs).toEqual(['failed', 'grouped', 'grouped', 'sent']);
+        expect(await chatUnread(bob)).toBe(4);
+        // Carol replied, which reads what came before; her own never count.
+        expect(await chatUnread(carol)).toBe(0);
+
+        // The replacement push starts a new two-minute hold, as any push does.
+        await send(alice, id, 'five');
+        expect(held.waiting).toHaveLength(2);
+        expect(await chatUnread(bob)).toBe(5);
+      });
+
+      it('sends nothing in its place if the person has since opened the app or read the messages', async () => {
+        await subscribe(bob, endpoint('bob-phone'));
+        const id = await direct(alice, bobId);
+        const held = heldPushes();
+
+        let arrived = held.next();
+        const first = send(alice, id, 'one');
+        await arrived;
+        const two = (await body(await send(alice, id, 'two'))).message;
+        await api(`/api/chat/conversations/${id}/read`, { cookie: bob, body: { messageId: two.id } });
+
+        held.waiting[0].settle('failed');
+        await first;
+        expect(held.waiting).toHaveLength(1);
+        expect(await chatUnread(bob)).toBe(0);
+
+        // Same again, with Bob in the app instead of having read it.
+        arrived = held.next();
+        const three = send(alice, id, 'three');
+        await arrived;
+        await send(alice, id, 'four');
+        await api('/api/inbox', { cookie: bob, body: { deviceId: 'bob-laptop-1', view: 'app' } });
+        held.waiting[1].settle('failed');
+        await three;
+        expect(held.waiting).toHaveLength(2);
+        expect(await chatUnread(bob)).toBe(2);
+      });
+
+      it('does the same for aircraft comments', async () => {
+        await aircraft('air_one', 'N123AB');
+        await subscribe(bob, endpoint('bob-phone'));
+        await api('/api/aircraft/air_one/watch', { cookie: bob, body: { watching: true } });
+        const held = heldPushes();
+
+        let arrived = held.next();
+        const first = api('/api/aircraft/air_one/comments', { cookie: alice, body: { body: 'one' } });
+        await arrived;
+        await api('/api/aircraft/air_one/comments', { cookie: alice, body: { body: 'two' } });
+        arrived = held.next();
+        held.waiting[0].settle('failed');
+        await arrived;
+        held.waiting[1].settle('sent');
+        await first;
+        expect(held.waiting.map((w) => w.body)).toEqual([
+          'New comment on N123AB from Alice',
+          '2 new comments on N123AB · latest from Alice',
+        ]);
+        expect((await body(await api('/api/inbox', { cookie: bob, body: {} }))).aircraftUnread).toEqual({ air_one: 2 });
+      });
+    });
+
     it('records the notification without pushing when push is not set up', async () => {
       delete process.env.VAPID_PRIVATE_KEY;
       await subscribe(bob, endpoint('bob-phone'));

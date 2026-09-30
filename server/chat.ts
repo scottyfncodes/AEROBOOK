@@ -8,6 +8,14 @@
  * sends about who may see what is ever used — only the signed-in session.
  *
  * Messages cannot be edited or deleted: chat is a record of what was said.
+ *
+ * Group history is shared with whoever is currently in the group, on
+ * purpose. Someone added to a group sees all of its messages, including those
+ * sent before they joined; someone who leaves loses access to all of them,
+ * and if added back sees the whole history again. It is the team's internal
+ * chat, and the history is the context a newcomer needs. Visibility is never
+ * worked out message by message from when someone joined — see
+ * listMessages().
  */
 import { randomBytes } from 'node:crypto';
 import type { PoolClient } from 'pg';
@@ -281,6 +289,9 @@ function toMessage(r: {
 /**
  * A page of messages, oldest first. `before` pages back through history;
  * `after` fetches what arrived since the newest one on screen.
+ *
+ * Every message in the conversation, for any current member: joined_at is
+ * deliberately not used here (see the note at the top of this file).
  */
 export async function listMessages(user: SessionUser, conversationId: string, query: URLSearchParams): Promise<{
   messages: MessageOut[]; more: boolean;
@@ -416,7 +427,12 @@ export async function renameGroup(user: SessionUser, conversationId: string, bod
   return getConversation(user, conversationId);
 }
 
-/** Any member may add people. Someone added back after leaving picks up where the group is now. */
+/**
+ * Any member may add people. They can read the group's whole history,
+ * earlier messages included; someone added back after leaving can read all
+ * of it again. Either way they start with nothing unread: their read marker
+ * begins at the group's latest message.
+ */
 export async function addMembers(user: SessionUser, conversationId: string, body: unknown): Promise<ConversationOut> {
   await requireGroup(user, conversationId);
   const ids = idList((body as { userIds?: unknown })?.userIds).filter((id) => id !== user.id);
