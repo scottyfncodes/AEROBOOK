@@ -30,7 +30,7 @@ export function Splash({ leaving = false }: { leaving?: boolean }) {
 }
 
 /** How long the launch screen holds, at least, before it fades. */
-const INTRO_HOLD_MS = 1500;
+const INTRO_HOLD_MS = 3000;
 /** Matches the `.splash--leaving` transition. */
 const INTRO_FADE_MS = 400;
 
