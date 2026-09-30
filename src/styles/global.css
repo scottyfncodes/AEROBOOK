@@ -6,6 +6,15 @@ html, body, #root { height: 100%; }
 
 html {
   -webkit-text-size-adjust: 100%;
+  /*
+   * Installed to the iOS home screen with a translucent status bar, the
+   * viewport is sized as if the status bar still took space, so on a page
+   * too short to scroll the fixed tab bar sits that far above the bottom of
+   * the screen (with a dead band below it). Growing the document by the
+   * top inset makes it fill the whole screen, so the tab bar lands on the
+   * bottom edge on every tab. The inset is zero everywhere else.
+   */
+  min-height: calc(100% + env(safe-area-inset-top, 0px));
 }
 
 body {
