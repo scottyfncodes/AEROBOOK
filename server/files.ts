@@ -11,6 +11,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize } from 'node:path';
 import { del as blobDel, get as blobGet, issueSignedToken } from '@vercel/blob';
 import { handleUpload, handleUploadPresigned, type HandleUploadBody } from '@vercel/blob/client';
+import { ALLOWED_DOCUMENT_TYPES } from '../src/lib/documents.js';
 import { ensureAppSchema, getPool } from './db.js';
 
 export type StorageMode = 'blob' | 'local' | 'none';
@@ -57,15 +58,25 @@ export async function blobUploadToken(request: Request, body: HandleUploadBody):
       body: body as never,
       getSignedToken: async (pathname) => {
         if (!isFilePath(pathname)) throw new Error('Documents are stored under files/');
-        // Good for this one path, for writing only, for ten minutes. The path
-        // already carries the record's unique id, so no suffix is needed.
+        // Good for this one path, for writing only, for ten minutes, for the
+        // kinds of file AEROBOOK keeps. The path already carries the
+        // record's unique id, so no suffix is needed, and it may not replace
+        // a file already stored there.
         const token = await issueSignedToken({
           pathname,
           operations: ['put'],
           maximumSizeInBytes: MAX_FILE_BYTES,
+          allowedContentTypes: ALLOWED_DOCUMENT_TYPES,
           validUntil: Date.now() + 10 * 60 * 1000,
         });
-        return { token, urlOptions: { maximumSizeInBytes: MAX_FILE_BYTES } };
+        return {
+          token,
+          urlOptions: {
+            maximumSizeInBytes: MAX_FILE_BYTES,
+            allowedContentTypes: ALLOWED_DOCUMENT_TYPES,
+            allowOverwrite: false,
+          },
+        };
       },
     });
   }
@@ -76,8 +87,11 @@ export async function blobUploadToken(request: Request, body: HandleUploadBody):
       if (!isFilePath(pathname)) throw new Error('Documents are stored under files/');
       return {
         maximumSizeInBytes: MAX_FILE_BYTES,
-        // An unguessable name on top of the path the app chose.
+        allowedContentTypes: ALLOWED_DOCUMENT_TYPES,
+        // An unguessable name on top of the path the app chose, and never a
+        // file already stored.
         addRandomSuffix: true,
+        allowOverwrite: false,
       };
     },
   });

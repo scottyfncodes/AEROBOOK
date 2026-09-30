@@ -55,7 +55,9 @@ function options() {
       // Vercel sets these itself, so a client cannot forge its way around the limit.
       ipAddress: { ipAddressHeaders: ['x-real-ip', 'x-forwarded-for'] },
     },
-    plugins: [admin({ defaultRole: 'user', adminRoles: ['admin'] })],
+    // A turned-off account is told the same as a wrong password (see
+    // authRoute in app.ts, which also evens out the status and code).
+    plugins: [admin({ defaultRole: 'user', adminRoles: ['admin'], bannedUserMessage: 'Invalid email or password' })],
   };
 }
 

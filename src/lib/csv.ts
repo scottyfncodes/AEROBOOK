@@ -155,10 +155,24 @@ function dedupeHeaders(headers: string[], warnings: string[]): string[] {
   });
 }
 
-/** Quote a value for CSV output. */
+/**
+ * A cell a spreadsheet would run as a formula: one starting with =, +, -, @,
+ * a tab or a carriage return. Plain numbers and phone numbers (+1 (555)
+ * 123-4567, -12.5) are left alone; they cannot call anything.
+ */
+function looksLikeFormula(s: string): boolean {
+  return /^[=+\-@\t\r]/.test(s) && !/^[+-]?[\d\s().-]+$/.test(s);
+}
+
+/**
+ * Quote a value for CSV output. Text that a spreadsheet would treat as a
+ * formula gets a leading apostrophe, so opening an export in Excel or Sheets
+ * shows it rather than running it.
+ */
 export function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const s = String(value);
+  let s = String(value);
+  if (looksLikeFormula(s)) s = `'${s}`;
   if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

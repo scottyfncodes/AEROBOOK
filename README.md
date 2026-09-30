@@ -53,7 +53,9 @@ server/           the API: sign-in, sync, first-time setup
   app.ts          routing, and who may do what
 db/schema.sql     the whole database schema
 src/lib/          domain logic, all pure and tested
-  csv.ts          RFC 4180 reader that never throws on malformed input
+  csv.ts          RFC 4180 reader that never throws on malformed input; the
+                  writer defuses cells a spreadsheet would run as formulas
+  documents.ts    the kinds of file kept as documents
   mapping.ts      scored header detection onto AEROBOOK fields
   names.ts        owner-name parsing (FAA lists are last-name-first)
   tail.ts         tail-number normalisation
@@ -87,7 +89,9 @@ There is no sign-up. The first admin is created once, on the setup screen,
 with the `SETUP_TOKEN` set on the deployment; after that, an admin adds each
 person under **Settings → Team**, sets or resets their password, makes them
 an admin, or turns their access off. Turning access off keeps their name on
-everything they recorded. Sign-in attempts are rate-limited.
+everything they recorded. Someone whose access is off is told *"Invalid email
+or password"* whatever they type, exactly as for a wrong password, so a
+guessed password is never confirmed. Sign-in attempts are rate-limited.
 
 Everyone sees and edits the same contacts, aircraft, opportunities, policies,
 timeline, follow-ups and templates. Each person has their own profile (the
@@ -122,11 +126,16 @@ A document is a record in the shared data (name, type, size, what it is
 attached to) plus the file in **private Vercel Blob storage** — never in
 Postgres, never at a public URL. The browser uploads straight to Blob with a
 short-lived token from `POST /api/files/upload`, which is only issued to
-someone signed in and only for a path under `files/`, up to 25 MB. Opening a
-document goes through `GET /api/files/content`, which checks the session and
-that a document record points at that file, and always serves it as a
-download. Deleting the document's record stops the file being served at
-once; the file itself waits in `app_file_trash` for 30 days, so the document
+someone signed in and only for a path under `files/`, up to 25 MB, never
+replacing a file already stored. Only the kinds of file AEROBOOK keeps are
+accepted — PDF, photos (JPEG, PNG, HEIC, WebP, GIF, TIFF), Word, Excel, plain
+text and CSV (`src/lib/documents.ts`); the app refuses anything else before
+uploading, and the token itself carries the list, so Vercel Blob refuses it
+too. Opening a document goes through `GET /api/files/content`, which checks
+the session and that a document record points at that file, and always serves
+it as a download, as its own type only when that is one of those kinds.
+Deleting the document's record stops the file being served at once; the file
+itself waits in `app_file_trash` for 30 days, so the document
 can be restored, and is then removed by the daily maintenance run
 (`GET /api/maintenance/run`, called by Vercel Cron with `CRON_SECRET`, like the
 daily email). A file any document record points at again is never removed,

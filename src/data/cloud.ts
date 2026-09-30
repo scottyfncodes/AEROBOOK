@@ -11,6 +11,7 @@
  * attached before cloud storage, or while offline, stays in this browser until
  * it can be moved up — which happens on its own the next time the app opens.
  */
+import { documentType } from '../lib/documents';
 import { defaultTemplates } from '../lib/email';
 import { nowIso } from '../lib/id';
 import * as persistence from './db';
@@ -397,7 +398,7 @@ export class CloudSync implements store.Backend {
         const result = await send(path, file, {
           access: 'private',
           handleUploadUrl: '/api/files/upload',
-          contentType: file.type || undefined,
+          contentType: documentType(file.name, file.type) ?? undefined,
           multipart: file.size > 8 * 1024 * 1024,
         });
         return result.pathname;
@@ -439,7 +440,9 @@ export class CloudSync implements store.Backend {
 
   private async moveNow(): Promise<number> {
     let moved = 0;
-    for (const f of store.getState().files.filter((x) => !x.blobPath)) {
+    // A kind of file cloud storage would refuse stays on this device rather
+    // than being tried again every time the app opens.
+    for (const f of store.getState().files.filter((x) => !x.blobPath && documentType(x.name, x.mimeType))) {
       const blob = await persistence.getFileBlob(f.id);
       if (!blob) continue;
       const path = await this.storeFile(f.id, new File([blob], f.name, { type: f.mimeType }));

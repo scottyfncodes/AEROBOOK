@@ -19,6 +19,7 @@ import {
   updateActivity, updateFollowUp,
 } from '../data/store';
 import { addDays, dateKey, formatDate, relativeDue, todayKey } from '../lib/dates';
+import { DOCUMENT_ACCEPT, documentType, DOCUMENT_TYPES_HINT } from '../lib/documents';
 import { useCurrentUser, useTeam } from '../data/session';
 import type { ExternalLink } from '../lib/links';
 import type { LinkedDocument } from '../lib/selectors';
@@ -497,6 +498,10 @@ export function FilesSection({
           toast(`${file.name} is larger than 25 MB and was skipped`, 'error');
           continue;
         }
+        if (!documentType(file.name, file.type)) {
+          toast(`${file.name} was skipped: attach a ${DOCUMENT_TYPES_HINT} file`, 'error');
+          continue;
+        }
         await addFile(file, links, category);
         attached += 1;
       }
@@ -557,7 +562,7 @@ export function FilesSection({
       <SelectField label="Category for the next attachment" value={category} options={DOCUMENT_CATEGORIES} onChange={setCategory} />
       <label className="btn btn--ghost btn--block" style={{ cursor: 'pointer' }}>
         <IconUpload /> {busy ? 'Attaching…' : 'Attach a document'}
-        <input type="file" multiple hidden onChange={(e) => { void onPick(e.target.files); e.target.value = ''; }} />
+        <input type="file" multiple hidden accept={DOCUMENT_ACCEPT} onChange={(e) => { void onPick(e.target.files); e.target.value = ''; }} />
       </label>
       <p className="xsmall muted">
         Documents are stored privately in the cloud: everyone on the team can open them, and only people
