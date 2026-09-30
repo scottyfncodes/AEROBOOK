@@ -18,10 +18,11 @@
   --bg: #061a2c;
   --bg-elevated: #0a2238;
   --surface: #0d2740;
-  --surface-2: #11304d;
+  --surface-2: #123352;
+  --input-bg: var(--surface-2);
   --surface-hover: #153757;
-  --border: #1c3b58;
-  --border-strong: #2c4d6c;
+  --border: #244a6d;
+  --border-strong: #3a628a;
 
   --text: var(--brand-ivory);
   --text-secondary: #c2cad2;
@@ -67,6 +68,7 @@
   --bg-elevated: #ffffff;
   --surface: #ffffff;
   --surface-2: #efefeb;
+  --input-bg: #fbfbf9;
   --surface-hover: #e8e8e3;
   --border: #e1e0da;
   --border-strong: #c8c7bf;

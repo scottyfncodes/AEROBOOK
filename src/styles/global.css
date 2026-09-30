@@ -218,7 +218,7 @@ button, input, select, textarea {
 
 .btn:hover { background: var(--surface-hover); text-decoration: none; }
 .btn:active { transform: translateY(0.5px); }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn--primary {
   background: var(--accent);
@@ -226,6 +226,17 @@ button, input, select, textarea {
   color: var(--accent-contrast);
 }
 .btn--primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+/*
+ * Faded or mixed toward it, gold over navy turns olive-grey — the two are
+ * near-complements. A disabled primary instead keeps its full gold as an
+ * outline: the same action, clearly not ready until it fills in.
+ */
+.btn--primary:disabled {
+  opacity: 1;
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 .btn--ghost { background: transparent; border-color: var(--border); }
 .btn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
@@ -300,7 +311,7 @@ button, input, select, textarea {
   width: 100%;
   min-height: var(--tap);
   padding: 10px 12px;
-  background: var(--bg-elevated);
+  background: var(--input-bg);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   font-size: 16px; /* 16px keeps iOS Safari from zooming on focus */
@@ -310,8 +321,10 @@ button, input, select, textarea {
 .input:focus, .select:focus, .textarea:focus {
   border-color: var(--accent);
   outline: none;
-  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
+
+.input::placeholder, .textarea::placeholder { color: var(--text-muted); opacity: 1; }
 
 .textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
 
