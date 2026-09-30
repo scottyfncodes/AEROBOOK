@@ -3,14 +3,18 @@ import { mkdirSync, readFileSync } from 'node:fs';
 
 /**
  * Drives the built app in Chromium at iPhone dimensions and walks the journeys
- * the app exists for: import the supplied CSV, find the aircraft by a
+ * the app exists for: set up the first admin account, import the supplied CSV, find the aircraft by a
  * lowercase tail, generate the email, record it, set a follow-up, add an
  * insurance policy and check the renewal countdown, open a brokerage
  * opportunity and move it through the pipeline, record what the owner wants,
- * reload, re-import, and export. Fails on any console error, any horizontal
+ * reload, re-import, and export; then add a teammate who signs in on a second
+ * device and shares the same data. Fails on any console error, any horizontal
  * overflow or any link without a destination.
  *
- *   npm run build && npm run preview &
+ * Needs the full stack against an empty database, started with SETUP_TOKEN:
+ *
+ *   npm run build
+ *   DATABASE_URL=... BETTER_AUTH_SECRET=... SETUP_TOKEN=e2e-setup-token npm run serve &
  *   node e2e-check.mjs
  */
 import { dirname, resolve } from 'node:path';
@@ -21,6 +25,10 @@ const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:4173';
 const SHOTS = process.env.SHOTS_DIR ?? resolve(here, '.e2e-shots');
 const CSV = resolve(here, 'sample-data/owners-cirrus-design-corp-sr22t.csv');
 const CHROME = process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+// The server must start with an empty database and this SETUP_TOKEN.
+const SETUP_TOKEN = process.env.SETUP_TOKEN ?? 'e2e-setup-token';
+const ADMIN = { name: 'Scott Test', email: 'scott@example.com', password: 'e2e admin password' };
+const TEAMMATE = { name: 'John Teammate', email: 'john@example.com', password: 'e2e teammate password' };
 
 const errors = [];
 const log = (...a) => console.log(...a);
@@ -38,9 +46,18 @@ const page = await context.newPage();
 
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+// A large sync (an import) still in flight when the test navigates away is
+// cut off by the browser; the app resends it on the next load, and the
+// counts checked after each reload prove it arrived. Anything else failing
+// is an error.
+let abortedSyncs = 0;
 page.on('requestfailed', (r) => {
   if (!r.url().startsWith(BASE)) return;
-  errors.push(`requestfailed: ${r.url()} ${r.failure()?.errorText}`);
+  if (r.url().endsWith('/api/sync') && r.failure()?.errorText === 'net::ERR_ABORTED') {
+    abortedSyncs++;
+    return;
+  }
+  errors.push(`requestfailed: ${r.method()} ${r.url()} ${r.failure()?.errorText}`);
 });
 
 async function shot(name) {
@@ -72,6 +89,21 @@ for (const asset of [
   const res = await page.request.get(BASE + asset);
   if (!res.ok()) errors.push(`asset ${asset} returned ${res.status()}`);
 }
+
+// ------------------------------------------------------- 0b. first admin
+// Nothing opens without an account; the very first one needs the setup token.
+await page.goto(BASE, { waitUntil: 'networkidle' });
+await page.waitForSelector('text=Set up AEROBOOK');
+if (await page.locator('.tabbar').count()) errors.push('the tab bar shows before anyone has signed in');
+await shot('00-setup');
+await page.getByLabel('Setup token').fill(SETUP_TOKEN);
+await page.getByLabel('Your name').fill(ADMIN.name);
+await page.getByLabel('Email').fill(ADMIN.email);
+await page.getByLabel('Password', { exact: true }).fill(ADMIN.password);
+await page.getByLabel('Password again').fill(ADMIN.password);
+await page.getByRole('button', { name: 'Create the admin account' }).click();
+await page.waitForSelector('.quick-actions');
+log('first admin created and signed in');
 
 // ---------------------------------------------------------------- 1. empty
 await page.goto(BASE, { waitUntil: 'networkidle' });
@@ -184,6 +216,18 @@ const timeline = await page.locator('.timeline__item').allInnerTexts();
 log('timeline entries:', timeline.length);
 if (!has(timeline.join(' '), 'RE: N917JH')) errors.push('email activity not on the timeline');
 await shot('08-timeline');
+
+// a recorded entry can be corrected in place
+await page.locator('button[aria-label^="Edit \\"RE: N917JH"]').first().click();
+await page.waitForSelector('.sheet textarea');
+await page.fill('.sheet textarea', 'Corrected by the acceptance test.');
+await page.getByRole('button', { name: 'Save' }).click();
+await page.waitForTimeout(300);
+const editedTimeline = (await page.locator('.timeline__item').allInnerTexts()).join(' ');
+if (!has(editedTimeline, 'Corrected by the acceptance test.')) errors.push('edited timeline entry did not save');
+if (!has(editedTimeline, 'edited')) errors.push('edited timeline entry is not marked as edited');
+log('timeline entry edited');
+await shot('08b-timeline-edited');
 
 // ---------------------------------------------------------- 6. follow up
 await page.getByRole('button', { name: 'Follow up' }).click();
@@ -478,6 +522,7 @@ for (const [path, name] of [
   ['/templates', '19-templates'],
   ['/settings', '20-settings'],
   ['/import/history', '21-import-history'],
+  ['/history', '21b-activity-history'],
   ['/nope', '22-notfound'],
 ]) {
   await page.goto(BASE + path, { waitUntil: 'networkidle' });
@@ -558,7 +603,195 @@ if (!has(insCsv[1], 'N917JH') || !has(insCsv[1], 'Global Aerospace')) {
   errors.push('insurance export does not carry the aircraft and carrier');
 }
 
+// ----------------------------------------------------- 13. a second person
+// The admin adds a teammate, who signs in on another device and sees the
+// same book; what the teammate records reaches the admin.
+await page.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: 'Add person' }).click();
+await page.waitForSelector('.sheet');
+const addSheet = page.locator('.sheet');
+await addSheet.getByLabel('Name', { exact: true }).fill(TEAMMATE.name);
+await addSheet.getByLabel('Email').fill(TEAMMATE.email);
+await addSheet.getByLabel('First password').fill(TEAMMATE.password);
+await addSheet.getByRole('button', { name: 'Add', exact: true }).click();
+await page.waitForSelector(`text=${TEAMMATE.email}`);
+await shot('13-team');
+
+const other = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+const phone = await other.newPage();
+let expectingRejection = false;
+let expectingNoEmail = false;
+phone.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  // The wrong password below is refused on purpose, and the browser logs it.
+  if (expectingRejection && m.text().includes('401')) return;
+  // So is the daily email while no email service is set up.
+  if (expectingNoEmail && m.text().includes('503')) return;
+  errors.push(`teammate console: ${m.text()}`);
+});
+phone.on('pageerror', (e) => errors.push(`teammate pageerror: ${e.message}`));
+await phone.goto(BASE, { waitUntil: 'networkidle' });
+await phone.waitForSelector('text=Sign in');
+await phone.getByLabel('Email').fill(TEAMMATE.email);
+await phone.getByLabel('Password').fill('not the password');
+expectingRejection = true;
+await phone.getByRole('button', { name: 'Sign in' }).click();
+await phone.waitForSelector('text=do not match an account');
+expectingRejection = false;
+await phone.getByLabel('Password').fill(TEAMMATE.password);
+await phone.getByRole('button', { name: 'Sign in' }).click();
+await phone.waitForSelector('.quick-actions');
+await phone.goto(`${BASE}/search`, { waitUntil: 'networkidle' });
+await phone.fill('input[type=search]', 'n917jh');
+await phone.waitForSelector('.tile');
+await phone.waitForTimeout(400);
+await phone.locator('.tile').first().click();
+await phone.waitForSelector('text=Corrected by the acceptance test.');
+log('teammate sees the admin’s aircraft and its edited timeline');
+if (await phone.getByRole('button', { name: 'Restore from a full export' }).count()) errors.push('restore shown to a non-admin');
+
+await phone.getByRole('button', { name: 'Add note' }).click();
+await phone.waitForSelector('.sheet');
+await phone.getByLabel('Subject').fill('Teammate called the owner');
+await phone.getByRole('button', { name: 'Record' }).click();
+await phone.waitForTimeout(800);
+const tailUrl = phone.url();
+await shot('13b-teammate');
+await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+if (await phone.getByRole('button', { name: 'Add person' }).count()) errors.push('team management shown to a non-admin');
+if (await phone.getByRole('button', { name: /Erase all/ }).count()) errors.push('erase shown to a non-admin');
+
+await page.goto(tailUrl, { waitUntil: 'networkidle' });
+await page.waitForSelector('text=Teammate called the owner', { timeout: 5000 })
+  .then(() => log('admin sees what the teammate recorded'))
+  .catch(() => errors.push('the teammate’s note did not reach the admin'));
+
+// ---------------------------------------------------- 13a. activity history
+// The teammate's note is in the history under the teammate's name, and the
+// import shows as one line rather than a hundred.
+await page.goto(`${BASE}/history`, { waitUntil: 'networkidle' });
+await page.waitForSelector('.history__item', { timeout: 10000 });
+const firstPageLines = await page.locator('.history__item').count();
+// Page back to the import, which is older than the first page.
+while (await page.getByRole('button', { name: 'Show older' }).count()) {
+  await page.getByRole('button', { name: 'Show older' }).click();
+  await page.waitForFunction((n) => document.querySelectorAll('.history__item').length > n, firstPageLines);
+}
+const historyText = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
+if (!has(historyText, `${TEAMMATE.name} added timeline entry “Teammate called the owner”`)) {
+  errors.push('the activity history does not show the teammate adding their note');
+}
+if (!/Scott Test created \d{3} contacts/.test(historyText)) errors.push('the import is not one grouped line in the history');
+const firstLine = await page.locator('.history__item').first().innerText();
+if (!has(firstLine, TEAMMATE.name)) errors.push(`newest history line is not the teammate's note: ${firstLine}`);
+if (await page.locator('main').getByRole('button', { name: /delete|remove|edit/i }).count()) {
+  errors.push('the activity history offers a way to change it');
+}
+log('activity history:', firstLine.replace(/\n/g, ' / '));
+await shot('13a-history');
+await page.goto(tailUrl, { waitUntil: 'networkidle' });
+
+// ---------------------------------------------- 13b. whose follow-up it is
+// The admin gives a follow-up to the teammate: it is on the teammate's list,
+// not the admin's, and the teammate can hand it back.
+const TASK = 'Call the owner back about the quote';
+await page.getByRole('button', { name: 'Follow up' }).click();
+await page.waitForSelector('.sheet');
+await page.locator('.sheet textarea').fill(TASK);
+await page.locator('.sheet').getByLabel('For', { exact: true }).selectOption({ label: TEAMMATE.name });
+await page.getByRole('button', { name: 'Set follow-up' }).click();
+await page.waitForTimeout(800);
+
+await phone.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
+await phone.waitForSelector(`text=${TASK}`, { timeout: 5000 })
+  .then(() => log('the teammate has the follow-up given to them'))
+  .catch(() => errors.push('a follow-up given to the teammate is not on their list'));
+
+await page.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
+await page.waitForSelector('[role=tablist]');
+if (await page.getByText(TASK).count()) errors.push('a follow-up given to the teammate is on the admin’s own list');
+await page.getByRole('tab', { name: /^All/ }).click();
+const allCard = page.locator('.card', { hasText: TASK });
+await allCard.first().waitFor({ timeout: 5000 }).catch(() => undefined);
+if (!(await allCard.count())) errors.push('the teammate’s follow-up is missing from All');
+else if (!has(await allCard.innerText(), TEAMMATE.name)) errors.push('the follow-up in All does not say who it is for');
+await shot('13c-follow-ups-all');
+
+await phone.locator('.card', { hasText: TASK }).getByRole('button', { name: 'Edit' }).click();
+await phone.waitForSelector('.sheet');
+await phone.locator('.sheet').getByLabel('For', { exact: true }).selectOption({ label: ADMIN.name });
+await phone.getByRole('button', { name: 'Save' }).click();
+await phone.waitForTimeout(800);
+if (await phone.getByText(TASK).count()) errors.push('a follow-up handed back still shows on the teammate’s list');
+
+await page.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
+await page.waitForSelector(`text=${TASK}`, { timeout: 5000 })
+  .then(() => log('the teammate handed the follow-up back to the admin'))
+  .catch(() => errors.push('a follow-up handed back did not reach the admin’s list'));
+
+// ------------------------------------------------ 13c. a shared document
+// The admin attaches a PDF; the teammate, on their own device, sees it and
+// downloads the same bytes. It is still there after they sign out and in.
+const DOC = { name: 'e2e-binder.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 e2e binder') };
+await page.goto(tailUrl, { waitUntil: 'networkidle' });
+await page.locator('input[type=file]').setInputFiles(DOC);
+await page.waitForSelector(`text=${DOC.name}`, { timeout: 10000 });
+await page.waitForTimeout(800);
+
+const openDoc = async (who) => {
+  await who.goto(tailUrl, { waitUntil: 'networkidle' });
+  const found = await who.waitForSelector(`text=${DOC.name}`, { timeout: 10000 }).then(() => true, () => false);
+  if (!found) return null;
+  const download = who.waitForEvent('download');
+  await who.getByRole('button', { name: new RegExp(DOC.name.replace('.', '\\.')) }).first().click();
+  return readFileSync(await (await download).path(), 'utf8');
+};
+const teammateCopy = await openDoc(phone);
+if (teammateCopy === null) errors.push('the teammate does not see the document the admin attached');
+else if (teammateCopy !== DOC.buffer.toString()) errors.push('the teammate downloaded different bytes');
+else log('the teammate opened the document the admin attached');
+
+await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+await phone.getByRole('button', { name: 'Sign out' }).click();
+await phone.waitForSelector('text=Sign in');
+await phone.getByLabel('Email').fill(TEAMMATE.email);
+await phone.getByLabel('Password').fill(TEAMMATE.password);
+await phone.getByRole('button', { name: 'Sign in' }).click();
+// Signing in again returns to the page they left, not necessarily Home.
+await phone.waitForSelector('nav.tabbar');
+if ((await openDoc(phone)) !== DOC.buffer.toString()) errors.push('the document was gone after signing out and back in');
+else log('the document is still there after signing out and back in');
+const leaked = await (await browser.newContext()).request.get(`${BASE}/api/files/content?path=files/fil_abcd/x.pdf`);
+if (leaked.status() !== 401) errors.push(`a signed-out request for a document got ${leaked.status()}`);
+
+// Daily email: the choice is kept, and without an API key nothing is sent.
+await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+const digestBox = phone.getByRole('checkbox', { name: /Email me each morning/ });
+if (!(await digestBox.isChecked())) errors.push('the daily email was not on by default');
+await digestBox.uncheck();
+await phone.waitForTimeout(1500);
+await phone.reload({ waitUntil: 'networkidle' });
+if (await phone.getByRole('checkbox', { name: /Email me each morning/ }).isChecked()) errors.push('turning the daily email off did not stick');
+else log('the daily email can be turned off, and stays off');
+await phone.getByRole('checkbox', { name: /Email me each morning/ }).check();
+expectingNoEmail = true;
+await phone.getByRole('button', { name: /Send me today/ }).click();
+await phone.waitForSelector('text=not set up', { timeout: 5000 }).catch(() => errors.push('no message when email is not set up'));
+expectingNoEmail = false;
+await phone.locator('section', { hasText: 'Daily email' }).first().screenshot({ path: `${SHOTS}/settings-daily-email.png` });
+
+await phone.getByRole('button', { name: 'Sign out' }).click();
+await phone.waitForSelector('text=Sign in');
+await phone.goto(`${BASE}/aircraft`, { waitUntil: 'networkidle' });
+if (!(await phone.getByRole('button', { name: 'Sign in' }).isVisible())) errors.push('data still showing after sign-out');
+await phone.goto(`${BASE}/history`, { waitUntil: 'networkidle' });
+if (!(await phone.getByRole('button', { name: 'Sign in' }).isVisible())) errors.push('history showing after sign-out');
+const signedOutHistory = await phone.request.get(`${BASE}/api/history`);
+if (signedOutHistory.status() !== 401) errors.push(`history API answered ${signedOutHistory.status()} when signed out`);
+await other.close();
+
 // ------------------------------------------------------------------ report
+log('syncs cut off by navigation, resent on the next load:', abortedSyncs);
 await browser.close();
 log('\n=== console/page errors and layout problems ===');
 if (errors.length === 0) log('none');

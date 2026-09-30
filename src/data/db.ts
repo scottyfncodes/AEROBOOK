@@ -173,9 +173,12 @@ export function migrate(raw: unknown): Database {
     } satisfies Opportunity;
   });
 
+  // Layover was removed from the app; its empty list rode along in every save.
+  const { layoverSpots: _layover, ...kept } = input as Partial<Database> & { layoverSpots?: unknown };
+
   return {
     ...base,
-    ...input,
+    ...kept,
     version: DB_VERSION,
     contacts: input.contacts ?? [],
     aircraft: (input.aircraft ?? []).map((a) => ({ ...a, ownerships: a.ownerships ?? [], custom: a.custom ?? {} })),
@@ -222,6 +225,29 @@ export async function saveDatabase(db: Database): Promise<void> {
   } catch (error) {
     throw new Error(`Could not save data: ${(error as Error).message}`);
   }
+}
+
+/**
+ * A named copy of anything structured-cloneable, beside the document. The
+ * cloud copy of the data is cached here so the app opens without a signal.
+ */
+export async function loadCache<T>(key: string): Promise<T | undefined> {
+  if (!hasIndexedDb()) return undefined;
+  try {
+    return await tx<T | undefined>(DOC_STORE, 'readonly', (s) => s.get(key));
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveCache(key: string, value: unknown): Promise<void> {
+  if (!hasIndexedDb()) return;
+  await tx(DOC_STORE, 'readwrite', (s) => s.put(value, key));
+}
+
+export async function deleteCache(key: string): Promise<void> {
+  if (!hasIndexedDb()) return;
+  await tx(DOC_STORE, 'readwrite', (s) => s.delete(key));
 }
 
 export async function putFileBlob(id: string, blob: Blob): Promise<void> {

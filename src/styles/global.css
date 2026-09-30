@@ -322,6 +322,14 @@ button, input, select, textarea {
   accent-color: var(--accent);
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -741,6 +749,48 @@ button, input, select, textarea {
   min-height: 60vh;
 }
 
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.team-row:last-child { border-bottom: none; }
+
+/* Activity history: one sentence per line, the time at the right. */
+.history { display: flex; flex-direction: column; }
+.history__item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.history__item:first-child { padding-top: 0; }
+.history__item:last-child { border-bottom: none; padding-bottom: 0; }
+.history__list { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+/* The sign-in screen stands alone: no app bar, no tab bar. */
+.signin {
+  max-width: 420px;
+  margin: 0 auto;
+  padding-top: max(48px, env(safe-area-inset-top));
+  padding-bottom: 48px;
+}
+
+.signin__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 28px;
+  color: var(--accent);
+}
+
+.signin__title { font-size: 20px; font-weight: 700; margin: 0; }
+
 /*
  * A sticky action bar over a scrolling list. It needs its own surface — a
  * transparent bar lets rows scroll through the buttons and read as broken.
@@ -761,14 +811,19 @@ button, input, select, textarea {
 
 .sticky-actions > .btn { flex: 1; }
 
-.timeline__remove {
-  /* Block-level flex so the auto left margin pushes it to the right edge. */
+.timeline__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  margin: 6px -6px -4px 0;
+}
+
+.timeline__action {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 32px;
   height: 32px;
-  margin: 6px -6px -4px auto;
   padding: 0;
   background: none;
   border: none;
@@ -779,8 +834,9 @@ button, input, select, textarea {
   transition: opacity 0.14s var(--ease), color 0.14s var(--ease), background 0.14s var(--ease);
 }
 
-.timeline__remove svg { width: 15px; height: 15px; }
-.timeline__remove:hover { opacity: 1; color: var(--danger); background: var(--danger-dim); }
+.timeline__action svg { width: 15px; height: 15px; }
+.timeline__action:hover { opacity: 1; color: var(--accent); background: var(--accent-dim); }
+.timeline__action--remove:hover { color: var(--danger); background: var(--danger-dim); }
 
 .timeline__more {
   margin-top: 4px;

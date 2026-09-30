@@ -31,6 +31,21 @@ import {
 
 type Listener = () => void;
 
+/**
+ * Where changes go. By default the document is written to this device; once
+ * someone signs in, the cloud sync takes over (see cloud.ts).
+ */
+export interface Backend {
+  save(db: Database): Promise<void>;
+  /** Put a document in shared storage; its path there, or null to keep it in this browser. */
+  storeFile?(id: string, file: File): Promise<string | null>;
+  /** Fetch a document from shared storage. */
+  loadFile?(record: FileRecord): Promise<Blob | undefined>;
+}
+
+const localBackend: Backend = { save: (db) => persistence.saveDatabase(db) };
+let backend: Backend = localBackend;
+
 let state: Database = emptyDatabase();
 let loaded = false;
 const listeners = new Set<Listener>();
@@ -50,8 +65,8 @@ function emit(): void {
 }
 
 function runSave(): Promise<void> {
-  return persistence
-    .saveDatabase(state)
+  return backend
+    .save(state)
     .then(() => {
       if (lastSaveError) {
         lastSaveError = null;
@@ -149,7 +164,64 @@ async function drain(): Promise<void> {
 /** Wait for every pending write to land. Used by tests and before an export. */
 export async function flush(): Promise<void> {
   await drain();
-  await persistence.saveDatabase(state);
+  await backend.save(state);
+}
+
+/** Try again after a failed save — the cloud sync calls this when it is back online. */
+export function retrySave(): void {
+  if (lastSaveError) scheduleSave();
+}
+
+/** Hand saving to another backend, or back to this device with null. */
+export async function setBackend(next: Backend | null): Promise<void> {
+  await drain();
+  backend = next ?? localBackend;
+  lastSaveError = null;
+  emit();
+}
+
+/** Replace the whole state without saving it — it came from where it is saved. */
+export function load(db: Database): void {
+  state = db;
+  loaded = true;
+  emit();
+}
+
+/** Apply changes that arrived from elsewhere, without sending them back. */
+export function applyRemote(updater: (db: Database) => Database): void {
+  const next = updater(state);
+  if (next === state) return;
+  state = next;
+  emit();
+}
+
+/** Show a save problem that did not come from a save — being offline, say. */
+export function setSaveError(message: string | null): void {
+  if (lastSaveError === message) return;
+  lastSaveError = message;
+  emit();
+}
+
+/** Close the data, as on sign-out: the next person starts from a blank screen. */
+export async function unload(): Promise<void> {
+  await drain();
+  backend = localBackend;
+  state = emptyDatabase();
+  loaded = false;
+  lastSaveError = null;
+  emit();
+}
+
+// A message for the person using the app, about something they did not do.
+const noticeListeners = new Set<(message: string) => void>();
+
+export function onNotice(listener: (message: string) => void): () => void {
+  noticeListeners.add(listener);
+  return () => noticeListeners.delete(listener);
+}
+
+export function notify(message: string): void {
+  for (const l of noticeListeners) l(message);
 }
 
 export async function init(): Promise<void> {
@@ -442,17 +514,40 @@ export function logActivity(input: {
   set((db) => ({
     ...db,
     activities: [...db.activities, activity],
-    contacts:
-      activity.contactId && ['Email', 'Call', 'Text', 'Meeting'].includes(activity.type)
-        ? db.contacts.map((c) =>
-            // A back-dated call is history, not news: it never moves the date backwards.
-            c.id === activity.contactId && (c.lastContactedAt ?? '') < activity.date
-              ? { ...c, lastContactedAt: activity.date }
-              : c,
-          )
-        : db.contacts,
+    contacts: touchLastContacted(db.contacts, activity),
   }));
   return activity;
+}
+
+/** Contact-type activities move a contact's last-contacted date forward. */
+function touchLastContacted(contacts: Contact[], activity: Activity): Contact[] {
+  if (!activity.contactId || !['Email', 'Call', 'Text', 'Meeting'].includes(activity.type)) return contacts;
+  return contacts.map((c) =>
+    // A back-dated call is history, not news: it never moves the date backwards.
+    c.id === activity.contactId && (c.lastContactedAt ?? '') < activity.date
+      ? { ...c, lastContactedAt: activity.date }
+      : c,
+  );
+}
+
+/**
+ * Correcting what was recorded. The links stay as they were: an entry edited
+ * from one record's timeline must not quietly leave another's.
+ */
+export function updateActivity(
+  id: string,
+  patch: Partial<Pick<Activity, 'type' | 'subject' | 'notes' | 'date'>>,
+): void {
+  set((db) => {
+    const current = db.activities.find((a) => a.id === id);
+    if (!current) return db;
+    const next: Activity = { ...current, ...patch, updatedAt: nowIso() };
+    return {
+      ...db,
+      activities: db.activities.map((a) => (a.id === id ? next : a)),
+      contacts: touchLastContacted(db.contacts, next),
+    };
+  });
 }
 
 export function deleteActivity(id: string): void {
@@ -469,6 +564,7 @@ export function createFollowUp(input: {
   aircraftId?: string | null;
   opportunityId?: string | null;
   insurancePolicyId?: string | null;
+  assigneeId?: string | null;
 }): FollowUp {
   const now = nowIso();
   const followUp: FollowUp = {
@@ -480,6 +576,7 @@ export function createFollowUp(input: {
     dueDate: input.dueDate,
     note: input.note,
     priority: input.priority ?? 'Normal',
+    assigneeId: input.assigneeId ?? null,
     completed: false,
     createdAt: now,
     updatedAt: now,
@@ -582,20 +679,35 @@ export async function addFile(
     category,
     createdAt: nowIso(),
   };
-  // The blob is written first: a row pointing at a file that was never stored
-  // would be a lie the user could not see.
-  await persistence.putFileBlob(record.id, file);
+  // The file is stored first: a row pointing at a file that was never stored
+  // would be a lie the user could not see. With cloud storage the whole team
+  // gets it; without, it stays in this browser as before.
+  const blobPath = backend.storeFile ? await backend.storeFile(record.id, file) : null;
+  if (blobPath) record.blobPath = blobPath;
+  else await persistence.putFileBlob(record.id, file);
   set((db) => ({ ...db, files: [...db.files, record] }));
   return record;
 }
 
+/**
+ * Removing a stored document's row is enough: the server deletes the file
+ * when the deletion reaches it.
+ */
 export async function removeFile(id: string): Promise<void> {
-  await persistence.deleteFileBlob(id);
+  const record = state.files.find((f) => f.id === id);
+  if (!record?.blobPath) await persistence.deleteFileBlob(id);
   set((db) => ({ ...db, files: db.files.filter((f) => f.id !== id) }));
 }
 
-export function getFile(id: string): Promise<Blob | undefined> {
+export async function getFile(id: string): Promise<Blob | undefined> {
+  const record = state.files.find((f) => f.id === id);
+  if (record?.blobPath && backend.loadFile) return backend.loadFile(record);
   return persistence.getFileBlob(id);
+}
+
+/** A document that was only in this browser is now in shared storage. */
+export function markFileStored(id: string, blobPath: string): void {
+  set((db) => ({ ...db, files: db.files.map((f) => (f.id === id ? { ...f, blobPath } : f)) }));
 }
 
 // ------------------------------------------------------------------ imports

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import {
-  IconAlert, IconCalendar, IconCheck, IconClock, IconDoc, IconExternal, IconMail, IconNote,
+  IconAlert, IconCalendar, IconCheck, IconClock, IconDoc, IconEdit, IconExternal, IconMail, IconNote,
   IconPhone, IconPlus, IconTarget, IconTrash, IconUpload,
 } from './Icons';
 import { Banner, Chip, EmptyState, SelectField, Sheet, TextArea, TextField, useToast } from './ui';
@@ -16,10 +16,12 @@ import type {
 import { ACTIVITY_TYPES, DOCUMENT_CATEGORIES } from '../data/types';
 import {
   addFile, completeFollowUp, createFollowUp, deleteFollowUp, getFile, logActivity, removeFile,
-  updateFollowUp,
+  updateActivity, updateFollowUp,
 } from '../data/store';
-import { addDays, formatDate, relativeDue, todayKey } from '../lib/dates';
+import { addDays, dateKey, formatDate, relativeDue, todayKey } from '../lib/dates';
+import { useCurrentUser, useTeam } from '../data/session';
 import type { ExternalLink } from '../lib/links';
+import type { LinkedDocument } from '../lib/selectors';
 
 type Links = {
   contactId?: string | null;
@@ -54,6 +56,10 @@ export function Timeline({
   followUps: FollowUp[];
   onDeleteActivity?: (id: string) => void;
 }) {
+  const [editing, setEditing] = useState<Activity | null>(null);
+  const me = useCurrentUser();
+  const { nameOf } = useTeam();
+
   type Entry =
     | { kind: 'activity'; at: string; activity: Activity }
     | { kind: 'followUp'; at: string; followUp: FollowUp };
@@ -69,6 +75,7 @@ export function Timeline({
 
   return (
     <div className="card">
+      {editing ? <ActivitySheet links={{}} existing={editing} onClose={() => setEditing(null)} /> : null}
       <div className="timeline">
         {entries.map((entry) => {
           if (entry.kind === 'followUp') {
@@ -82,6 +89,7 @@ export function Timeline({
                     <span className="xsmall muted nowrap">{relativeDue(f.dueDate)}</span>
                   </div>
                   <div className="small secondary">{f.note || 'Follow up'}</div>
+                  {f.assigneeId !== me.id ? <div className="xsmall muted">For {nameOf(f.assigneeId)}</div> : null}
                 </div>
               </div>
             );
@@ -96,17 +104,29 @@ export function Timeline({
                   <span className="strong small truncate">{a.subject || a.type}</span>
                   <span className="xsmall muted nowrap">{formatDate(a.date)}</span>
                 </div>
-                <div className="xsmall muted">{a.type}</div>
+                <div className="xsmall muted">
+                  {a.type}
+                  {a.updatedAt ? ` · edited ${formatDate(a.updatedAt)}` : ''}
+                </div>
                 {a.notes ? <TimelineNote text={a.notes} /> : null}
-                {onDeleteActivity ? (
+                <div className="timeline__actions">
                   <button
-                    className="timeline__remove"
-                    onClick={() => onDeleteActivity(a.id)}
-                    aria-label={`Remove "${a.subject || a.type}" from the timeline`}
+                    className="timeline__action"
+                    onClick={() => setEditing(a)}
+                    aria-label={`Edit "${a.subject || a.type}"`}
                   >
-                    <IconTrash />
+                    <IconEdit />
                   </button>
-                ) : null}
+                  {onDeleteActivity ? (
+                    <button
+                      className="timeline__action timeline__action--remove"
+                      onClick={() => onDeleteActivity(a.id)}
+                      aria-label={`Remove "${a.subject || a.type}" from the timeline`}
+                    >
+                      <IconTrash />
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           );
@@ -155,37 +175,49 @@ function TimelineNote({ text }: { text: string }) {
 
 export function ActivitySheet({
   links,
+  existing,
   defaultType = 'Note',
   defaultSubject = '',
   title = 'Log activity',
   onClose,
 }: {
   links: Links;
+  /** An entry already on the timeline, to correct rather than record anew. */
+  existing?: Activity;
   defaultType?: ActivityType;
   defaultSubject?: string;
   title?: string;
   onClose: () => void;
 }) {
   const toast = useToast();
-  const [type, setType] = useState<ActivityType>(defaultType);
-  const [subject, setSubject] = useState(defaultSubject);
-  const [date, setDate] = useState(todayKey());
-  const [notes, setNotes] = useState('');
+  const [type, setType] = useState<ActivityType>(existing?.type ?? defaultType);
+  const [subject, setSubject] = useState(existing?.subject ?? defaultSubject);
+  // Recorded dates are full timestamps; the field edits the day. An untouched
+  // date keeps its time, so saving a text fix does not reorder the timeline.
+  const originalDay = existing ? dateKey(existing.date) : undefined;
+  const [date, setDate] = useState(originalDay ?? todayKey());
+  const [notes, setNotes] = useState(existing?.notes ?? '');
 
   const save = () => {
-    logActivity({ ...links, type, subject: subject.trim() || type, notes: notes.trim(), date });
-    toast(`${type} recorded`);
+    const fields = { type, subject: subject.trim() || type, notes: notes.trim() };
+    if (existing) {
+      updateActivity(existing.id, date === originalDay ? fields : { ...fields, date });
+      toast('Entry updated');
+    } else {
+      logActivity({ ...links, ...fields, date });
+      toast(`${type} recorded`);
+    }
     onClose();
   };
 
   return (
     <Sheet
-      title={title}
+      title={existing ? 'Edit entry' : title}
       onClose={onClose}
       footer={
         <>
           <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn--primary" onClick={save}>Record</button>
+          <button className="btn btn--primary" onClick={save}>{existing ? 'Save' : 'Record'}</button>
         </>
       }
     >
@@ -224,19 +256,39 @@ export function FollowUpSheet({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const me = useCurrentUser();
+  const { people, nameOf } = useTeam();
   const [dueDate, setDueDate] = useState(existing?.dueDate ?? defaultDueDate ?? addDays(7));
   const [note, setNote] = useState(existing?.note ?? defaultNote);
   const [priority, setPriority] = useState<FollowUpPriority>(existing?.priority ?? 'Normal');
+  // A new follow-up is the person's own unless they give it to someone.
+  const [assigneeId, setAssigneeId] = useState(existing ? existing.assigneeId ?? '' : me.id);
+
+  // People whose access is off cannot be given new work, but one already
+  // holding this follow-up still shows, so opening the sheet changes nothing.
+  const assigneeOptions = [
+    { value: '', label: 'Unassigned — anyone can take it' },
+    ...people
+      .filter((p) => p.active || p.id === assigneeId)
+      .map((p) => ({ value: p.id, label: p.id === me.id ? `${p.name} (you)` : p.name })),
+  ];
 
   const save = () => {
+    const fields = { dueDate, note: note.trim(), priority, assigneeId: assigneeId || null };
     if (existing) {
-      updateFollowUp(existing.id, {
-        dueDate, note: note.trim(), priority, completed: false, completedAt: undefined,
-      });
-      toast('Follow-up updated');
+      updateFollowUp(existing.id, { ...fields, completed: false, completedAt: undefined });
+      toast(
+        (existing.assigneeId ?? '') !== assigneeId
+          ? assigneeId ? `Follow-up given to ${nameOf(assigneeId)}` : 'Follow-up is now unassigned'
+          : 'Follow-up updated',
+      );
     } else {
-      createFollowUp({ ...links, dueDate, note: note.trim(), priority });
-      toast(`Follow-up set for ${formatDate(dueDate)}`);
+      createFollowUp({ ...links, ...fields });
+      toast(
+        assigneeId && assigneeId !== me.id
+          ? `Follow-up for ${nameOf(assigneeId)}, ${formatDate(dueDate)}`
+          : `Follow-up set for ${formatDate(dueDate)}`,
+      );
     }
     onClose();
   };
@@ -272,6 +324,7 @@ export function FollowUpSheet({
           rows={3}
           placeholder="Check if the aircraft is still available"
         />
+        <SelectField label="For" value={assigneeId} options={assigneeOptions} onChange={setAssigneeId} />
         <div className="field">
           <span className="field__label">Priority</span>
           <div className="row" style={{ gap: 6 }}>
@@ -323,6 +376,8 @@ export function CompleteFollowUpSheet({
         dueDate: nextDate,
         note: nextNote.trim(),
         priority: followUp.priority,
+        // The next step in the same piece of work stays with the same person.
+        assigneeId: followUp.assigneeId ?? null,
       });
       toast(`Done — next one set for ${formatDate(nextDate)}`);
     } else {
@@ -385,6 +440,8 @@ export function CompleteFollowUpSheet({
 
 export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onEdit: (f: FollowUp) => void }) {
   const toast = useToast();
+  const me = useCurrentUser();
+  const { nameOf } = useTeam();
   const [completing, setCompleting] = useState<FollowUp | null>(null);
   const open = followUps.filter((f) => !f.completed);
   if (open.length === 0) return null;
@@ -396,13 +453,14 @@ export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onE
             <span className="small strong truncate">{f.note || 'Follow up'}</span>
             <Chip tone={relativeDue(f.dueDate).includes('overdue') ? 'danger' : 'info'}>{relativeDue(f.dueDate)}</Chip>
           </div>
+          {f.assigneeId !== me.id ? <div className="xsmall muted" style={{ marginTop: 4 }}>For {nameOf(f.assigneeId)}</div> : null}
           <div className="row" style={{ gap: 6, marginTop: 8 }}>
             {/* One tap completes it; the sheet is for when there is more to say. */}
             <button className="btn btn--sm grow" onClick={() => { completeFollowUp(f.id); toast('Follow-up completed'); }}>
               <IconCheck /> Done
             </button>
             <button className="btn btn--sm btn--ghost grow" onClick={() => setCompleting(f)}>Done + note</button>
-            <button className="btn btn--sm btn--ghost grow" onClick={() => onEdit(f)}>Reschedule</button>
+            <button className="btn btn--sm btn--ghost grow" onClick={() => onEdit(f)}>Edit</button>
             <button className="btn btn--sm btn--ghost" onClick={() => { deleteFollowUp(f.id); toast('Follow-up removed'); }} aria-label="Delete follow-up">
               <IconTrash />
             </button>
@@ -417,11 +475,11 @@ export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onE
 // ----------------------------------------------------------------- files
 
 export function FilesSection({
-  files,
+  documents,
   links,
   defaultCategory = 'Other',
 }: {
-  files: FileRecord[];
+  documents: LinkedDocument[];
   links: Links;
   defaultCategory?: DocumentCategory;
 }) {
@@ -472,17 +530,17 @@ export function FilesSection({
 
   return (
     <div className="stack stack--sm">
-      {files.length === 0 ? (
+      {documents.length === 0 ? (
         <div className="card small muted">No documents attached.</div>
       ) : (
         <div className="list list--flush">
-          {files.map((f) => (
+          {documents.map(({ file: f, via }) => (
             <div className="link-row" key={f.id}>
               <IconDoc className="muted" style={{ width: 17, height: 17, flex: 'none' }} />
               <button className="grow truncate" style={{ background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', padding: 0 }} onClick={() => open(f)}>
                 <div className="small truncate">{f.name}</div>
                 <div className="xsmall muted">
-                  {[f.category ?? 'Other', formatBytes(f.size), formatDate(f.createdAt)].join(' · ')}
+                  {[via ? `On ${via}` : '', f.category ?? 'Other', formatBytes(f.size), formatDate(f.createdAt)].filter(Boolean).join(' · ')}
                 </div>
               </button>
               <button
@@ -502,8 +560,8 @@ export function FilesSection({
         <input type="file" multiple hidden onChange={(e) => { void onPick(e.target.files); e.target.value = ''; }} />
       </label>
       <p className="xsmall muted">
-        Documents are stored on this device only, inside the browser. Clearing this site's data removes
-        them, and a JSON backup carries the list but not the files themselves.
+        Documents are stored privately in the cloud: everyone on the team can open them, and only people
+        signed in to AEROBOOK. A JSON backup carries the list but not the files.
       </p>
     </div>
   );

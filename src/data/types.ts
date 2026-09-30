@@ -270,6 +270,8 @@ export interface Activity {
   subject: string;
   notes: string;
   createdAt: string;
+  /** Set only when the entry is changed after it was recorded. */
+  updatedAt?: string;
 }
 
 export interface FollowUp {
@@ -281,6 +283,12 @@ export interface FollowUp {
   dueDate: string;
   note: string;
   priority?: FollowUpPriority;
+  /**
+   * The person it is for, by account id. Missing or null is unassigned —
+   * everything recorded before accounts existed — which shows on everyone's
+   * own list until someone takes it.
+   */
+  assigneeId?: string | null;
   completed: boolean;
   /** What actually happened, recorded when the follow-up is completed. */
   outcome?: string;
@@ -310,6 +318,12 @@ export interface FileRecord {
   opportunityId: string | null;
   insurancePolicyId?: string | null;
   category?: DocumentCategory;
+  /**
+   * Where the file is kept in cloud storage. Missing means it is still only
+   * in this browser — a document attached before cloud storage, not yet
+   * moved up.
+   */
+  blobPath?: string;
   createdAt: string;
 }
 
@@ -341,6 +355,8 @@ export interface Settings {
   /** Default assumption for owner-name column order on import. */
   defaultNameOrder: 'lastFirst' | 'firstLast';
   theme: 'system' | 'dark' | 'light';
+  /** The morning email of this person's follow-ups. Missing means on. */
+  dailyDigest?: boolean;
 }
 
 export interface Database {

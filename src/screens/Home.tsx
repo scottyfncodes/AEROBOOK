@@ -7,6 +7,8 @@
  */
 import { Link } from 'react-router-dom';
 
+import { useCurrentUser } from '../data/session';
+import { LocalDataBanner } from '../components/localData';
 import { AppBar } from '../components/AppBar';
 import {
   IconBell, IconDoc, IconMail, IconPlane, IconPlus, IconShield, IconTarget,
@@ -17,7 +19,7 @@ import { PolicyRow } from '../components/insurance';
 import { Colophon } from '../components/Brand';
 import { useDatabase } from '../data/useStore';
 import {
-  bucketFollowUps, followUpSubject, openFollowUps, openOpportunities, pipeline, recentActivity,
+  bucketFollowUps, followUpsInView, followUpSubject, openOpportunities, pipeline, recentActivity,
 } from '../lib/selectors';
 import { renewalSummary, renewalsNeedingAttention } from '../lib/insurance';
 import { formatDate, formatDateTime, relativeDue } from '../lib/dates';
@@ -25,7 +27,9 @@ import { displayName } from '../lib/names';
 
 export default function Home() {
   const db = useDatabase();
-  const buckets = bucketFollowUps(openFollowUps(db));
+  const me = useCurrentUser();
+  // Home is the signed-in person's day: their follow-ups and the unassigned ones.
+  const buckets = bucketFollowUps(followUpsInView(db, 'mine', me.id));
   const pipe = pipeline(db);
   const renewals = renewalsNeedingAttention(db);
   const renewalCounts = renewalSummary(db);
@@ -40,6 +44,7 @@ export default function Home() {
     <>
       <AppBar wordmark />
       <main className="page stack stack--lg">
+        <LocalDataBanner />
         <div className="stack stack--sm">
           {/* The header already carries a search icon on every screen, so this
               row is for the actions search cannot do: creating something. */}
@@ -88,7 +93,7 @@ export default function Home() {
         <section className="stack stack--sm" aria-label="Today">
           <div className="row row--between">
             <h2 className="section-title">Today</h2>
-            <Link className="small" to="/follow-ups">All follow-ups</Link>
+            <Link className="small" to="/follow-ups">My follow-ups</Link>
           </div>
 
           <div className="card">
