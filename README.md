@@ -93,6 +93,57 @@ everything they recorded. Someone whose access is off is told *"Invalid email
 or password"* whatever they type, exactly as for a wrong password, so a
 guessed password is never confirmed. Sign-in attempts are rate-limited.
 
+### Two-step sign-in (admins)
+
+An admin can turn on **two-step sign-in** under **Settings → Account**: after
+the password, signing in also needs the six-digit code from an authenticator
+app (Google Authenticator, Microsoft Authenticator, 1Password and the like).
+Setup asks for the password, shows a QR code (and the key to type in by
+hand), shows ten single-use backup codes once, and only turns on when a code
+from the app has been entered. Turning it on signs that admin out on every
+other device, so a session made with the password alone does not outlive it.
+
+- Signing in: the right password gives no session, only a ten-minute
+  challenge; the code (or a backup code, once each) completes it. Five wrong
+  codes end the challenge, ten in a row lock two-step sign-in for fifteen
+  minutes, and the endpoints are rate-limited. "Trust this device" is refused:
+  every sign-in needs the code. A wrong password is answered the same whoever
+  the account belongs to, so it does not show who has it on.
+- Only admins can turn it on. Someone who had it on as an admin keeps it if
+  they stop being one. Ordinary users sign in as before.
+- New backup codes and turning it off each need the password.
+- Lost phone and backup codes: another admin opens that person under
+  **Settings → Team → Reset two-step sign-in**. It turns it off, signs them out
+  everywhere and ends a sign-in waiting for its code; they sign in with their
+  password and set it up again. An admin cannot reset their own.
+- The secret and backup codes are stored in the `twoFactor` table encrypted
+  with `BETTER_AUTH_SECRET`. Changing that secret therefore also stops every
+  authenticator working: everyone with two-step sign-in has to be reset.
+- Every step is written to `app_audit` under the collection `security` (who,
+  what, whose account; never a code or a secret) and kept out of the activity
+  history everyone reads:
+
+```sql
+select at, user_name, action, record_id, summary from app_audit
+ where collection = 'security' order by id desc;
+```
+
+If the **only** admin loses their phone and backup codes, there is no one to
+reset it in the app; someone with database access does it:
+
+```sql
+begin;
+delete from "twoFactor" where "userId" = '<their user id>';
+update "user" set "twoFactorEnabled" = false where id = '<their user id>';
+delete from session where "userId" = '<their user id>';
+delete from verification where identifier like '2fa-%' and value = '<their user id>';
+insert into app_audit (user_id, user_name, action, collection, record_id, summary)
+values (null, 'Database', 'two-factor-reset', 'security', '<their user id>', 'Reset two-step sign-in');
+commit;
+```
+
+### What everyone shares
+
 Everyone sees and edits the same contacts, aircraft, opportunities, policies,
 timeline, follow-ups and templates. Each person has their own profile (the
 signature on their emails) and appearance setting. Restoring a backup and
@@ -176,7 +227,8 @@ line with a count that expands.
 It is read-only. It comes from `app_audit`, which the server writes as each
 change is saved (see Data); `GET /api/history` returns it in pages of 100 to
 anyone signed in and answers any other method with 405. Personal settings are
-never recorded.
+never recorded, and neither are sign-in and account security events, which
+share the table under the collection `security` (see Accounts).
 
 Each row also keeps, in `before`, the whole record as it was before that
 change — nothing for a creation. It is not sent to the app; it is there so
@@ -311,7 +363,12 @@ cron call); `APP_URL` overrides the link in it, which otherwise is the
 production URL.
 Apply `db/schema.sql` to a new database before the first deploy. Later
 additions to AEROBOOK's own tables are applied by the server itself before
-its first write.
+its first write. Changes to the sign-in tables are not: each is a file in
+`db/migrations/`, applied by hand **before** deploying the code that needs it
+(Better Auth checks its tables when it starts and will not serve without
+them). Each is additive and safe to run twice, and the code already deployed
+ignores what it adds. `db/migrations/2026-10-admin-two-factor.sql` is the
+one for two-step sign-in.
 
 ### Preview deployments
 

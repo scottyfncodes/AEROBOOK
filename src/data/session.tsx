@@ -21,7 +21,9 @@ interface SessionValue {
   cloud: CloudSync | null;
   /** Why the person is looking at the sign-in screen, when it is not obvious. */
   message: string;
-  signIn(email: string, password: string): Promise<void>;
+  /** 'code' when the password was right and the authenticator code is wanted next. */
+  signIn(email: string, password: string): Promise<'signed-in' | 'code'>;
+  finishSignIn(code: string, kind: 'app' | 'backup'): Promise<void>;
   signOut(): Promise<void>;
   retry(): void;
 }
@@ -128,7 +130,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     cloud: cloudRef.current,
     message,
     async signIn(email, password) {
-      const signedIn = await auth.signIn(email, password);
+      const result = await auth.signIn(email, password);
+      if ('needsCode' in result) return 'code';
+      setMessage('');
+      await open(result.user);
+      return 'signed-in';
+    },
+    async finishSignIn(code, kind) {
+      const signedIn = await auth.finishSignIn(code, kind);
       setMessage('');
       await open(signedIn);
     },

@@ -7,6 +7,8 @@ import type { HistoryEntry } from '../lib/history';
 
 export interface TeamMember extends CloudUser {
   banned: boolean;
+  /** Whether they sign in with a code from an authenticator app as well. */
+  twoFactor: boolean;
   createdAt: string;
 }
 
@@ -42,13 +44,57 @@ export async function currentUser(): Promise<CloudUser | null> {
   return session?.user ? toUser(session.user) : null;
 }
 
-export async function signIn(email: string, password: string): Promise<CloudUser> {
-  const { user } = await call<{ user: { id: string; name: string; email: string; role?: string } }>(
+/** Signed in, or the password was right and a code from the authenticator app is wanted next. */
+export type SignInResult = { user: CloudUser } | { needsCode: true };
+
+export async function signIn(email: string, password: string): Promise<SignInResult> {
+  const reply = await call<{ user?: { id: string; name: string; email: string; role?: string }; twoFactorRedirect?: boolean }>(
     '/api/auth/sign-in/email',
     { email: email.trim().toLowerCase(), password },
   );
+  if (reply.twoFactorRedirect) return { needsCode: true };
   // The sign-in reply may not carry the role; the session always does.
+  return { user: (await currentUser()) ?? toUser(reply.user!) };
+}
+
+/** The second step: the six-digit code from the app, or one of the backup codes. */
+export async function finishSignIn(code: string, kind: 'app' | 'backup'): Promise<CloudUser> {
+  const path = kind === 'app' ? '/api/auth/two-factor/verify-totp' : '/api/auth/two-factor/verify-backup-code';
+  const { user } = await call<{ user: { id: string; name: string; email: string; role?: string } }>(
+    path,
+    { code: kind === 'app' ? code.replace(/\s/g, '') : code.trim() },
+  );
   return (await currentUser()) ?? toUser(user);
+}
+
+// ------------------------------------------------------ two-step sign-in
+
+/** Whether the signed-in person has two-step sign-in on. */
+export async function twoFactorOn(): Promise<boolean> {
+  const session = await call<{ user?: { twoFactorEnabled?: boolean | null } } | null>('/api/auth/get-session');
+  return Boolean(session?.user?.twoFactorEnabled);
+}
+
+/**
+ * Starts setup: what the authenticator app needs (as an otpauth:// link, for
+ * the QR code) and the backup codes. Nothing changes at sign-in until
+ * confirmTwoFactor has had a code from the app.
+ */
+export async function startTwoFactor(password: string): Promise<{ totpURI: string; backupCodes: string[] }> {
+  return call('/api/auth/two-factor/enable', { password });
+}
+
+export async function confirmTwoFactor(code: string): Promise<void> {
+  await call('/api/auth/two-factor/verify-totp', { code: code.replace(/\s/g, '') });
+}
+
+export async function turnOffTwoFactor(password: string): Promise<void> {
+  await call('/api/auth/two-factor/disable', { password });
+}
+
+/** New backup codes; the old ones stop working. */
+export async function newBackupCodes(password: string): Promise<string[]> {
+  return (await call<{ backupCodes: string[] }>('/api/auth/two-factor/generate-backup-codes', { password })).backupCodes;
 }
 
 export async function signOut(): Promise<void> {
@@ -93,9 +139,14 @@ export async function sendDigestNow(): Promise<string> {
 
 export async function listTeam(): Promise<TeamMember[]> {
   const { users } = await call<{
-    users: { id: string; name: string; email: string; role?: string; banned?: boolean | null; createdAt: string }[];
+    users: {
+      id: string; name: string; email: string; role?: string; banned?: boolean | null;
+      twoFactorEnabled?: boolean | null; createdAt: string;
+    }[];
   }>('/api/auth/admin/list-users?limit=100&sortBy=createdAt');
-  return users.map((u) => ({ ...toUser(u), banned: Boolean(u.banned), createdAt: u.createdAt }));
+  return users.map((u) => ({
+    ...toUser(u), banned: Boolean(u.banned), twoFactor: Boolean(u.twoFactorEnabled), createdAt: u.createdAt,
+  }));
 }
 
 export async function addMember(input: { name: string; email: string; password: string; role: 'admin' | 'user' }) {
@@ -116,4 +167,9 @@ export async function setPassword(userId: string, newPassword: string) {
 export async function setAccess(userId: string, allowed: boolean) {
   if (allowed) await call('/api/auth/admin/unban-user', { userId });
   else await call('/api/auth/admin/ban-user', { userId });
+}
+
+/** For someone who lost their phone and backup codes: turns two-step sign-in off and signs them out. */
+export async function resetTwoFactor(userId: string) {
+  await call('/api/team/reset-two-factor', { userId });
 }
