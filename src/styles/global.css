@@ -73,12 +73,6 @@ button, input, select, textarea {
   white-space: nowrap;
 }
 
-.appbar__wordmark {
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  font-size: 15px;
-}
-
 .page {
   flex: 1;
   width: 100%;
@@ -631,24 +625,16 @@ button, input, select, textarea {
 /* ----------------------------------------------------------------- brand */
 
 /*
- * The owner's own signature, used as a mask so it takes the surrounding text
- * colour and works in both themes from one asset. Both are decorative, so
- * both are hidden from assistive technology wherever they appear.
+ * The emblem is a full-colour image; the signature is a mask so it takes the
+ * surrounding text colour and works in both themes from one asset. Both are
+ * decorative, so both are hidden from assistive technology wherever they
+ * appear.
  */
 .mark {
-  --mark-width: 22px;
-  width: var(--mark-width);
-  aspect-ratio: 890.24 / 698.39;
-  background-color: currentColor;
-  -webkit-mask-image: url('/brand/mark.svg');
-  mask-image: url('/brand/mark.svg');
-  -webkit-mask-size: contain;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
+  display: block;
+  height: auto;
   flex: none;
+  user-select: none;
 }
 
 .signature {
@@ -674,7 +660,61 @@ button, input, select, textarea {
   min-width: 0;
 }
 
-.appbar__brand .mark { color: var(--accent); }
+/*
+ * Emblem + wordmark. Side by side, a hairline rule separates the two as on
+ * the brand sheet's horizontal logo; stacked, the tagline sits under the
+ * wordmark in gold.
+ */
+.lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.lockup__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding-left: 11px;
+  border-left: 1px solid var(--border-strong);
+}
+
+.lockup__wordmark {
+  font-size: 15px;
+  font-weight: 560;
+  letter-spacing: 0.3em;
+  line-height: 1.1;
+  color: var(--text);
+  /* The tracking trails the last letter; pull it back so the word centres. */
+  margin-right: -0.3em;
+}
+
+.lockup__tagline {
+  font-size: 8.5px;
+  font-weight: 560;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.lockup--stacked {
+  flex-direction: column;
+  gap: 22px;
+  text-align: center;
+}
+
+.lockup--stacked .lockup__text {
+  align-items: center;
+  gap: 10px;
+  padding-left: 0;
+  border-left: 0;
+}
+
+.lockup--stacked .lockup__wordmark { font-size: 30px; font-weight: 500; }
+.lockup--stacked .lockup__tagline { font-size: 11px; margin-right: -0.24em; }
 
 .colophon {
   display: flex;
@@ -707,14 +747,6 @@ button, input, select, textarea {
   justify-content: center;
   gap: 16px;
   min-height: 60vh;
-  color: var(--accent);
-}
-
-.splash__wordmark {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  color: var(--text-secondary);
 }
 
 .team-row {

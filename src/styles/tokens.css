@@ -1,29 +1,36 @@
 /*
  * AEROBOOK design tokens.
  *
- * The reference is an instrument panel at night and a well-made operations
- * tool: near-black surfaces, one warm signal colour, generous type, and no
- * decoration that doesn't carry information.
+ * The brand palette is four colours — navy #0B2D4A, slate #5B6770, gold
+ * #C9A96B and ivory #F7F7F5 — set in Montserrat. Dark is navy surfaces with
+ * ivory type and gold as the one signal colour; light is ivory paper with
+ * navy type. Gold is deepened in light mode so it still reads as text on
+ * ivory.
  */
 :root {
   color-scheme: dark;
 
-  --bg: #0a0d11;
-  --bg-elevated: #10151b;
-  --surface: #141a21;
-  --surface-2: #1a222b;
-  --surface-hover: #1f2832;
-  --border: #232d38;
-  --border-strong: #32404e;
+  --brand-navy: #0b2d4a;
+  --brand-slate: #5b6770;
+  --brand-gold: #c9a96b;
+  --brand-ivory: #f7f7f5;
 
-  --text: #e9eef4;
-  --text-secondary: #a7b4c2;
-  --text-muted: #6f7f90;
+  --bg: #061a2c;
+  --bg-elevated: #0a2238;
+  --surface: #0d2740;
+  --surface-2: #11304d;
+  --surface-hover: #153757;
+  --border: #1c3b58;
+  --border-strong: #2c4d6c;
 
-  --accent: #f0a63c;
-  --accent-strong: #ffb84d;
-  --accent-dim: rgba(240, 166, 60, 0.14);
-  --accent-contrast: #16110a;
+  --text: var(--brand-ivory);
+  --text-secondary: #c2cad2;
+  --text-muted: #8795a2;
+
+  --accent: var(--brand-gold);
+  --accent-strong: #dcc18c;
+  --accent-dim: rgba(201, 169, 107, 0.15);
+  --accent-contrast: var(--brand-navy);
 
   --info: #5aa9e6;
   --info-dim: rgba(90, 169, 230, 0.14);
@@ -38,11 +45,11 @@
   --radius: 12px;
   --radius-lg: 18px;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 1px 2px rgba(2, 10, 20, 0.4);
+  --shadow: 0 6px 24px rgba(2, 10, 20, 0.45);
+  --shadow-lg: 0 18px 48px rgba(2, 10, 20, 0.55);
 
-  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font: 'Montserrat Variable', Montserrat, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
 
   --tap: 44px;
@@ -56,21 +63,21 @@
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --bg: #f4f6f8;
+  --bg: var(--brand-ivory);
   --bg-elevated: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f0f3f6;
-  --surface-hover: #e9eef3;
-  --border: #dfe5ec;
-  --border-strong: #c3cdd8;
+  --surface-2: #efefeb;
+  --surface-hover: #e8e8e3;
+  --border: #e1e0da;
+  --border-strong: #c8c7bf;
 
-  --text: #121820;
-  --text-secondary: #4a5966;
-  --text-muted: #77879a;
+  --text: var(--brand-navy);
+  --text-secondary: #3e4c57;
+  --text-muted: var(--brand-slate);
 
-  --accent: #b46b0d;
-  --accent-strong: #925608;
-  --accent-dim: rgba(180, 107, 13, 0.1);
+  --accent: #8a6a2c;
+  --accent-strong: #6e5421;
+  --accent-dim: rgba(201, 169, 107, 0.2);
   --accent-contrast: #ffffff;
 
   --info: #1f6fb2;
@@ -82,7 +89,7 @@
   --danger: #b63a2f;
   --danger-dim: rgba(182, 58, 47, 0.1);
 
-  --shadow-sm: 0 1px 2px rgba(18, 24, 32, 0.08);
-  --shadow: 0 6px 20px rgba(18, 24, 32, 0.1);
-  --shadow-lg: 0 18px 44px rgba(18, 24, 32, 0.16);
+  --shadow-sm: 0 1px 2px rgba(11, 45, 74, 0.08);
+  --shadow: 0 6px 20px rgba(11, 45, 74, 0.1);
+  --shadow-lg: 0 18px 44px rgba(11, 45, 74, 0.16);
 }
