@@ -716,11 +716,21 @@ button, input, select, textarea {
 .splash {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 70;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--bg);
+}
+
+.splash--leaving {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash--leaving { transition: none; }
 }
 
 .team-row {
