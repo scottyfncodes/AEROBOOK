@@ -712,13 +712,25 @@ button, input, select, textarea {
   text-transform: uppercase;
 }
 
+/* Centred on the screen itself, not the space left under a header. */
 .splash {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  min-height: 60vh;
+  background: var(--bg);
+}
+
+.splash--leaving {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash--leaving { transition: none; }
 }
 
 .team-row {

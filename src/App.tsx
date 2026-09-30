@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import { ToastProvider, useToast } from './components/ui';
-import { Wordmark } from './components/Brand';
+import { IntroSplash, Splash } from './components/Brand';
 import { IconBell, IconChat, IconHome, IconPlane, IconSettings, IconUsers } from './components/Icons';
 import { useDatabase, useLoaded, useSaveError } from './data/useStore';
 import { onNotice } from './data/store';
@@ -90,6 +90,7 @@ export default function App() {
     <ToastProvider>
       <SessionProvider>
         <Gate />
+        <IntroSplash />
       </SessionProvider>
     </ToastProvider>
   );
@@ -148,11 +149,7 @@ function Shell() {
             <Route path="*" element={<NotFound />} />
           </Routes>
         ) : (
-          <div className="page">
-            <div className="splash">
-              <Wordmark large />
-            </div>
-          </div>
+          <Splash />
         )}
 
         <TabBar />
