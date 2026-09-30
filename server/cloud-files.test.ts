@@ -108,13 +108,15 @@ describe.skipIf(!TEST_DB)('documents in the cloud', () => {
     expect(pulled.records.some((r: { collection: string; id: string }) => r.collection === 'files' && r.id === old.id)).toBe(true);
   });
 
-  it('deletes the stored file with the document', async () => {
+  it('stops sharing a removed document, keeping its file in the trash', async () => {
     await cloud.start();
     const record = await store.addFile(pdf('to go'), {});
     await store.flush();
     await store.removeFile(record.id);
     await store.flush();
-    expect(await readdir(join(dir, 'files', record.id))).toEqual([]);
+    const path = `/api/files/content?path=${encodeURIComponent(record.blobPath!)}`;
+    expect((await api(path, { cookie: bobCookie })).status).toBe(404);
+    expect(await readdir(join(dir, 'files', record.id))).toEqual(['Binder.pdf']);
   });
 
   it('keeps a document on the device when there is no cloud storage', async () => {

@@ -10,8 +10,8 @@
  * record someone else changed in the meantime is not overwritten: the push
  * reports it as a conflict and hands back what is there now.
  */
-import { getPool } from './db.js';
-import { deleteStored } from './files.js';
+import type { PoolClient } from 'pg';
+import { ensureAppSchema, getPool } from './db.js';
 import type { SessionUser } from './auth.js';
 
 /** Collections everyone on the account shares. */
@@ -29,6 +29,18 @@ const ALL = new Set<string>([...SHARED_COLLECTIONS, ...PERSONAL_COLLECTIONS]);
 const PERSONAL = new Set<string>(PERSONAL_COLLECTIONS);
 
 export const MAX_CHANGES_PER_PUSH = 1000;
+
+/**
+ * How many records someone who is not an admin may delete in an hour. Every
+ * everyday deletion fits comfortably — a contact with all their notes is a
+ * few dozen — while erasing the account, or restoring a backup over it, stays
+ * an admin's job whatever the browser is made to send.
+ */
+export const MEMBER_DELETE_LIMIT = 100;
+export const MEMBER_DELETE_WINDOW = '1 hour';
+export const DELETE_LIMIT_MESSAGE =
+  'Deleting that many records at once needs an admin, so those were kept. Ask an admin if they really should go.';
+
 const PULL_PAGE = 5000;
 /** Any number will do, as long as every push takes the same one. */
 const WRITE_LOCK = 4_217_001;
@@ -108,18 +120,23 @@ export function validateChanges(user: SessionUser, body: unknown): Change[] {
   });
 }
 
-export async function push(user: SessionUser, changes: Change[]): Promise<{
+export interface PushResult {
   applied: { collection: Collection; id: string; version: number }[];
   conflicts: RemoteRecord[];
-}> {
+  /** Deletions the server would not make, with the records as they still are. */
+  refused?: { message: string; records: RemoteRecord[] };
+}
+
+export async function push(user: SessionUser, changes: Change[]): Promise<PushResult> {
+  await ensureAppSchema();
   const client = await getPool().connect();
   try {
     await client.query('begin');
     await client.query('select pg_advisory_xact_lock($1)', [WRITE_LOCK]);
-    const applied: { collection: Collection; id: string; version: number }[] = [];
+    const applied: PushResult['applied'] = [];
     const conflicts: RemoteRecord[] = [];
-    // Stored documents whose record went, to delete once the change is committed.
-    const orphaned: string[] = [];
+    const refused: RemoteRecord[] = [];
+    const refuseDeletes = user.role !== 'admin' && await overDeleteLimit(client, user, changes);
 
     for (const change of changes) {
       const { rows } = await client.query<{ data: Record<string, unknown> | null; version: number }>(
@@ -133,6 +150,10 @@ export async function push(user: SessionUser, changes: Change[]): Promise<{
         continue;
       }
       if (!current && change.data === null) continue; // deleting what was never stored
+      if (refuseDeletes && change.data === null && current?.data) {
+        refused.push({ collection: change.collection, id: change.id, data: current.data, version: current.version });
+        continue;
+      }
 
       const version = (current?.version ?? 0) + 1;
       await client.query(
@@ -145,30 +166,57 @@ export async function push(user: SessionUser, changes: Change[]): Promise<{
       );
       applied.push({ collection: change.collection, id: change.id, version });
 
+      // A stored document whose record went is not deleted here: it waits in
+      // the trash, and the maintenance run removes it once it has been there
+      // long enough and nothing points at it any more.
       const oldPath = change.collection === 'files' ? current?.data?.blobPath : undefined;
-      if (typeof oldPath === 'string' && oldPath !== change.data?.blobPath) orphaned.push(oldPath);
+      if (typeof oldPath === 'string' && oldPath !== change.data?.blobPath) {
+        await client.query(
+          `insert into app_file_trash (path, deleted_by) values ($1, $2)
+           on conflict (path) do update set deleted_at = now(), deleted_by = excluded.deleted_by`,
+          [oldPath, user.id],
+        );
+      }
 
       if (!PERSONAL.has(change.collection)) {
         const action = change.data === null ? 'delete' : !current?.data ? 'create' : 'update';
         await client.query(
-          `insert into app_audit (user_id, user_name, action, collection, record_id, summary)
-           values ($1, $2, $3, $4, $5, $6)`,
-          [user.id, user.name, action, change.collection, change.id, describe(change.data ?? current?.data ?? null)],
+          `insert into app_audit (user_id, user_name, action, collection, record_id, summary, before)
+           values ($1, $2, $3, $4, $5, $6, $7)`,
+          [user.id, user.name, action, change.collection, change.id, describe(change.data ?? current?.data ?? null), current?.data ?? null],
         );
       }
     }
 
     await client.query('commit');
-    await deleteStored(orphaned);
     // No cursor comes back: this device has not seen what others wrote before
     // it, and its next pull will return its own writes at versions it holds.
-    return { applied, conflicts };
+    return refused.length
+      ? { applied, conflicts, refused: { message: DELETE_LIMIT_MESSAGE, records: refused } }
+      : { applied, conflicts };
   } catch (error) {
     await client.query('rollback').catch(() => undefined);
     throw error;
   } finally {
     client.release();
   }
+}
+
+/**
+ * Whether this push would take someone past their deletions for the hour.
+ * If it would, none of its deletions are made — half a bulk erase is still an
+ * erase — and everything else in it goes ahead.
+ */
+async function overDeleteLimit(client: PoolClient, user: SessionUser, changes: Change[]): Promise<boolean> {
+  const deleting = changes.filter((c) => c.data === null && !PERSONAL.has(c.collection)).length;
+  if (deleting === 0) return false;
+  if (deleting > MEMBER_DELETE_LIMIT) return true;
+  const { rows } = await client.query<{ n: number }>(
+    `select count(*)::int as n from app_audit
+      where user_id = $1 and action = 'delete' and at > now() - $2::interval`,
+    [user.id, MEMBER_DELETE_WINDOW],
+  );
+  return rows[0].n + deleting > MEMBER_DELETE_LIMIT;
 }
 
 export interface HistoryEntry {

@@ -7,7 +7,7 @@ import { getAuth, migrate, sessionUser, type SessionUser } from './auth.js';
 import { getPool } from './db.js';
 import { BadRequest, history, isEmpty, pull, push, validateChanges } from './sync.js';
 import {
-  blobUploadToken, isFilePath, MAX_FILE_BYTES, putLocal, readStored, storageMode, uploadFlavor,
+  blobUploadToken, isFilePath, MAX_FILE_BYTES, purgeTrash, putLocal, readStored, storageMode, uploadFlavor,
 } from './files.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
 
@@ -172,20 +172,25 @@ async function files(request: Request): Promise<Response> {
 }
 
 /**
- * The daily email. Vercel Cron calls /api/digest/run with CRON_SECRET as a
- * bearer token; anyone else is turned away. A signed-in person can preview
+ * Scheduled jobs. Vercel Cron calls them with CRON_SECRET as a bearer token;
+ * anyone else is turned away. Null means the caller may go ahead.
+ */
+function checkCron(request: Request, what: string): Response | null {
+  if (request.method !== 'GET' && request.method !== 'POST') return error(405, 'Method not allowed');
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return error(503, `${what} is not scheduled on this deployment`);
+  const given = request.headers.get('authorization') ?? '';
+  if (!sameSecret(given, `Bearer ${secret}`)) return error(401, 'Not allowed');
+  return null;
+}
+
+/**
+ * The daily email, sent by the scheduled run. A signed-in person can preview
  * their own digest, or have it sent to themselves now.
  */
 async function digest(request: Request): Promise<Response> {
   const { pathname } = new URL(request.url);
-  if (pathname === '/api/digest/run') {
-    if (request.method !== 'GET' && request.method !== 'POST') return error(405, 'Method not allowed');
-    const secret = process.env.CRON_SECRET;
-    if (!secret) return error(503, 'The daily email is not scheduled on this deployment');
-    const given = request.headers.get('authorization') ?? '';
-    if (!sameSecret(given, `Bearer ${secret}`)) return error(401, 'Not allowed');
-    return json(await runDigest());
-  }
+  if (pathname === '/api/digest/run') return checkCron(request, 'The daily email') ?? json(await runDigest());
 
   const user = await sessionUser(request);
   if (!user) return error(401, 'Sign in first');
@@ -230,8 +235,22 @@ async function sync(request: Request, user: SessionUser): Promise<Response> {
   return error(405, 'Method not allowed');
 }
 
+/**
+ * A preview deployment is built from any branch, so it must never reach the
+ * business's real data. Vercel hands previews whatever variables are scoped
+ * to them, which can be production's; a preview therefore serves nothing
+ * until PREVIEW_DATA=separate is set for the Preview environment, after its
+ * database, BETTER_AUTH_SECRET and document store have been pointed elsewhere.
+ */
+function previewRefused(): Response | null {
+  if (process.env.VERCEL_ENV !== 'preview' || process.env.PREVIEW_DATA === 'separate') return null;
+  return error(503, 'This preview deployment is not connected to any data. See "Preview deployments" in the README.');
+}
+
 export async function handle(request: Request): Promise<Response> {
   const { pathname } = new URL(request.url);
+  const refused = previewRefused();
+  if (refused) return refused;
   try {
     if (pathname.startsWith('/api/auth/')) return await getAuth().handler(request);
     if (pathname === '/api/setup') return await setup(request);
@@ -254,6 +273,10 @@ export async function handle(request: Request): Promise<Response> {
       return await files(request);
     }
     if (pathname.startsWith('/api/digest/')) return await digest(request);
+    if (pathname === '/api/maintenance/run') {
+      // Clears out the files of documents deleted long enough ago.
+      return checkCron(request, 'Maintenance') ?? json(await purgeTrash());
+    }
     if (pathname === '/api/team') {
       if (request.method !== 'GET') return error(405, 'Method not allowed');
       if (!(await sessionUser(request))) return error(401, 'Sign in first');

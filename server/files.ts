@@ -11,6 +11,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize } from 'node:path';
 import { del as blobDel, get as blobGet, issueSignedToken } from '@vercel/blob';
 import { handleUpload, handleUploadPresigned, type HandleUploadBody } from '@vercel/blob/client';
+import { ensureAppSchema, getPool } from './db.js';
 
 export type StorageMode = 'blob' | 'local' | 'none';
 
@@ -115,14 +116,43 @@ export async function readStored(path: string): Promise<StoredFile | null> {
   return null;
 }
 
-/** Best-effort: a file that is already gone is not an error. */
+/** A file that is already gone is not an error; failing to reach storage is. */
 export async function deleteStored(paths: string[]): Promise<void> {
   const valid = paths.filter(isFilePath);
   if (valid.length === 0) return;
-  try {
-    if (storageMode() === 'blob') await blobDel(valid);
-    else if (storageMode() === 'local') await Promise.all(valid.map((p) => rm(localPath(p), { force: true })));
-  } catch (error) {
-    console.error('Could not delete stored documents', error);
-  }
+  if (storageMode() === 'blob') await blobDel(valid);
+  else if (storageMode() === 'local') await Promise.all(valid.map((p) => rm(localPath(p), { force: true })));
+}
+
+// ----------------------------------------------------------------- trash
+
+/** How long a deleted document's file is kept, so it can still be restored. */
+export const TRASH_DAYS = 30;
+const PURGE_BATCH = 500;
+
+/**
+ * Remove the files of documents deleted more than TRASH_DAYS ago. A file some
+ * document record points at again — one restored from the history — is taken
+ * out of the trash instead, whoever deleted it and whenever.
+ */
+export async function purgeTrash(): Promise<{ removed: number }> {
+  await ensureAppSchema();
+  const pool = getPool();
+  await pool.query(
+    `delete from app_file_trash t where exists (
+       select 1 from app_record r
+        where r.collection = 'files' and r.data is not null and r.data->>'blobPath' = t.path)`,
+  );
+  const { rows } = await pool.query<{ path: string }>(
+    `select path from app_file_trash
+      where deleted_at < now() - make_interval(days => $1)
+      order by deleted_at limit $2`,
+    [TRASH_DAYS, PURGE_BATCH],
+  );
+  const paths = rows.map((r) => r.path);
+  if (paths.length === 0) return { removed: 0 };
+  // Should storage fail, the rows stay and the next run tries again.
+  await deleteStored(paths);
+  await pool.query('delete from app_file_trash where path = any($1)', [paths]);
+  return { removed: paths.length };
 }

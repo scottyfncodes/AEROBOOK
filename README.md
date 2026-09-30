@@ -94,6 +94,14 @@ timeline, follow-ups and templates. Each person has their own profile (the
 signature on their emails) and appearance setting. Restoring a backup and
 erasing everything affect the whole team, so only admins see them.
 
+The server holds that line too, whatever a browser is made to send: someone
+who is not an admin may delete at most 100 records in any hour (a contact with
+all their notes is a few dozen). A save that would go past that has none of
+its deletions made — the records come back to that person's screen with a
+message to ask an admin — while the rest of it is saved as usual. Every
+change also keeps what the record held before it (see Activity history), so a
+mistaken or malicious edit or deletion can be put back.
+
 ## Follow-ups
 
 Every follow-up can be for someone: whoever creates one owns it unless they
@@ -117,7 +125,13 @@ short-lived token from `POST /api/files/upload`, which is only issued to
 someone signed in and only for a path under `files/`, up to 25 MB. Opening a
 document goes through `GET /api/files/content`, which checks the session and
 that a document record points at that file, and always serves it as a
-download. Deleting the document's record deletes the file, on the server.
+download. Deleting the document's record stops the file being served at
+once; the file itself waits in `app_file_trash` for 30 days, so the document
+can be restored, and is then removed by the daily maintenance run
+(`GET /api/maintenance/run`, called by Vercel Cron with `CRON_SECRET`, like the
+daily email). A file any document record points at again is never removed,
+so a second record naming another document's file cannot be used to delete
+it. Without `CRON_SECRET` nothing is ever removed from storage.
 
 A document attached before cloud storage (or while offline) stays in that
 browser until it can be moved up, which the app does on its own the next time
@@ -154,6 +168,20 @@ It is read-only. It comes from `app_audit`, which the server writes as each
 change is saved (see Data); `GET /api/history` returns it in pages of 100 to
 anyone signed in and answers any other method with 405. Personal settings are
 never recorded.
+
+Each row also keeps, in `before`, the whole record as it was before that
+change — nothing for a creation. It is not sent to the app; it is there so
+an admin with database access can put a record back:
+
+```sql
+-- The last version of a deleted or overwritten record, as it was.
+select at, user_name, action, before from app_audit
+ where collection = 'contacts' and record_id = 'con_…' order by id desc;
+```
+
+Writing that `before` back as the record (with the next version number)
+restores it, and restores a document's file too while it is still in the
+trash.
 
 ## Data
 
@@ -270,4 +298,26 @@ The daily email needs `RESEND_API_KEY` (a Resend sending key for a verified
 domain) and `CRON_SECRET` (any long random string; Vercel sends it with each
 cron call); `APP_URL` overrides the link in it, which otherwise is the
 production URL.
-Apply `db/schema.sql` to a new database before the first deploy.
+Apply `db/schema.sql` to a new database before the first deploy. Later
+additions to AEROBOOK's own tables are applied by the server itself before
+its first write.
+
+### Preview deployments
+
+Every branch gets a preview deployment, running whatever code is on that
+branch. It must never reach the business's data, so **a preview serves no
+API at all** (every `/api/*` request answers 503) unless its environment has
+`PREVIEW_DATA=separate`. Set that for the Preview environment only, and only
+once Preview has its own:
+
+- `DATABASE_URL` — a Neon branch, not the production database (the Neon
+  integration can create one per preview), and the other `POSTGRES_*`/`PG*`
+  variables scoped to Production alone;
+- `BETTER_AUTH_SECRET` — a different random string from production's;
+- Blob store — a separate store connected for Preview only.
+
+Production values should be scoped to **Production** alone in Vercel →
+Settings → Environment Variables. The guard is there for the time between:
+it stops a branch from touching production data by accident, but code on a
+branch could remove it, so the separate settings are what actually close
+the door.

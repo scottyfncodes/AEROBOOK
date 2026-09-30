@@ -331,6 +331,7 @@ export class CloudSync implements store.Backend {
     const result = (await response.json()) as {
       applied: { collection: string; id: string; version: number }[];
       conflicts: RemoteRecord[];
+      refused?: { message: string; records: RemoteRecord[] };
     };
     const sent = new Map(changes.map((c) => [recordKey(c.collection, c.id), c]));
     const landed: RecordChange[] = [];
@@ -355,6 +356,16 @@ export class CloudSync implements store.Backend {
           ? 'Someone else changed that at the same time, so their version is showing.'
           : `${lost.length} records were changed by someone else at the same time; their versions are showing.`,
       );
+    }
+
+    // Deletions the server would not make: the records come back as they are
+    // there, so this device stops trying and shows them again.
+    const refused = result.refused?.records ?? [];
+    if (refused.length) {
+      for (const r of refused) this.versions.set(recordKey(r.collection, r.id), r.version);
+      this.base = applyRecords(this.base, refused);
+      store.applyRemote((s) => applyRecords(s, refused));
+      store.notify(result.refused!.message);
     }
   }
 

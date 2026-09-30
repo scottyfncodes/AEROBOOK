@@ -1,6 +1,6 @@
 /**
- * Documents: who may upload and read them, and that a document goes when its
- * record does. Runs the local-disk store; the Blob store is the same routes
+ * Documents: who may upload and read them, and that a document stops being
+ * served when its record goes — its file kept in the trash for a while. Runs the local-disk store; the Blob store is the same routes
  * with Vercel's SDK behind them, and its token route is checked here too.
  */
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { api, createUser, freshDatabase, ORIGIN, signIn, TEST_DB } from './testing.js';
 import { handle } from './app.js';
+import { getPool } from './db.js';
+import { TRASH_DAYS } from './files.js';
 
 const PATH = 'files/fil_abc123/binder.pdf';
 const PDF = new TextEncoder().encode('%PDF-1.4 test binder');
@@ -83,12 +85,67 @@ describe.skipIf(!TEST_DB)('documents', () => {
     }
   });
 
-  it('deletes the stored file when its document is deleted', async () => {
-    await putLocal(PATH, PDF);
-    await record('fil_abc123', PATH);
-    await record('fil_abc123', null, 1);
-    expect(await readdir(join(dir, 'files/fil_abc123'))).toEqual([]);
-    expect((await content(PATH)).status).toBe(404);
+  describe('when a document is deleted', () => {
+    const maintenance = () => api('/api/maintenance/run', { headers: { authorization: 'Bearer cron-secret' } });
+    const ageTrash = (days: number) => getPool().query(`update app_file_trash set deleted_at = now() - make_interval(days => $1)`, [days]);
+    const onDisk = () => readdir(join(dir, 'files/fil_abc123'));
+
+    beforeEach(() => {
+      process.env.CRON_SECRET = 'cron-secret';
+    });
+    afterEach(() => {
+      delete process.env.CRON_SECRET;
+    });
+
+    it('stops serving the file at once, but keeps it in the trash', async () => {
+      await putLocal(PATH, PDF);
+      await record('fil_abc123', PATH);
+      await record('fil_abc123', null, 1);
+      expect((await content(PATH)).status).toBe(404);
+      expect(await onDisk()).toEqual(['binder.pdf']);
+      const { rows } = await getPool().query('select path from app_file_trash');
+      expect(rows).toEqual([{ path: PATH }]);
+    });
+
+    it('removes the file once it has been in the trash long enough', async () => {
+      await putLocal(PATH, PDF);
+      await record('fil_abc123', PATH);
+      await record('fil_abc123', null, 1);
+      expect(await (await maintenance()).json()).toEqual({ removed: 0 });
+      expect(await onDisk()).toEqual(['binder.pdf']);
+      await ageTrash(TRASH_DAYS + 1);
+      expect(await (await maintenance()).json()).toEqual({ removed: 1 });
+      expect(await onDisk()).toEqual([]);
+      expect((await getPool().query('select 1 from app_file_trash')).rowCount).toBe(0);
+    });
+
+    it('never removes a file a document points at again', async () => {
+      await putLocal(PATH, PDF);
+      await record('fil_abc123', PATH);
+      await record('fil_abc123', null, 1);
+      // Restored from the history, as an admin would.
+      await record('fil_abc123', PATH, 2);
+      await ageTrash(TRASH_DAYS + 1);
+      expect(await (await maintenance()).json()).toEqual({ removed: 0 });
+      expect((await content(PATH)).status).toBe(200);
+    });
+
+    it('cannot be used to remove someone else\'s file through a second record', async () => {
+      await putLocal(PATH, PDF);
+      await record('fil_abc123', PATH);
+      await record('fil_zzz999', PATH);
+      await record('fil_zzz999', null, 1);
+      await ageTrash(TRASH_DAYS + 1);
+      await maintenance();
+      expect((await content(PATH)).status).toBe(200);
+    });
+
+    it('runs maintenance only for the scheduler', async () => {
+      expect((await api('/api/maintenance/run')).status).toBe(401);
+      expect((await api('/api/maintenance/run', { cookie })).status).toBe(401);
+      delete process.env.CRON_SECRET;
+      expect((await maintenance()).status).toBe(503);
+    });
   });
 
   describe('with Vercel Blob', () => {

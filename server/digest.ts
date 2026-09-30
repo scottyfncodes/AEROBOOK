@@ -8,7 +8,7 @@
  * app_digest per person per day makes a repeated or overlapping run send
  * nothing twice.
  */
-import { APP_SCHEMA, getPool } from './db.js';
+import { ensureAppSchema, getPool } from './db.js';
 
 /** The day starts at midnight here, not in UTC where the server runs. */
 export const DEFAULT_TIME_ZONE = 'America/Los_Angeles';
@@ -294,7 +294,7 @@ export async function runDigest(now = new Date()): Promise<RunResult> {
   if (!result.enabled) return result;
   const pool = getPool();
   // A database set up before the daily email existed gets its table here.
-  await pool.query(APP_SCHEMA);
+  await ensureAppSchema();
   for (const digest of await buildDigests(now)) {
     if (isEmptyDigest(digest)) {
       result.skipped++;
