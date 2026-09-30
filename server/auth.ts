@@ -5,8 +5,10 @@
  */
 import { betterAuth } from 'better-auth';
 import { admin } from 'better-auth/plugins';
+import { twoFactor } from 'better-auth/plugins/two-factor';
 import { getMigrations } from 'better-auth/db/migration';
 import { APP_SCHEMA, getPool } from './db.js';
+import { twoFactorAfter, twoFactorBefore } from './security.js';
 
 /**
  * The addresses this deployment answers on: Vercel's own for production and
@@ -54,10 +56,21 @@ function options() {
     advanced: {
       // Vercel sets these itself, so a client cannot forge its way around the limit.
       ipAddress: { ipAddressHeaders: ['x-real-ip', 'x-forwarded-for'] },
+      // Requests from another site are refused. This is Better Auth's own
+      // setting everywhere but under a test runner, where it would otherwise
+      // switch itself off; stated here so the tests check what runs live.
+      disableOriginCheck: false,
     },
-    // A turned-off account is told the same as a wrong password (see
-    // authRoute in app.ts, which also evens out the status and code).
-    plugins: [admin({ defaultRole: 'user', adminRoles: ['admin'], bannedUserMessage: 'Invalid email or password' })],
+    plugins: [
+      // A turned-off account is told the same as a wrong password (see
+      // authRoute in app.ts, which also evens out the status and code).
+      admin({ defaultRole: 'user', adminRoles: ['admin'], bannedUserMessage: 'Invalid email or password' }),
+      // Two-step sign-in for admins: an authenticator-app code after the
+      // password, with single-use backup codes. Setup only counts once a code
+      // from the app has been entered. See security.ts for what AEROBOOK adds.
+      twoFactor({ issuer: 'AEROBOOK' }),
+    ],
+    hooks: { before: twoFactorBefore, after: twoFactorAfter },
   };
 }
 

@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import { mkdirSync, readFileSync } from 'node:fs';
+import { createHmac } from 'node:crypto';
 
 /**
  * Drives the built app in Chromium at iPhone dimensions and walks the journeys
@@ -8,7 +9,8 @@ import { mkdirSync, readFileSync } from 'node:fs';
  * insurance policy and check the renewal countdown, open a brokerage
  * opportunity and move it through the pipeline, record what the owner wants,
  * reload, re-import, and export; then add a teammate who signs in on a second
- * device and shares the same data. Fails on any console error, any horizontal
+ * device and shares the same data; and last, the admin turns on two-step
+ * sign-in and signs in with a code. Fails on any console error, any horizontal
  * overflow or any link without a destination.
  *
  * Needs the full stack against an empty database, started with SETUP_TOKEN:
@@ -44,7 +46,13 @@ const context = await browser.newContext({
 });
 const page = await context.newPage();
 
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+// A wrong two-step code is refused with a 401 on purpose; the browser logs that.
+let adminExpectingRejection = false;
+page.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  if (adminExpectingRejection && /401/.test(m.text())) return;
+  errors.push(`console: ${m.text()}`);
+});
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 // A large sync (an import) still in flight when the test navigates away is
 // cut off by the browser; the app resends it on the next load, and the
@@ -789,6 +797,59 @@ if (!(await phone.getByRole('button', { name: 'Sign in' }).isVisible())) errors.
 const signedOutHistory = await phone.request.get(`${BASE}/api/history`);
 if (signedOutHistory.status() !== 401) errors.push(`history API answered ${signedOutHistory.status()} when signed out`);
 await other.close();
+
+// ------------------------------------------------------ two-step sign-in
+// The admin turns on two-step sign-in with an authenticator app (this test
+// plays the app, from the key shown for typing in), then signs out and back
+// in: the password alone is not enough, a wrong code is refused, the right
+// one opens the book.
+function authenticatorCode(key) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const bits = [...key.replace(/\s/g, '')].map((c) => alphabet.indexOf(c).toString(2).padStart(5, '0')).join('');
+  const secret = Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+  const mac = createHmac('sha1', secret).update(counter).digest();
+  const at = mac[mac.length - 1] & 0xf;
+  return String((mac.readUInt32BE(at) & 0x7fffffff) % 1_000_000).padStart(6, '0');
+}
+await page.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: 'Turn on two-step sign-in' }).click();
+await page.locator('.sheet').getByLabel('Password').fill(ADMIN.password);
+await page.getByRole('button', { name: 'Next' }).click();
+await page.waitForSelector('img[alt="QR code for your authenticator app"]');
+const key = await page.locator('.sheet code.mono').innerText();
+const backupCount = await page.locator('.sheet .mono > div').count();
+if (backupCount !== 10) errors.push(`setup showed ${backupCount} backup codes, not 10`);
+await checkOverflow('two-step setup');
+await shot('14-two-step-setup');
+await page.getByLabel('Code from the app').fill(authenticatorCode(key));
+await page.locator('.sheet').getByRole('button', { name: 'Turn on' }).click();
+await page.waitForSelector('text=Two-step sign-in is on');
+if (!has(await page.locator('main').innerText(), 'Two-step sign-in')) errors.push('the two-step card is missing after turning it on');
+log('two-step sign-in turned on with a code from the app');
+
+await page.getByRole('button', { name: 'Sign out' }).click();
+await page.waitForSelector('.signin form');
+await page.getByLabel('Email').fill(ADMIN.email);
+await page.getByLabel('Password').fill(ADMIN.password);
+await page.getByRole('button', { name: 'Sign in' }).click();
+await page.waitForSelector('text=Code from the app');
+if (await page.locator('.tabbar').count()) errors.push('the book opened on the password alone');
+const early = await page.request.get(`${BASE}/api/sync?since=0`);
+if (early.status() !== 401) errors.push(`the data API answered ${early.status()} between the password and the code`);
+const code = authenticatorCode(key);
+adminExpectingRejection = true;
+await page.getByLabel('Code from the app').fill(String((Number(code) + 500000) % 1000000).padStart(6, '0'));
+await page.getByRole('button', { name: 'Sign in' }).click();
+await page.waitForSelector('text=That code is not right');
+adminExpectingRejection = false;
+await checkOverflow('two-step code');
+await shot('15-two-step-code');
+await page.getByLabel('Code from the app').fill(authenticatorCode(key));
+await page.getByRole('button', { name: 'Sign in' }).click();
+await page.waitForSelector('.tabbar');
+log('signing in asked for the code, refused a wrong one, and took the right one');
 
 // ------------------------------------------------------------------ report
 log('syncs cut off by navigation, resent on the next load:', abortedSyncs);

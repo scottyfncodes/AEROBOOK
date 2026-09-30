@@ -5,6 +5,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { getAuth, migrate, sessionUser, type SessionUser } from './auth.js';
 import { getPool } from './db.js';
+import { resetTwoFactor, ResetRefused } from './security.js';
 import { BadRequest, history, isEmpty, pull, push, validateChanges } from './sync.js';
 import {
   blobUploadToken, isFilePath, MAX_FILE_BYTES, purgeTrash, putLocal, readStored, storageMode, uploadFlavor,
@@ -251,6 +252,28 @@ function previewRefused(): Response | null {
 }
 
 /**
+ * An admin turns off two-step sign-in for someone who lost their phone. See
+ * resetTwoFactor in security.ts.
+ */
+async function resetTwoFactorRoute(request: Request): Promise<Response> {
+  if (request.method !== 'POST') return error(405, 'Method not allowed');
+  const refused = checkWrite(request);
+  if (refused) return refused;
+  const user = await sessionUser(request);
+  if (!user) return error(401, 'Sign in first');
+  if (user.role !== 'admin') return error(403, 'Only an admin can do that');
+  const { userId } = (await readJson(request)) as { userId?: unknown };
+  if (typeof userId !== 'string' || !userId) return error(400, 'Say whose two-step sign-in to reset');
+  try {
+    await resetTwoFactor(user, userId);
+  } catch (e) {
+    if (e instanceof ResetRefused) return error(e.status, e.message);
+    throw e;
+  }
+  return json({ ok: true });
+}
+
+/**
  * Better Auth's routes. It checks the password before it notices an account
  * whose access was turned off, and says so in a reply of its own; that would
  * tell someone guessing a former colleague's password when they got it right.
@@ -258,14 +281,17 @@ function previewRefused(): Response | null {
  */
 async function authRoute(request: Request, pathname: string): Promise<Response> {
   const response = await getAuth().handler(request);
-  if (pathname !== '/api/auth/sign-in/email' || response.status !== 403) return response;
+  const signIn = pathname === '/api/auth/sign-in/email';
+  // Access turned off between the password and the two-step code.
+  const secondStep = pathname === '/api/auth/two-factor/verify-totp' || pathname === '/api/auth/two-factor/verify-backup-code';
+  if ((!signIn && !secondStep) || response.status !== 403) return response;
   const body = (await response.clone().json().catch(() => null)) as { code?: string } | null;
   if (body?.code !== 'BANNED_USER') return response;
-  // Exactly what Better Auth sends for a wrong password, headers included.
-  return new Response(JSON.stringify({ message: 'Invalid email or password', code: 'INVALID_EMAIL_OR_PASSWORD' }), {
-    status: 401,
-    headers: { 'content-type': 'application/json' },
-  });
+  // Exactly what Better Auth sends for a wrong password or code, headers included.
+  const same = signIn
+    ? { message: 'Invalid email or password', code: 'INVALID_EMAIL_OR_PASSWORD' }
+    : { message: 'Invalid code', code: 'INVALID_CODE' };
+  return new Response(JSON.stringify(same), { status: 401, headers: { 'content-type': 'application/json' } });
 }
 
 export async function handle(request: Request): Promise<Response> {
@@ -303,6 +329,7 @@ export async function handle(request: Request): Promise<Response> {
       if (!(await sessionUser(request))) return error(401, 'Sign in first');
       return await team();
     }
+    if (pathname === '/api/team/reset-two-factor') return await resetTwoFactorRoute(request);
     return error(404, 'Not found');
   } catch (e) {
     if (e instanceof BadRequest) return error(400, e.message);

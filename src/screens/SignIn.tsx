@@ -31,19 +31,27 @@ function SignInForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [needsCode, setNeedsCode] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setBusy(true);
     try {
-      await session.signIn(email, password);
+      if ((await session.signIn(email, password)) === 'code') {
+        setNeedsCode(true);
+        setBusy(false);
+      }
     } catch (err) {
       const text = (err as Error).message;
       setError(/invalid/i.test(text) ? 'That email and password do not match an account.' : text);
       setBusy(false);
     }
   };
+
+  if (needsCode) {
+    return <CodeForm onCancel={() => { setNeedsCode(false); setPassword(''); }} />;
+  }
 
   return (
     <form className="card stack" onSubmit={(e) => void submit(e)}>
@@ -56,6 +64,66 @@ function SignInForm() {
         {busy ? 'Signing in…' : 'Sign in'}
       </button>
       <p className="xsmall muted">No account? Ask whoever runs AEROBOOK to add you.</p>
+    </form>
+  );
+}
+
+/**
+ * The second step for an account with two-step sign-in: the code the
+ * authenticator app shows, or one of the backup codes saved at setup.
+ */
+function CodeForm({ onCancel }: { onCancel: () => void }) {
+  const session = useSession();
+  const [kind, setKind] = useState<'app' | 'backup'>('app');
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      await session.finishSignIn(code, kind);
+    } catch (err) {
+      const text = (err as Error).message;
+      setError(
+        /too many|locked/i.test(text) ? 'Too many wrong codes. Wait a few minutes, then sign in again.'
+        : /cookie|expired/i.test(text) ? 'That took too long. Sign in again.'
+        : kind === 'app' ? 'That code is not right. Check the app and try the code it shows now.'
+        : 'That backup code is not right, or it has already been used.',
+      );
+      setCode('');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="card stack" onSubmit={(e) => void submit(e)}>
+      <h1 className="signin__title">Two-step sign-in</h1>
+      <p className="small secondary">
+        {kind === 'app'
+          ? 'Enter the six-digit code your authenticator app shows for AEROBOOK.'
+          : 'Enter one of the backup codes you saved when you set up two-step sign-in. Each works once.'}
+      </p>
+      <TextField
+        label={kind === 'app' ? 'Code from the app' : 'Backup code'}
+        value={code}
+        onChange={setCode}
+        inputMode={kind === 'app' ? 'numeric' : 'text'}
+        autoComplete="one-time-code"
+      />
+      {error ? <Banner tone="danger">{error}</Banner> : null}
+      <button className="btn btn--primary btn--block" type="submit" disabled={busy || !code.trim()}>
+        {busy ? 'Checking…' : 'Sign in'}
+      </button>
+      <div className="btn-group">
+        <button type="button" className="btn btn--ghost" onClick={() => { setKind(kind === 'app' ? 'backup' : 'app'); setCode(''); setError(''); }}>
+          {kind === 'app' ? 'Use a backup code' : 'Use the app instead'}
+        </button>
+        <button type="button" className="btn btn--ghost" onClick={onCancel}>Back</button>
+      </div>
+      <p className="xsmall muted">Lost your phone and your backup codes? Another admin can reset two-step sign-in for you.</p>
     </form>
   );
 }
