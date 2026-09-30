@@ -3,6 +3,10 @@
     {
       "path": "/api/digest/run",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/maintenance/run",
+      "schedule": "30 10 * * *"
     }
   ],
   "rewrites": [

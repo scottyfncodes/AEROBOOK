@@ -30,7 +30,25 @@ export function getPool(): pg.Pool {
 export async function resetPool(): Promise<void> {
   const current = pool;
   pool = null;
+  schemaReady = null;
   await current?.end();
+}
+
+/**
+ * APP_SCHEMA is only ever additive, so running it against a database made by
+ * an earlier version brings it up to date. Once per instance, before the first
+ * write; the lock keeps two instances starting together from colliding.
+ */
+let schemaReady: Promise<void> | null = null;
+
+export function ensureAppSchema(): Promise<void> {
+  schemaReady ??= getPool()
+    .query(`select pg_advisory_xact_lock(4217002);\n${APP_SCHEMA}`)
+    .then(() => undefined, (error) => {
+      schemaReady = null;
+      throw error;
+    });
+  return schemaReady;
 }
 
 export const APP_SCHEMA = `
@@ -59,6 +77,18 @@ create table if not exists app_audit (
   summary text not null default ''
 );
 create index if not exists app_audit_at_idx on app_audit (at desc);
+-- What a record held before a change or deletion, so it can be put back.
+alter table app_audit add column if not exists before jsonb;
+create index if not exists app_audit_user_at_idx on app_audit (user_id, at);
+
+-- Stored documents whose record went. The file is kept a while, so a
+-- document deleted by mistake (or on purpose) can be restored, and removed
+-- by the maintenance run only when no document record points at it.
+create table if not exists app_file_trash (
+  path text primary key,
+  deleted_at timestamptz not null default now(),
+  deleted_by text
+);
 
 -- Who has had today's email, so a repeated cron run sends nothing twice.
 create table if not exists app_digest (

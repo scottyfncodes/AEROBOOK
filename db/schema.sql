@@ -43,6 +43,18 @@ create table if not exists app_audit (
   summary text not null default ''
 );
 create index if not exists app_audit_at_idx on app_audit (at desc);
+-- What a record held before a change or deletion, so it can be put back.
+alter table app_audit add column if not exists before jsonb;
+create index if not exists app_audit_user_at_idx on app_audit (user_id, at);
+
+-- Stored documents whose record went. The file is kept a while, so a
+-- document deleted by mistake (or on purpose) can be restored, and removed
+-- by the maintenance run only when no document record points at it.
+create table if not exists app_file_trash (
+  path text primary key,
+  deleted_at timestamptz not null default now(),
+  deleted_by text
+);
 
 -- Who has had today's email, so a repeated cron run sends nothing twice.
 create table if not exists app_digest (
