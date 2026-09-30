@@ -226,30 +226,32 @@ became `Lost` — which is how every query already treated it — and the ambigu
 
 ## Brand
 
+AEROBOOK is its own product, dressed in the same house style as OPTISKY —
+the palette and typeface below — but it carries no OPTISKY emblem or
+tagline.
+
 | Colour | Hex | Use |
 | --- | --- | --- |
 | Navy | `#0B2D4A` | dark-mode surfaces, light-mode text, icon tile |
 | Slate | `#5B6770` | secondary text |
-| Gold | `#C9A96B` | the emblem, the one accent colour, the tagline |
+| Gold | `#C9A96B` | the one accent colour, the icon's jet |
 | Ivory | `#F7F7F5` | light-mode paper, dark-mode text |
 
 Type is Montserrat (self-hosted via `@fontsource-variable/montserrat`, so it
 works offline). All of it lives as tokens in `src/styles/tokens.css`.
 
-The logo is a winged gold emblem beside a widely spaced "AEROBOOK"
-wordmark — side by side in the app bar and Settings, stacked with the
-tagline "Turnkey solutions for the sky" on the splash screen
-(`src/components/Brand.tsx`). The home-screen icons are the emblem alone on
-the navy tile. The footer sign-off is still the owner's own signature,
-traced from `brand-source/signature.jpg`.
+The logo is the name alone: a widely spaced "AEROBOOK" wordmark
+(`src/components/Brand.tsx`). The home-screen icons are a gold jet on the
+navy tile. The footer sign-off is the owner's own signature, traced from
+`brand-source/signature.jpg`.
 
 ```bash
-npm run brand      # regenerates public/brand/: emblem, icons, signature
+npm run brand      # regenerates public/brand/: icons, signature
 ```
 
-The emblem is drawn from geometry in `scripts/build-brand.mjs`; edit it
-there, never the SVG. The script needs Chromium (icon rendering and the
-signature's ink matting) and `potrace` (the signature trace), neither of
+The icons are drawn from geometry in `scripts/build-brand.mjs`; edit them
+there, never the output files. The script needs Chromium (icon rendering and
+the signature's ink matting) and `potrace` (the signature trace), neither of
 which the normal build touches — outputs are committed.
 
 ## Deployment

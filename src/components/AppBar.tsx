@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconChevronLeft, IconSearch } from './Icons';
-import { Lockup } from './Brand';
+import { Wordmark } from './Brand';
 
 export function AppBar({
   title,
@@ -30,7 +30,7 @@ export function AppBar({
       ) : null}
       {wordmark ? (
         <span className="appbar__brand grow">
-          <Lockup />
+          <Wordmark />
         </span>
       ) : (
         <h1 className="appbar__title">{title}</h1>

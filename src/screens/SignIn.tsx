@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 
-import { Lockup } from '../components/Brand';
+import { Wordmark } from '../components/Brand';
 import { Banner, TextField } from '../components/ui';
 import * as auth from '../data/auth';
 import { useSession } from '../data/session';
@@ -15,7 +15,7 @@ export default function SignIn() {
   return (
     <main className="page signin">
       <div className="signin__brand">
-        <Lockup stacked />
+        <Wordmark large />
       </div>
       {session.status === 'checking' ? null
         : session.status === 'setup' ? <SetUp />

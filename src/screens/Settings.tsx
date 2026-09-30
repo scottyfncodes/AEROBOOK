@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { AppBar } from '../components/AppBar';
 import { IconClock, IconDownload, IconMail, IconTools, IconUpload } from '../components/Icons';
 import { Banner, ConfirmButton, KeyValue, SelectField, TextField, useToast } from '../components/ui';
-import { Lockup } from '../components/Brand';
+import { Wordmark } from '../components/Brand';
 import { LocalDataBanner } from '../components/localData';
 import { AccountSection, TeamSection } from '../components/team';
 import { useCurrentUser } from '../data/session';
@@ -231,7 +231,7 @@ export default function Settings() {
             </>
           ) : null}
           <div className="card small muted stack stack--sm">
-            <Lockup tagline />
+            <Wordmark />
             <div>A personal CRM for aircraft brokerage and aviation insurance.</div>
             <div>
               AEROBOOK does not send email. It prepares a message and hands it to your mail client; the activity it
