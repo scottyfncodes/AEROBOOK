@@ -13,6 +13,20 @@ export function Wordmark({ large = false }: { large?: boolean }) {
   return <span className={`wordmark ${large ? 'wordmark--large' : ''}`.trim()}>AEROBOOK</span>;
 }
 
+/**
+ * The launch screen: the wordmark alone, centred on the whole screen. It
+ * covers everything, tab bar included, so the checking-your-session step
+ * and the loading-your-data step read as one steady screen rather than two
+ * layouts that jump.
+ */
+export function Splash() {
+  return (
+    <div className="splash" role="status" aria-label="Loading AEROBOOK">
+      <Wordmark large />
+    </div>
+  );
+}
+
 function Signature({ width, className = '' }: { width?: number; className?: string }) {
   return (
     <span

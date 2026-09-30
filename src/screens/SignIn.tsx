@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 
-import { Wordmark } from '../components/Brand';
+import { Splash, Wordmark } from '../components/Brand';
 import { Banner, TextField } from '../components/ui';
 import * as auth from '../data/auth';
 import { useSession } from '../data/session';
@@ -12,13 +12,14 @@ import { useSession } from '../data/session';
 export default function SignIn() {
   const session = useSession();
 
+  if (session.status === 'checking') return <Splash />;
+
   return (
     <main className="page signin">
       <div className="signin__brand">
         <Wordmark large />
       </div>
-      {session.status === 'checking' ? null
-        : session.status === 'setup' ? <SetUp />
+      {session.status === 'setup' ? <SetUp />
         : session.status === 'unreachable' ? <Unreachable onRetry={session.retry} />
         : <SignInForm />}
     </main>

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import { ToastProvider, useToast } from './components/ui';
-import { Wordmark } from './components/Brand';
+import { Splash } from './components/Brand';
 import { IconBell, IconHome, IconPlane, IconSettings, IconUsers } from './components/Icons';
 import { useDatabase, useLoaded, useSaveError } from './data/useStore';
 import { onNotice } from './data/store';
@@ -141,11 +141,7 @@ function Shell() {
             <Route path="*" element={<NotFound />} />
           </Routes>
         ) : (
-          <div className="page">
-            <div className="splash">
-              <Wordmark large />
-            </div>
-          </div>
+          <Splash />
         )}
 
         <nav className="tabbar" aria-label="Main">
