@@ -330,7 +330,7 @@ button, input, select, textarea {
 
 .select {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236f7f90' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ba5ad' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
   background-size: 17px;
@@ -582,7 +582,7 @@ button, input, select, textarea {
 }
 
 .banner svg { width: 17px; height: 17px; flex: none; margin-top: 1px; }
-.banner--warn { background: var(--warn-dim); border-color: color-mix(in srgb, var(--warn) 30%, transparent); color: var(--text); }
+.banner--warn { background: var(--warn-dim); border-color: color-mix(in srgb, var(--warn) 30%, transparent); border-left: 3px solid var(--warn); color: var(--text); }
 .banner--danger { background: var(--danger-dim); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
 .banner--info { background: var(--info-dim); border-color: color-mix(in srgb, var(--info) 30%, transparent); }
 .banner--success { background: var(--success-dim); border-color: color-mix(in srgb, var(--success) 30%, transparent); }
