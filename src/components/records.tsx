@@ -56,11 +56,14 @@ export function AircraftRow({
   aircraft,
   owner,
   policy,
+  newComments,
 }: {
   aircraft: Aircraft;
   owner?: Contact;
   /** Shown only when the renewal actually wants attention. */
   policy?: InsurancePolicy;
+  /** Comments added since the person last looked. */
+  newComments?: number;
 }) {
   const state = policy ? policyState(policy) : null;
   return (
@@ -68,7 +71,14 @@ export function AircraftRow({
       <div className="row">
         <div className="grow">
           <div className="row row--between">
-            <span className="tail strong">{aircraft.tailNumber}</span>
+            <span className="row" style={{ gap: 6 }}>
+              <span className="tail strong">{aircraft.tailNumber}</span>
+              {newComments ? (
+                <span className="unread-dot" title={`${newComments} new ${newComments === 1 ? 'comment' : 'comments'}`}>
+                  <span className="sr-only">{newComments} new {newComments === 1 ? 'comment' : 'comments'}</span>
+                </span>
+              ) : null}
+            </span>
             <div className="row" style={{ gap: 4 }}>
               {state?.needsAttention ? <Chip tone={state.tone}>{state.countdown || state.status}</Chip> : null}
               {aircraft.status !== 'Unknown' ? <Chip>{aircraft.status}</Chip> : null}

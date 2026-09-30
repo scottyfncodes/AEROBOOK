@@ -72,6 +72,14 @@ describe('finding the record an entry is about', () => {
     expect(locate(db, 'aircraft', 'air_1')).toEqual({ to: '/aircraft/air_1' });
   });
 
+  it('takes a comment entry to the aircraft’s comments', () => {
+    expect(locate(db, 'aircraftComments', 'air_1')).toEqual({ to: '/aircraft/air_1#comments' });
+    expect(locate(db, 'aircraftComments', 'air_gone')).toEqual({});
+    expect(`${verb('create', 'aircraftComments')} ${noun('aircraftComments')}`).toBe('added a comment on');
+    expect(`${verb('update', 'aircraftComments')} ${noun('aircraftComments')}`).toBe('edited a comment on');
+    expect(`${verb('delete', 'aircraftComments')} ${noun('aircraftComments', 3)}`).toBe('removed comments on');
+  });
+
   it('says what a timeline entry or follow-up was on', () => {
     expect(locate(db, 'activities', 'act_1')).toEqual({ to: '/aircraft/air_1', context: 'N917JH' });
     expect(locate(db, 'followUps', 'fup_1')).toEqual({ to: '/contacts/con_1', context: 'John Heine' });

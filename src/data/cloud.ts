@@ -177,6 +177,11 @@ export class CloudSync implements store.Backend {
     return db;
   }
 
+  /** Whether the server has this record yet — a new one is only there once its save lands. */
+  isStored(collection: string, id: string): boolean {
+    return (this.versions.get(recordKey(collection, id)) ?? 0) > 0;
+  }
+
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;

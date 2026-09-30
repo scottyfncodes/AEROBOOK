@@ -235,7 +235,8 @@ export const HISTORY_PAGE = 100;
 /**
  * The activity history, newest first. It is read straight from what push()
  * recorded; nothing here writes. Sign-in security events share the table
- * (collection "security") and are left out: they are not changes to records.
+ * (collection "security") and are left out: they are not changes to records;
+ * so are changes to chat groups (collection "chat"), which are for admins.
  * `before` is the id of the last entry already shown — ids only ever grow, so
  * paging by them never skips or repeats one.
  */
@@ -245,7 +246,7 @@ export async function history(before?: number): Promise<{ entries: HistoryEntry[
     action: HistoryEntry['action']; collection: string; record_id: string; summary: string;
   }>(
     `select id, at, user_id, user_name, action, collection, record_id, summary from app_audit
-      where ($1::bigint is null or id < $1) and collection <> 'security'
+      where ($1::bigint is null or id < $1) and collection not in ('security', 'chat')
       order by id desc
       limit $2`,
     [before ?? null, HISTORY_PAGE + 1],

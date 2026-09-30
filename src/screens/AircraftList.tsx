@@ -6,6 +6,7 @@ import { IconPlane, IconPlus } from '../components/Icons';
 import { AircraftRow } from '../components/records';
 import { NewAircraftSheet } from '../components/aircraft';
 import { EmptyState, useDebounced, useToast } from '../components/ui';
+import { useInbox } from '../data/inbox';
 import { useDatabase } from '../data/useStore';
 import { AIRCRAFT_STATUSES, type AircraftStatus } from '../data/types';
 import { ownerOf } from '../lib/selectors';
@@ -14,6 +15,7 @@ import { search } from '../lib/search';
 
 export default function AircraftList() {
   const db = useDatabase();
+  const { aircraftUnread } = useInbox();
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<AircraftStatus | 'All' | 'Renewal due'>('All');
@@ -100,7 +102,13 @@ export default function AircraftList() {
         ) : (
           <div className="list">
             {filtered.map((a) => (
-              <AircraftRow key={a.id} aircraft={a} owner={ownerOf(db, a)} policy={policyByAircraft.get(a.id)} />
+              <AircraftRow
+                key={a.id}
+                aircraft={a}
+                owner={ownerOf(db, a)}
+                policy={policyByAircraft.get(a.id)}
+                newComments={aircraftUnread[a.id]}
+              />
             ))}
           </div>
         )}

@@ -9,7 +9,9 @@ import { createHmac } from 'node:crypto';
  * insurance policy and check the renewal countdown, open a brokerage
  * opportunity and move it through the pipeline, record what the owner wants,
  * reload, re-import, and export; then add a teammate who signs in on a second
- * device and shares the same data; and last, the admin turns on two-step
+ * device and shares the same data; the two message each other, in a group,
+ * and on an aircraft's comments, and see it arrive without reloading; and
+ * last, the admin turns on two-step
  * sign-in and signs in with a code. Fails on any console error, any horizontal
  * overflow or any link without a destination.
  *
@@ -65,6 +67,9 @@ page.on('requestfailed', (r) => {
     abortedSyncs++;
     return;
   }
+  // The inbox check and "I've left" note are sent every few seconds and as
+  // the page goes; a navigation cuts some off, and the next one catches up.
+  if (/\/api\/(inbox|presence)$/.test(r.url()) && r.failure()?.errorText === 'net::ERR_ABORTED') return;
   errors.push(`requestfailed: ${r.method()} ${r.url()} ${r.failure()?.errorText}`);
 });
 
@@ -209,8 +214,9 @@ await shot('07-email-preview');
 
 // edit the message
 await page.getByRole('button', { name: 'Edit this message' }).click();
-await page.waitForSelector('textarea');
-await page.fill('textarea', 'Hi John,\n\nEdited by the acceptance test.');
+// The sheet's box: the aircraft page has a comment box of its own.
+await page.waitForSelector('.sheet textarea');
+await page.fill('.sheet textarea', 'Hi John,\n\nEdited by the acceptance test.');
 const mailto2 = await page.getByRole('link', { name: 'Open in Mail' }).getAttribute('href');
 if (!mailto2.includes('Edited%20by%20the%20acceptance%20test')) errors.push('edited body did not reach the mailto');
 log('edited mailto ok');
@@ -542,10 +548,10 @@ for (const [path, name] of [
 // ------------------------------------------------- 10b. primary navigation
 await page.goto(BASE, { waitUntil: 'networkidle' });
 const tabs = await page.locator('.tabbar__item').evaluateAll((els) =>
-  els.map((el) => ({ label: el.querySelector('span')?.textContent, aria: el.getAttribute('aria-label') })),
+  els.map((el) => ({ label: el.querySelector(':scope > span:last-child')?.textContent, aria: el.getAttribute('aria-label') })),
 );
 log('nav tabs:', tabs.map((t) => t.label).join(' | '));
-const expectedTabs = ['Home', 'Aircraft', 'Contacts', 'Follow-up', 'Settings'];
+const expectedTabs = ['Home', 'Aircraft', 'Contacts', 'Follow-up', 'Chat', 'Settings'];
 if (tabs.map((t) => t.label).join('|') !== expectedTabs.join('|')) {
   errors.push(`tab bar reads "${tabs.map((t) => t.label).join(' | ')}", expected "${expectedTabs.join(' | ')}"`);
 }
@@ -638,6 +644,11 @@ phone.on('console', (m) => {
   errors.push(`teammate console: ${m.text()}`);
 });
 phone.on('pageerror', (e) => errors.push(`teammate pageerror: ${e.message}`));
+// A request the browser cancelled because the test moved on is not a failure.
+phone.on('requestfailed', (r) => {
+  if (r.failure()?.errorText === 'net::ERR_ABORTED') return;
+  if (r.url().startsWith(BASE)) errors.push(`teammate requestfailed: ${r.method()} ${r.url()} ${r.failure()?.errorText}`);
+});
 await phone.goto(BASE, { waitUntil: 'networkidle' });
 await phone.waitForSelector('text=Sign in');
 await phone.getByLabel('Email').fill(TEAMMATE.email);
@@ -679,11 +690,12 @@ await page.waitForSelector('text=Teammate called the owner', { timeout: 5000 })
 // import shows as one line rather than a hundred.
 await page.goto(`${BASE}/history`, { waitUntil: 'networkidle' });
 await page.waitForSelector('.history__item', { timeout: 10000 });
-const firstPageLines = await page.locator('.history__item').count();
 // Page back to the import, which is older than the first page.
 while (await page.getByRole('button', { name: 'Show older' }).count()) {
+  // Each page waits for itself, so the loop never reads the list mid-load.
+  const shown = await page.locator('.history__item').count();
   await page.getByRole('button', { name: 'Show older' }).click();
-  await page.waitForFunction((n) => document.querySelectorAll('.history__item').length > n, firstPageLines);
+  await page.waitForFunction((n) => document.querySelectorAll('.history__item').length > n, shown);
 }
 const historyText = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
 if (!has(historyText, `${TEAMMATE.name} added timeline entry “Teammate called the owner”`)) {
@@ -771,6 +783,130 @@ if ((await openDoc(phone)) !== DOC.buffer.toString()) errors.push('the document 
 else log('the document is still there after signing out and back in');
 const leaked = await (await browser.newContext()).request.get(`${BASE}/api/files/content?path=files/fil_abcd/x.pdf`);
 if (leaked.status() !== 401) errors.push(`a signed-out request for a document got ${leaked.status()}`);
+
+// ------------------------------------------------ 13d. chat and comments
+// The admin messages the teammate. The teammate, elsewhere in the app, gets
+// a pop-up and a badge without reloading, opens the conversation from it and
+// replies; the reply reaches the admin's open conversation on its own. Then
+// a group, and a discussion on the aircraft itself.
+await page.goto(`${BASE}/chat`, { waitUntil: 'networkidle' });
+await page.waitForSelector('text=No conversations yet');
+await checkOverflow('chat, empty');
+await shot('16-chat-empty');
+await page.getByRole('button', { name: 'New conversation' }).first().click();
+await page.waitForSelector('.sheet');
+await page.locator('.sheet').getByRole('button', { name: TEAMMATE.name }).click();
+await page.waitForURL(/\/chat\/cv_/);
+const conversationUrl = page.url();
+if (await page.locator('nav.tabbar').isVisible()) errors.push('the tab bar covers the message box in a conversation');
+
+await phone.goto(`${BASE}/aircraft`, { waitUntil: 'networkidle' });
+const HELLO = 'Insurance documents updated.\nThe binder is on the aircraft.';
+await page.getByLabel('Message').fill(HELLO);
+await page.getByRole('button', { name: 'Send' }).click();
+await page.waitForSelector('.bubble--mine:has-text("Insurance documents updated.")');
+if (await page.locator('.bubble--pending').count()) await page.waitForSelector('.bubble--pending', { state: 'detached', timeout: 5000 });
+
+const popup = await phone.waitForSelector('.alert', { timeout: 15000 }).then(() => true, () => false);
+if (!popup) errors.push('the teammate got no in-app pop-up for a new message');
+else {
+  const popupText = await phone.locator('.alert').first().innerText();
+  if (!has(popupText, `New message from ${ADMIN.name}`)) errors.push(`the pop-up reads "${popupText}"`);
+  if (has(popupText, 'binder')) errors.push('the pop-up shows the message itself');
+  const badge = await phone.locator('.tabbar__badge').innerText().catch(() => '');
+  if (badge !== '1') errors.push(`the Chat tab badge reads "${badge}", not 1`);
+  await checkOverflow('pop-up');
+  await phone.screenshot({ path: `${SHOTS}/16b-chat-popup.png` });
+  await phone.locator('.alert__open').first().click();
+  await phone.waitForURL(conversationUrl);
+  log('the teammate saw a pop-up and a badge, and opened the conversation from it');
+}
+if (phone.url() !== conversationUrl) await phone.goto(conversationUrl, { waitUntil: 'networkidle' });
+await phone.waitForSelector('.bubble:has-text("The binder is on the aircraft.")');
+const bubble = await phone.locator('.bubble').first().innerText();
+if (!bubble.includes('\n')) errors.push('the message lost its line break');
+await phone.waitForSelector('.tabbar__badge', { state: 'detached', timeout: 10000 })
+  .catch(() => errors.push('the Chat badge stayed after the message was read'));
+if (await phone.locator('.alert').count()) errors.push('a pop-up showed for the conversation already on screen');
+
+await phone.getByLabel('Message').fill('Thanks — client requested revised coverage.');
+await phone.getByRole('button', { name: 'Send' }).click();
+await page.waitForSelector('.bubble:not(.bubble--mine):has-text("client requested revised coverage")', { timeout: 15000 })
+  .then(() => log('the reply reached the admin’s open conversation without a reload'))
+  .catch(() => errors.push('the reply did not reach the admin’s open conversation'));
+if (await page.locator('.alert').count()) errors.push('the admin got a pop-up for the conversation they were looking at');
+
+// A long message wraps rather than widening the page.
+await page.getByLabel('Message').fill(`${'N917JH-'.repeat(40)}\n${'a very long line of words '.repeat(30)}`);
+await page.getByRole('button', { name: 'Send' }).click();
+await page.waitForTimeout(800);
+await checkOverflow('conversation with a long message');
+await shot('16c-conversation');
+await phone.screenshot({ path: `${SHOTS}/16d-conversation-teammate.png` });
+
+// A group.
+await page.goto(`${BASE}/chat`, { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: 'New conversation' }).first().click();
+await page.locator('.sheet').getByRole('tab', { name: 'Group' }).click();
+await page.locator('.sheet').getByLabel('Group name').fill('E2E sales team');
+await page.locator('.sheet').getByRole('checkbox', { name: TEAMMATE.name }).check();
+await page.locator('.sheet').getByRole('button', { name: 'Create group' }).click();
+await page.waitForURL(/\/chat\/cv_/);
+await page.getByLabel('Message').fill('Morning, team');
+await page.getByRole('button', { name: 'Send' }).click();
+await page.waitForSelector('.bubble--mine:has-text("Morning, team")');
+await phone.goto(`${BASE}/chat`, { waitUntil: 'networkidle' });
+await phone.waitForSelector('.convo:has-text("E2E sales team")', { timeout: 10000 })
+  .then(() => log('the teammate sees the group'))
+  .catch(() => errors.push('the teammate does not see the group'));
+const groupRow = await phone.locator('.convo:has-text("E2E sales team")').innerText().catch(() => '');
+if (!has(groupRow, 'Morning, team')) errors.push(`the group row reads "${groupRow}"`);
+await checkOverflow('chat list');
+await phone.screenshot({ path: `${SHOTS}/16e-chat-list.png` });
+
+// Comments on the aircraft: kept on its page, marked new for whoever has not seen them.
+await page.goto(tailUrl, { waitUntil: 'networkidle' });
+await page.waitForSelector('#comments');
+await page.locator('#comments').scrollIntoViewIfNeeded();
+await page.waitForSelector('text=No comments yet');
+await page.getByLabel('Comment on this aircraft').fill('Client requested revised coverage.\nAdded the new PDF to Documents.');
+await page.locator('#comments').getByRole('button', { name: 'Send' }).click();
+await page.waitForSelector('.comment:has-text("Added the new PDF")');
+if (!(await page.locator('#comments').getByRole('button', { name: 'Watching' }).count())) errors.push('commenting did not start watching the aircraft');
+await page.locator('#comments').screenshot({ path: `${SHOTS}/17-comments.png` });
+
+await phone.goto(`${BASE}/aircraft`, { waitUntil: 'networkidle' });
+const tailId = decodeURIComponent(new URL(tailUrl).pathname.split('/').pop());
+const dotted = await phone.waitForSelector(`a[href="/aircraft/${tailId}"] .unread-dot`, { timeout: 15000 }).then(() => true, () => false);
+if (!dotted) errors.push('the aircraft list does not mark the aircraft with a new comment');
+else log('the aircraft list marks the aircraft with a new comment');
+await phone.goto(`${tailUrl}#comments`, { waitUntil: 'networkidle' });
+await phone.waitForSelector('.comment:has-text("Added the new PDF")');
+const newChip = await phone.locator('#comments .chip').innerText().catch(() => '');
+if (!has(newChip, '1 new')) errors.push(`the comments header reads "${newChip}", not "1 new"`);
+const inView = await phone.locator('#comments').evaluate((el) => el.getBoundingClientRect().top < window.innerHeight);
+if (!inView) errors.push('opening an aircraft at #comments did not scroll to the comments');
+// The admin, watching the aircraft, is somewhere else in the app when the teammate replies.
+await page.goto(`${BASE}/contacts`, { waitUntil: 'networkidle' });
+await page.waitForTimeout(1500);
+await phone.getByLabel('Comment on this aircraft').fill('Revised quote is in.');
+await phone.locator('#comments').getByRole('button', { name: 'Send' }).click();
+await phone.waitForSelector('.comment:has-text("Revised quote is in.")');
+await checkOverflow('aircraft comments');
+await phone.screenshot({ path: `${SHOTS}/17b-comments-teammate.png`, fullPage: false });
+
+const commentPopup = await page.waitForSelector('.alert:has-text("New comment on")', { timeout: 15000 }).then(() => true, () => false);
+if (!commentPopup) errors.push('the admin got no pop-up for a comment on an aircraft they watch');
+else log('the admin got a pop-up for the teammate’s comment');
+
+// Notifications: without push keys on the server, the app says so.
+await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+await phone.waitForSelector('#notifications');
+const notifText = await phone.locator('#notifications').innerText();
+if (!has(notifText, 'need push keys') && !has(notifText, 'Turn on notifications')) {
+  errors.push(`the notification settings read "${notifText}"`);
+}
+await phone.locator('#notifications').screenshot({ path: `${SHOTS}/18-notification-settings.png` });
 
 // Daily email: the choice is kept, and without an API key nothing is sent.
 await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });

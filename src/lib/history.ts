@@ -29,6 +29,7 @@ const NOUNS: Record<string, [one: string, many: string]> = {
   templates: ['email template', 'email templates'],
   imports: ['import', 'imports'],
   files: ['document', 'documents'],
+  aircraftComments: ['a comment on', 'comments on'],
 };
 
 export function noun(collection: string, count = 1): string {
@@ -39,7 +40,7 @@ export function noun(collection: string, count = 1): string {
 /** Timeline entries are added and removed; everything else created and deleted. */
 export function verb(action: HistoryEntry['action'], collection: string): string {
   if (action === 'update') return 'edited';
-  if (collection === 'activities') return action === 'create' ? 'added' : 'removed';
+  if (collection === 'activities' || collection === 'aircraftComments') return action === 'create' ? 'added' : 'removed';
   return action === 'create' ? 'created' : 'deleted';
 }
 
@@ -137,6 +138,11 @@ export function locate(
   switch (collection) {
     case 'contacts': return { to: contactPage(id)?.to };
     case 'aircraft': return { to: aircraftPage(id)?.to };
+    // Recorded against the aircraft, never the comment's words.
+    case 'aircraftComments': {
+      const to = aircraftPage(id)?.to;
+      return to ? { to: `${to}#comments` } : {};
+    }
     case 'opportunities': return { to: opportunityPage(id)?.to };
     case 'policies': {
       const p = db.policies.find((x) => x.id === id);

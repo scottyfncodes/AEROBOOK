@@ -6,6 +6,7 @@ import { IconClock, IconDownload, IconMail, IconTools, IconUpload } from '../com
 import { Banner, ConfirmButton, KeyValue, SelectField, TextField, useToast } from '../components/ui';
 import { Wordmark } from '../components/Brand';
 import { LocalDataBanner } from '../components/localData';
+import { NotificationSettings } from '../components/NotificationSettings';
 import { AccountSection, TeamSection } from '../components/team';
 import { useCurrentUser } from '../data/session';
 import { useDatabase } from '../data/useStore';
@@ -124,6 +125,8 @@ export default function Settings() {
             />
           </div>
         </section>
+
+        <NotificationSettings />
 
         <section className="stack stack--sm">
           <h2 className="section-title">Daily email</h2>

@@ -892,3 +892,275 @@ button, input, select, textarea {
 }
 .glance__value { font-size: 14px; overflow-wrap: anywhere; }
 a.glance__cell:hover { background: var(--surface-hover); text-decoration: none; }
+
+/* ------------------------------------------------ chat, comments, alerts */
+
+.segmented > button, .alert__open, .alert__close, .linkish, .chat__jump {
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.tabbar__icon { position: relative; display: inline-flex; }
+.tabbar__badge,
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--brand-gold);
+  color: var(--brand-navy);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.tabbar__badge {
+  position: absolute;
+  top: -6px;
+  left: calc(100% - 8px);
+  box-shadow: 0 0 0 2px var(--bg-elevated);
+}
+
+.unread-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--brand-gold);
+  flex: none;
+}
+
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.segmented > button {
+  min-height: 36px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.segmented > button.is-active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+
+.picker-row { padding: 12px 14px; min-height: var(--tap); align-items: center; }
+
+.linkish {
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  padding: 0;
+}
+
+/* The conversation list */
+.convo { display: flex; align-items: center; gap: 12px; }
+.convo--unread .strong { color: var(--text); }
+.convo--unread .secondary { color: var(--text); font-weight: 600; }
+.convo__avatar {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.convo__avatar svg { width: 19px; height: 19px; }
+
+/* One conversation. The tab bar steps aside so the reply box sits at the bottom. */
+.app--conversation { padding-bottom: 0; }
+.app--conversation .tabbar { display: none; }
+.app--conversation .toast-host { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - var(--header-h) - env(safe-area-inset-top, 0px));
+  padding-bottom: 0;
+}
+.chat__subtitle { text-align: center; margin-top: -6px; margin-bottom: 8px; }
+.chat__messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-bottom: 12px;
+}
+.chat__older { align-self: center; margin-bottom: 8px; }
+.chat__empty { text-align: center; margin: auto 0; }
+.chat__time {
+  align-self: center;
+  margin: 12px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.bubble-row { display: flex; flex-direction: column; align-items: flex-start; }
+.bubble-row--mine { align-items: flex-end; }
+.bubble-row .chat__time { align-self: center; }
+.bubble__name { font-size: 12px; font-weight: 650; color: var(--text-muted); margin: 6px 12px 2px; }
+.bubble {
+  max-width: min(78%, 560px);
+  padding: 9px 13px;
+  border-radius: 18px;
+  border-bottom-left-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 15px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.bubble--mine {
+  background: var(--brand-gold);
+  border-color: var(--brand-gold);
+  color: var(--brand-navy);
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 6px;
+}
+.bubble--pending { opacity: 0.6; }
+.bubble--failed { opacity: 1; background: var(--danger-dim); border-color: var(--danger); color: var(--text); }
+.bubble__status { font-size: 12px; color: var(--text-muted); margin: 3px 4px 4px; }
+
+.chat__jump {
+  position: fixed;
+  left: 50%;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 45;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.chat__composer {
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  margin: 0 calc(-1 * var(--gutter));
+  padding: 8px var(--gutter) calc(8px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  border-top: 1px solid var(--border);
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.composer__input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap);
+  max-height: 168px;
+  padding: 10px 14px;
+  border-radius: 22px;
+  background: var(--input-bg);
+  border: 1px solid var(--border-strong);
+  font-size: 16px; /* no zoom on focus in iOS Safari */
+  line-height: 1.4;
+  resize: none;
+  overflow-y: auto;
+}
+.composer__input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-dim); }
+.composer__input::placeholder { color: var(--text-muted); opacity: 1; }
+.composer__send { border-radius: 50%; }
+.composer__warn { flex-basis: 100%; font-size: 12px; color: var(--danger); }
+
+/* Comments on an aircraft */
+.comments { scroll-margin-top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 8px); }
+.comments .btn.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.comments__empty { display: flex; gap: 12px; align-items: flex-start; }
+.comments__empty svg { width: 22px; height: 22px; flex: none; color: var(--text-muted); }
+.comments__list { list-style: none; margin: 0; padding: 0; }
+.comment { padding: 11px 14px; display: flex; flex-direction: column; gap: 4px; }
+.comment--new { box-shadow: inset 3px 0 0 var(--brand-gold); }
+.comment__meta { gap: 8px; }
+.comment__body { font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.comment__deleted { font-style: italic; }
+.comment__actions { gap: 6px; margin-top: 2px; }
+
+/* The pop-up for something new elsewhere in the app: top of the screen, clear of the composer. */
+.alert-host {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 210;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(440px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.alert {
+  pointer-events: auto;
+  display: flex;
+  align-items: stretch;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--brand-gold);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  animation: drop-in 0.22s var(--ease);
+  overflow: hidden;
+}
+.alert__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.alert__open svg { width: 20px; height: 20px; flex: none; color: var(--accent); }
+.alert__cta { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.alert__close {
+  width: var(--tap);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  border-left: 1px solid var(--border);
+}
+.alert__close svg { width: 16px; height: 16px; }
+@keyframes drop-in { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
