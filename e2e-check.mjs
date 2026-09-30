@@ -84,7 +84,7 @@ async function checkOverflow(label) {
 for (const asset of [
   '/brand/icon.svg', '/brand/icon-180.png', '/brand/icon-192.png',
   '/brand/icon-512.png', '/brand/icon-maskable-512.png', '/manifest.webmanifest',
-  '/brand/mark.svg', '/brand/signature.svg',
+  '/brand/signature.svg',
 ]) {
   const res = await page.request.get(BASE + asset);
   if (!res.ok()) errors.push(`asset ${asset} returned ${res.status()}`);

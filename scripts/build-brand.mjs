@@ -8,13 +8,11 @@
  *                                       tight viewBox, currentColor — the
  *                                       quiet sign-off at the foot of the
  *                                       dashboard)
- *         public/brand/mark.svg        (the winged emblem, gold — the
- *                                       app-bar and splash logo)
- *         public/brand/icon*.png|svg   (home-screen icon set: the emblem on
- *                                       the brand navy tile)
+ *         public/brand/icon*.png|svg   (home-screen icon set: a gold jet
+ *                                       on the navy tile)
  *
- * The emblem and icons are drawn from geometry in this file; only the
- * signature is traced. Run it when either changes; the outputs are
+ * The icons are drawn from geometry in this file; only the signature is
+ * traced. Run it when either changes; the outputs are
  * committed, so a normal build needs neither Chromium nor potrace.
  */
 import { chromium } from 'playwright';
@@ -141,88 +139,60 @@ const signature = await traceTight(sigInk, `${OUT}/.signature-ink.png`, 'Signatu
 writeFileSync(`${OUT}/signature.svg`, `${signature.svg}\n`);
 console.log('wrote signature.svg — viewBox', signature.box);
 
-// ----------------------------------------------------------------- emblem
-/**
- * The brand emblem: a pair of swept gold wings either side of a tall,
- * faceted keel. It is drawn here by hand rather than traced — straight
- * edges and flat facets, so it stays crisp from a 24px header down to a
- * favicon. The left half catches the light and the right half sits in
- * shade, which is what gives the flat shapes their bevelled, metallic read.
- */
-const EMBLEM_VIEWBOX = { w: 120, h: 40 };
-const EMBLEM_DEFS = `
-    <linearGradient id="lit" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#EBD6A6"/>
-      <stop offset="0.55" stop-color="#C9A96B"/>
-      <stop offset="1" stop-color="#A88849"/>
-    </linearGradient>
-    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#C9A96B"/>
-      <stop offset="0.6" stop-color="#A5843F"/>
-      <stop offset="1" stop-color="#7E6230"/>
-    </linearGradient>`;
-const UPPER_WING = 'M53 12.6 L1 10.2 L14 14.9 L53 18.6 Z';
-const LOWER_WING = 'M53 21.4 L17 19.4 L27 23.6 L53 26.2 Z';
-const KEEL = 'M60 1 L60 39 L53.4 28.5 L53.4 11.5 Z';
-const EMBLEM_BODY = `
-    <path fill="url(#lit)" d="${UPPER_WING}"/>
-    <path fill="url(#shade)" d="${LOWER_WING}"/>
-    <path fill="url(#lit)" d="${KEEL}"/>
-    <g transform="matrix(-1 0 0 1 ${EMBLEM_VIEWBOX.w} 0)">
-      <path fill="url(#shade)" d="${UPPER_WING}"/>
-      <path fill="url(#shade)" d="${LOWER_WING}"/>
-      <path fill="url(#shade)" d="${KEEL}"/>
-    </g>`;
-
-writeFileSync(
-  `${OUT}/mark.svg`,
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${EMBLEM_VIEWBOX.w} ${EMBLEM_VIEWBOX.h}" role="img" aria-label="AEROBOOK">
-  <defs>${EMBLEM_DEFS}
-  </defs>${EMBLEM_BODY}
-</svg>
-`,
-);
-console.log('wrote mark.svg');
-
 // ------------------------------------------------------------------ icons
 /**
- * The home-screen icon is the emblem alone, gold on the brand navy — the
- * wings read at every size down to a phone home screen, where the wordmark
- * would not.
- *
- * `marginPct` is how much empty tile the emblem leaves either side —
- * maskable art needs more of it, since Android crops 20% off each edge
- * before applying its own mask, and the wingtips would be lost to that crop.
+ * The home-screen icon is AEROBOOK's own: a private jet, climbing — legible
+ * as an aircraft at every size down to a phone home screen, where the
+ * wordmark would not be. It wears the shared house style (gold on navy) but
+ * carries no other product's mark. The silhouette is Google's Material
+ * Symbols "flight" glyph (Apache 2.0).
  */
-function iconSvg({ size, marginPct, radiusPct }) {
+const PLANE_PATH =
+  'M21 16v-2l-8-5V3.5C13 2.67 12.33 2 11.5 2S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2.5 1.5V22l4-1 4 1v-1.5L13 19v-5.5l8 2.5z';
+const PLANE_VIEWBOX = 24;
+
+/**
+ * `marginPct` is how much empty tile the plane leaves on every side —
+ * maskable art needs more of it, since Android crops 20% off each edge
+ * before applying its own mask, and a tight silhouette would lose its
+ * wingtips to that crop.
+ */
+function iconSvg({ size, marginPct, weightPct, radiusPct }) {
   const r = (radiusPct / 100) * size;
-  const scale = (size * (1 - (2 * marginPct) / 100)) / EMBLEM_VIEWBOX.w;
-  const x = (size - EMBLEM_VIEWBOX.w * scale) / 2;
-  // Optically centred: a hair above the true middle, as the keel's long
-  // lower point pulls the eye down.
-  const y = (size - EMBLEM_VIEWBOX.h * scale) / 2 - size * 0.01;
+  const scale = (size * (1 - (2 * marginPct) / 100)) / PLANE_VIEWBOX;
+  const inset = (size - PLANE_VIEWBOX * scale) / 2;
+  const strokeWidth = (weightPct / 100) * PLANE_VIEWBOX;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#113a5e"/>
       <stop offset="1" stop-color="#0B2D4A"/>
-    </linearGradient>${EMBLEM_DEFS}
+    </linearGradient>
+    <!-- In the plane's own units, since it is painted inside the scaled group. -->
+    <linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="2" y1="2" x2="22" y2="22">
+      <stop offset="0" stop-color="#EBD6A6"/>
+      <stop offset="0.55" stop-color="#C9A96B"/>
+      <stop offset="1" stop-color="#A88849"/>
+    </linearGradient>
   </defs>
   <rect width="${size}" height="${size}" rx="${r}" fill="url(#bg)"/>
   <rect x="0.5" y="0.5" width="${size - 1}" height="${size - 1}" rx="${r}" fill="none"
         stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/>
-  <g transform="translate(${x.toFixed(3)} ${y.toFixed(3)}) scale(${scale.toFixed(6)})">${EMBLEM_BODY}
+  <g transform="translate(${inset.toFixed(3)} ${inset.toFixed(3)}) scale(${scale.toFixed(6)})"
+     fill="url(#ink)" stroke="url(#ink)" stroke-width="${strokeWidth.toFixed(3)}"
+     stroke-linejoin="round" stroke-linecap="round">
+    <path d="${PLANE_PATH}"/>
   </g>
 </svg>`;
 }
 
 const TARGETS = [
   // iOS applies its own mask, so the PNG it uses is drawn square.
-  { file: 'icon-180.png', size: 180, marginPct: 12, radiusPct: 0 },
-  { file: 'icon-192.png', size: 192, marginPct: 12, radiusPct: 22 },
-  { file: 'icon-512.png', size: 512, marginPct: 12, radiusPct: 22 },
+  { file: 'icon-180.png', size: 180, marginPct: 20, weightPct: 1.4, radiusPct: 0 },
+  { file: 'icon-192.png', size: 192, marginPct: 20, weightPct: 1.3, radiusPct: 22 },
+  { file: 'icon-512.png', size: 512, marginPct: 20, weightPct: 0.9, radiusPct: 22 },
   // Maskable art must survive a 20% crop on every side.
-  { file: 'icon-maskable-512.png', size: 512, marginPct: 24, radiusPct: 0 },
+  { file: 'icon-maskable-512.png', size: 512, marginPct: 32, weightPct: 0.9, radiusPct: 0 },
 ];
 
 for (const target of TARGETS) {
@@ -233,7 +203,7 @@ for (const target of TARGETS) {
   console.log('wrote', target.file);
 }
 
-writeFileSync(`${OUT}/icon.svg`, iconSvg({ size: 64, marginPct: 8, radiusPct: 22 }));
+writeFileSync(`${OUT}/icon.svg`, iconSvg({ size: 64, marginPct: 20, weightPct: 1.8, radiusPct: 22 }));
 console.log('wrote icon.svg');
 
 await browser.close();

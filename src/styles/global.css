@@ -625,18 +625,10 @@ button, input, select, textarea {
 /* ----------------------------------------------------------------- brand */
 
 /*
- * The emblem is a full-colour image; the signature is a mask so it takes the
- * surrounding text colour and works in both themes from one asset. Both are
- * decorative, so both are hidden from assistive technology wherever they
- * appear.
+ * The owner's signature, used as a mask so it takes the surrounding text
+ * colour and works in both themes from one asset. Decorative, so hidden from
+ * assistive technology wherever it appears.
  */
-.mark {
-  display: block;
-  height: auto;
-  flex: none;
-  user-select: none;
-}
-
 .signature {
   --signature-width: 180px;
   width: var(--signature-width);
@@ -660,28 +652,8 @@ button, input, select, textarea {
   min-width: 0;
 }
 
-/*
- * Emblem + wordmark. Side by side, a hairline rule separates the two as on
- * the brand sheet's horizontal logo; stacked, the tagline sits under the
- * wordmark in gold.
- */
-.lockup {
-  display: inline-flex;
-  align-items: center;
-  gap: 11px;
-  min-width: 0;
-}
-
-.lockup__text {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  padding-left: 11px;
-  border-left: 1px solid var(--border-strong);
-}
-
-.lockup__wordmark {
+/* The spaced Montserrat name — the whole logo. */
+.wordmark {
   font-size: 15px;
   font-weight: 560;
   letter-spacing: 0.3em;
@@ -689,32 +661,10 @@ button, input, select, textarea {
   color: var(--text);
   /* The tracking trails the last letter; pull it back so the word centres. */
   margin-right: -0.3em;
-}
-
-.lockup__tagline {
-  font-size: 8.5px;
-  font-weight: 560;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--accent);
   white-space: nowrap;
 }
 
-.lockup--stacked {
-  flex-direction: column;
-  gap: 22px;
-  text-align: center;
-}
-
-.lockup--stacked .lockup__text {
-  align-items: center;
-  gap: 10px;
-  padding-left: 0;
-  border-left: 0;
-}
-
-.lockup--stacked .lockup__wordmark { font-size: 30px; font-weight: 500; }
-.lockup--stacked .lockup__tagline { font-size: 11px; margin-right: -0.24em; }
+.wordmark--large { font-size: 30px; font-weight: 500; }
 
 .colophon {
   display: flex;
