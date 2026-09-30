@@ -149,6 +149,35 @@ describe.skipIf(!TEST_DB)('safeguards', () => {
     });
   });
 
+  describe('signing in to an account whose access is off', () => {
+    const attempt = (email: string, password: string) =>
+      api('/api/auth/sign-in/email', { body: { email, password } });
+    const reply = async (r: Response) => {
+      const headers: Record<string, string> = {};
+      r.headers.forEach((value, name) => { headers[name] = value; });
+      return { status: r.status, headers, body: await r.text(), cookies: r.headers.getSetCookie() };
+    };
+
+    it('answers the right password exactly as it answers a wrong one', async () => {
+      await getPool().query('update "user" set banned = true where id = $1', [bobId]);
+      const sessions = async () =>
+        (await getPool().query('select count(*)::int as n from session where "userId" = $1', [bobId])).rows[0].n;
+      const before = await sessions();
+      const wrong = await reply(await attempt('bob@example.com', 'not the password at all'));
+      const right = await reply(await attempt('bob@example.com', 'correct horse battery'));
+      expect(wrong.status).toBe(401);
+      expect(right).toEqual(wrong);
+      expect(right.cookies).toEqual([]);
+      expect(right.body).not.toMatch(/ban/i);
+      // And it lets nobody in.
+      expect(await sessions()).toBe(before);
+    });
+
+    it('still signs in everyone else', async () => {
+      expect((await attempt('bob@example.com', 'correct horse battery')).status).toBe(200);
+    });
+  });
+
   describe('preview deployments', () => {
     afterEach(() => {
       delete process.env.VERCEL_ENV;

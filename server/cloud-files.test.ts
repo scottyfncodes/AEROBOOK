@@ -76,6 +76,17 @@ describe.skipIf(!TEST_DB)('documents in the cloud', () => {
     expect(await (await store.getFile(record.id))?.text()).toBe('the binder');
   });
 
+  it('refuses a kind of file AEROBOOK does not keep, before storing anything', async () => {
+    await cloud.start();
+    const page = new File(['<script>alert(1)</script>'], 'invoice.html', { type: 'text/html' });
+    await expect(store.addFile(page, { aircraftId: 'air_1' })).rejects.toThrow(/not a kind of file AEROBOOK keeps/);
+    expect(store.getState().files).toEqual([]);
+    expect(await readdir(dir)).toEqual([]);
+    // A photo whose type the browser left out is kept by its name.
+    const photo = await store.addFile(new File(['jpeg bytes'], 'IMG_0001.HEIC'), { aircraftId: 'air_1' });
+    expect(photo.mimeType).toBe('image/heic');
+  });
+
   it('moves up a document that was only in this browser', async () => {
     // Attached before cloud storage: a row in the cache and the file in IndexedDB.
     await cloud.start();

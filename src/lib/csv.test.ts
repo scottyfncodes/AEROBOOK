@@ -94,6 +94,18 @@ describe('toCsv', () => {
     expect(toCsv(['A'], [['say "hi"']])).toBe('A\r\n"say ""hi"""');
   });
 
+  it('keeps a spreadsheet from running a cell as a formula', () => {
+    const cells = ['=HYPERLINK("http://evil.example","Click")', '+cmd|\' /C calc\'!A0', '-2+3+cmd|\' /C calc\'!A0', '@SUM(A1:A2)', '\t=1+1', '\r=1+1'];
+    const row = parseCsv(toCsv(['A', 'B', 'C', 'D', 'E', 'F'], [cells])).rows[0];
+    expect(row).toEqual(cells.map((c) => `'${c}`));
+  });
+
+  it('leaves plain numbers, phone numbers and ordinary text alone', () => {
+    expect(toCsv(['A', 'B', 'C', 'D', 'E'], [['+1 (555) 123-4567', '-12.5', '555-0100', 'Heine', 'x = y']]))
+      .toBe('A,B,C,D,E\r\n+1 (555) 123-4567,-12.5,555-0100,Heine,x = y');
+    expect(toCsv(['N'], [[-3]])).toBe('N\r\n-3');
+  });
+
   it('round-trips through the parser', () => {
     const text = toCsv(['Owner', 'Notes'], [['Heine, John', 'line1\nline2']]);
     expect(parseCsv(text).rows[0]).toEqual(['Heine, John', 'line1\nline2']);

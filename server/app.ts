@@ -9,6 +9,7 @@ import { BadRequest, history, isEmpty, pull, push, validateChanges } from './syn
 import {
   blobUploadToken, isFilePath, MAX_FILE_BYTES, purgeTrash, putLocal, readStored, storageMode, uploadFlavor,
 } from './files.js';
+import { servedType } from '../src/lib/documents.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -160,7 +161,9 @@ async function files(request: Request): Promise<Response> {
     const name = (rows[0].name ?? 'document').replace(/["\\\r\n]/g, '');
     return new Response(stored.body as BodyInit, {
       headers: {
-        'content-type': rows[0].type || 'application/octet-stream',
+        // The type comes from the document record, which the browser wrote;
+        // only a kind of file AEROBOOK keeps is served as itself.
+        'content-type': servedType(rows[0].type),
         // Always a download, never rendered as a page on this site.
         'content-disposition': `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,
         'x-content-type-options': 'nosniff',
@@ -247,12 +250,30 @@ function previewRefused(): Response | null {
   return error(503, 'This preview deployment is not connected to any data. See "Preview deployments" in the README.');
 }
 
+/**
+ * Better Auth's routes. It checks the password before it notices an account
+ * whose access was turned off, and says so in a reply of its own; that would
+ * tell someone guessing a former colleague's password when they got it right.
+ * The reply is made the same as for a wrong password.
+ */
+async function authRoute(request: Request, pathname: string): Promise<Response> {
+  const response = await getAuth().handler(request);
+  if (pathname !== '/api/auth/sign-in/email' || response.status !== 403) return response;
+  const body = (await response.clone().json().catch(() => null)) as { code?: string } | null;
+  if (body?.code !== 'BANNED_USER') return response;
+  // Exactly what Better Auth sends for a wrong password, headers included.
+  return new Response(JSON.stringify({ message: 'Invalid email or password', code: 'INVALID_EMAIL_OR_PASSWORD' }), {
+    status: 401,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 export async function handle(request: Request): Promise<Response> {
   const { pathname } = new URL(request.url);
   const refused = previewRefused();
   if (refused) return refused;
   try {
-    if (pathname.startsWith('/api/auth/')) return await getAuth().handler(request);
+    if (pathname.startsWith('/api/auth/')) return await authRoute(request, pathname);
     if (pathname === '/api/setup') return await setup(request);
     if (pathname === '/api/sync' || pathname === '/api/sync/status') {
       const user = await sessionUser(request);

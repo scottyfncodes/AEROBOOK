@@ -11,6 +11,7 @@ import { defaultTemplates } from '../lib/email';
 import { formatTail, normalizeTail } from '../lib/tail';
 import { normalizeEmail } from '../lib/phone';
 import { linkOwner } from '../lib/importer';
+import { documentType, DOCUMENT_TYPES_HINT } from '../lib/documents';
 import * as persistence from './db';
 import {
   emptyDatabase,
@@ -667,10 +668,12 @@ export async function addFile(
   },
   category: DocumentCategory = 'Other',
 ): Promise<FileRecord> {
+  const mimeType = documentType(file.name, file.type);
+  if (!mimeType) throw new Error(`${file.name} is not a kind of file AEROBOOK keeps (${DOCUMENT_TYPES_HINT})`);
   const record: FileRecord = {
     id: newId('fil'),
     name: file.name,
-    mimeType: file.type || 'application/octet-stream',
+    mimeType,
     size: file.size,
     contactId: links.contactId ?? null,
     aircraftId: links.aircraftId ?? null,
