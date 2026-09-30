@@ -1,27 +1,21 @@
 /**
- * Regenerates AEROBOOK's brand assets from the owner's own signature.
+ * Regenerates AEROBOOK's brand assets.
  *
  *   node scripts/build-brand.mjs
  *
  * Input:  brand-source/signature.jpg   (dark ink on a flat light background)
- * Output: public/brand/signature.svg   (the full signature, traced, tight
- *                                       viewBox, currentColor — the footer)
- *         public/brand/mark.svg        (just its capital "A", traced from
- *                                       the same ink — the app-bar and
- *                                       splash logo)
- *         public/brand/icon*.png|svg   (home-screen icon set: a sleek
- *                                       private jet on the brand's dark
- *                                       gradient tile, independent of the
- *                                       traced signature)
+ * Output: public/brand/signature.svg   (the owner's full signature, traced,
+ *                                       tight viewBox, currentColor — the
+ *                                       quiet sign-off at the foot of the
+ *                                       dashboard)
+ *         public/brand/mark.svg        (the winged emblem, gold — the
+ *                                       app-bar and splash logo)
+ *         public/brand/icon*.png|svg   (home-screen icon set: the emblem on
+ *                                       the brand navy tile)
  *
- * The full signature is illegible at the sizes a logo or a home-screen icon
- * actually get used at, so the two are traced separately: the whole hand for
- * the quiet sign-off at the foot of the dashboard, and a tight crop around
- * just its capital "A" — peak, the long downstroke, the short one, the
- * crossbar — for everywhere the mark has to read small.
- *
- * Run it only when the source signature changes; the outputs are committed,
- * so a normal build needs neither Chromium nor potrace.
+ * The emblem and icons are drawn from geometry in this file; only the
+ * signature is traced. Run it when either changes; the outputs are
+ * committed, so a normal build needs neither Chromium nor potrace.
  */
 import { chromium } from 'playwright';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -32,16 +26,10 @@ const SOURCE = 'brand-source/signature.jpg';
 const OUT = 'public/brand';
 const CHROME = process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
-// The "A" is a tight crop of the source photo, in its pixel coordinates —
-// found by scanning ink columns row by row until the two strokes that
-// converge on the peak, and only those, were pinned down. Everything past
-// this box is the rest of the name and is deliberately left out.
-const A_CROP = { x: 10, y: 78, w: 145, h: 145 };
-
 const browser = await chromium.launch({ executablePath: CHROME });
 
 /**
- * Ink extraction, shared by both traces. Separates ink from background by
+ * Ink extraction for the signature trace. Separates ink from background by
  * distance from the sampled corner colour, so antialiased edges survive as
  * partial coverage rather than being thresholded away, then upscales before
  * tracing — potrace follows the pixel grid, and a larger bitmap yields
@@ -105,16 +93,8 @@ async function inkMatte(page, crop) {
   }, { dataUrl: `data:image/jpeg;base64,${readFileSync(SOURCE).toString('base64')}`, crop });
 }
 
-/**
- * Trace a matte, then tighten its viewBox to the ink's own bounding box.
- *
- * `strokeWidthPct` widens every line by stroking it in the same paint as the
- * fill, as a percentage of the mark's own size. The full signature is never
- * shown below ~150px so its hairlines survive on their own; the "A" gets
- * reused as small as a 22px header icon, where the same hairlines would fall
- * below a pixel and disappear without this.
- */
-async function traceTight(inkDataUrl, tmpPath, label, strokeWidthPct = 0) {
+/** Trace a matte, then tighten its viewBox to the ink's own bounding box. */
+async function traceTight(inkDataUrl, tmpPath, label) {
   writeFileSync(tmpPath, Buffer.from(inkDataUrl.split(',')[1], 'base64'));
   const svg = await promisify(trace)(tmpPath, {
     threshold: 128,
@@ -134,8 +114,7 @@ async function traceTight(inkDataUrl, tmpPath, label, strokeWidthPct = 0) {
   });
   await measure.close();
 
-  const strokeWidth = (Math.max(bb.width, bb.height) * strokeWidthPct) / 100;
-  const margin = Math.max(Math.max(bb.width, bb.height) * 0.03, strokeWidth / 2);
+  const margin = Math.max(bb.width, bb.height) * 0.03;
   const box = {
     x: bb.x - margin,
     y: bb.y - margin,
@@ -143,16 +122,12 @@ async function traceTight(inkDataUrl, tmpPath, label, strokeWidthPct = 0) {
     h: bb.height + margin * 2,
   };
 
-  // The fill (and stroke, when there is one) lives on the root only, so the
-  // mark inherits currentColor wherever it is reused and can be recoloured
-  // by a wrapping element.
+  // The fill lives on the root only, so the signature inherits currentColor
+  // wherever it is reused and can be recoloured by a wrapping element.
   const body = svg.split('>').slice(1).join('>').replace(/ fill="currentColor"/g, '').replace(/\n\t/g, '\n');
-  const paint = strokeWidth
-    ? `fill="currentColor" stroke="currentColor" stroke-width="${strokeWidth.toFixed(2)}" stroke-linejoin="round" stroke-linecap="round"`
-    : 'fill="currentColor"';
   const tight =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${box.x.toFixed(2)} ${box.y.toFixed(2)} ${box.w.toFixed(2)} ${box.h.toFixed(2)}" ` +
-    `${paint} role="img" aria-label="${label}">${body}`;
+    `fill="currentColor" role="img" aria-label="${label}">${body}`;
 
   return { svg: tight, box, inner: body.replace('</svg>', '') };
 }
@@ -166,69 +141,88 @@ const signature = await traceTight(sigInk, `${OUT}/.signature-ink.png`, 'Signatu
 writeFileSync(`${OUT}/signature.svg`, `${signature.svg}\n`);
 console.log('wrote signature.svg — viewBox', signature.box);
 
-// ---------------------------------------------------------------------- A
-const aInk = await inkMatte(page, A_CROP);
-// Raw, for the icon set below, which calibrates its own stroke per size.
-const mark = await traceTight(aInk, `${OUT}/.mark-ink.png`, 'AEROBOOK');
-// Widened, for every other use, which is a single CSS size, not a fixed
-// pixel grid, and has no other way to keep the hand's fine strokes visible.
-const markFile = await traceTight(aInk, `${OUT}/.mark-ink.png`, 'AEROBOOK', 6);
-writeFileSync(`${OUT}/mark.svg`, `${markFile.svg}\n`);
-console.log('wrote mark.svg — viewBox', markFile.box);
+// ----------------------------------------------------------------- emblem
+/**
+ * The brand emblem: a pair of swept gold wings either side of a tall,
+ * faceted keel. It is drawn here by hand rather than traced — straight
+ * edges and flat facets, so it stays crisp from a 24px header down to a
+ * favicon. The left half catches the light and the right half sits in
+ * shade, which is what gives the flat shapes their bevelled, metallic read.
+ */
+const EMBLEM_VIEWBOX = { w: 120, h: 40 };
+const EMBLEM_DEFS = `
+    <linearGradient id="lit" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EBD6A6"/>
+      <stop offset="0.55" stop-color="#C9A96B"/>
+      <stop offset="1" stop-color="#A88849"/>
+    </linearGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#C9A96B"/>
+      <stop offset="0.6" stop-color="#A5843F"/>
+      <stop offset="1" stop-color="#7E6230"/>
+    </linearGradient>`;
+const UPPER_WING = 'M53 12.6 L1 10.2 L14 14.9 L53 18.6 Z';
+const LOWER_WING = 'M53 21.4 L17 19.4 L27 23.6 L53 26.2 Z';
+const KEEL = 'M60 1 L60 39 L53.4 28.5 L53.4 11.5 Z';
+const EMBLEM_BODY = `
+    <path fill="url(#lit)" d="${UPPER_WING}"/>
+    <path fill="url(#shade)" d="${LOWER_WING}"/>
+    <path fill="url(#lit)" d="${KEEL}"/>
+    <g transform="matrix(-1 0 0 1 ${EMBLEM_VIEWBOX.w} 0)">
+      <path fill="url(#shade)" d="${UPPER_WING}"/>
+      <path fill="url(#shade)" d="${LOWER_WING}"/>
+      <path fill="url(#shade)" d="${KEEL}"/>
+    </g>`;
+
+writeFileSync(
+  `${OUT}/mark.svg`,
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${EMBLEM_VIEWBOX.w} ${EMBLEM_VIEWBOX.h}" role="img" aria-label="AEROBOOK">
+  <defs>${EMBLEM_DEFS}
+  </defs>${EMBLEM_BODY}
+</svg>
+`,
+);
+console.log('wrote mark.svg');
 
 // ------------------------------------------------------------------ icons
 /**
- * The home-screen icon is a sleek private jet, banking into a climb, rather
- * than a lettered wordmark — legible as an aircraft at every size down to a
- * phone home screen, which "Aerobook" hand-lettering was not. The silhouette
- * is a plain filled shape (Google's Material Symbols "flight" glyph, Apache
- * 2.0) on the same dark gradient tile and gold ink gradient the rest of the
- * brand uses, so it still reads as this app's icon among a row of others.
- */
-const PLANE_PATH =
-  'M21 16v-2l-8-5V3.5C13 2.67 12.33 2 11.5 2S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2.5 1.5V22l4-1 4 1v-1.5L13 19v-5.5l8 2.5z';
-const PLANE_VIEWBOX = 24;
-
-/**
- * `marginPct` is how much empty tile the plane leaves on every side —
+ * The home-screen icon is the emblem alone, gold on the brand navy — the
+ * wings read at every size down to a phone home screen, where the wordmark
+ * would not.
+ *
+ * `marginPct` is how much empty tile the emblem leaves either side —
  * maskable art needs more of it, since Android crops 20% off each edge
- * before applying its own mask, and a tight silhouette would lose its
- * wingtips to that crop.
+ * before applying its own mask, and the wingtips would be lost to that crop.
  */
-function iconSvg({ size, marginPct, weightPct, radiusPct }) {
+function iconSvg({ size, marginPct, radiusPct }) {
   const r = (radiusPct / 100) * size;
-  const scale = (size * (1 - (2 * marginPct) / 100)) / PLANE_VIEWBOX;
-  const inset = (size - PLANE_VIEWBOX * scale) / 2;
-  const strokeWidth = (weightPct / 100) * PLANE_VIEWBOX;
+  const scale = (size * (1 - (2 * marginPct) / 100)) / EMBLEM_VIEWBOX.w;
+  const x = (size - EMBLEM_VIEWBOX.w * scale) / 2;
+  // Optically centred: a hair above the true middle, as the keel's long
+  // lower point pulls the eye down.
+  const y = (size - EMBLEM_VIEWBOX.h * scale) / 2 - size * 0.01;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#151b23"/>
-      <stop offset="1" stop-color="#080b0f"/>
-    </linearGradient>
-    <linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${size}" y2="${size}">
-      <stop offset="0" stop-color="#ffc061"/>
-      <stop offset="1" stop-color="#e2952f"/>
-    </linearGradient>
+      <stop offset="0" stop-color="#113a5e"/>
+      <stop offset="1" stop-color="#0B2D4A"/>
+    </linearGradient>${EMBLEM_DEFS}
   </defs>
   <rect width="${size}" height="${size}" rx="${r}" fill="url(#bg)"/>
   <rect x="0.5" y="0.5" width="${size - 1}" height="${size - 1}" rx="${r}" fill="none"
         stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/>
-  <g transform="translate(${inset.toFixed(3)} ${inset.toFixed(3)}) scale(${scale.toFixed(6)})"
-     fill="url(#ink)" stroke="url(#ink)" stroke-width="${strokeWidth.toFixed(3)}"
-     stroke-linejoin="round" stroke-linecap="round">
-    <path d="${PLANE_PATH}"/>
+  <g transform="translate(${x.toFixed(3)} ${y.toFixed(3)}) scale(${scale.toFixed(6)})">${EMBLEM_BODY}
   </g>
 </svg>`;
 }
 
 const TARGETS = [
   // iOS applies its own mask, so the PNG it uses is drawn square.
-  { file: 'icon-180.png', size: 180, marginPct: 20, weightPct: 1.4, radiusPct: 0 },
-  { file: 'icon-192.png', size: 192, marginPct: 20, weightPct: 1.3, radiusPct: 22 },
-  { file: 'icon-512.png', size: 512, marginPct: 20, weightPct: 0.9, radiusPct: 22 },
+  { file: 'icon-180.png', size: 180, marginPct: 12, radiusPct: 0 },
+  { file: 'icon-192.png', size: 192, marginPct: 12, radiusPct: 22 },
+  { file: 'icon-512.png', size: 512, marginPct: 12, radiusPct: 22 },
   // Maskable art must survive a 20% crop on every side.
-  { file: 'icon-maskable-512.png', size: 512, marginPct: 32, weightPct: 0.9, radiusPct: 0 },
+  { file: 'icon-maskable-512.png', size: 512, marginPct: 24, radiusPct: 0 },
 ];
 
 for (const target of TARGETS) {
@@ -239,7 +233,7 @@ for (const target of TARGETS) {
   console.log('wrote', target.file);
 }
 
-writeFileSync(`${OUT}/icon.svg`, iconSvg({ size: 64, marginPct: 20, weightPct: 1.8, radiusPct: 22 }));
+writeFileSync(`${OUT}/icon.svg`, iconSvg({ size: 64, marginPct: 8, radiusPct: 22 }));
 console.log('wrote icon.svg');
 
 await browser.close();

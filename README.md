@@ -116,28 +116,31 @@ became `Lost` — which is how every query already treated it — and the ambigu
 
 ## Brand
 
-The mark and the footer signature are the owner's own hand, not a drawn
-imitation of it. `brand-source/signature.jpg` is traced twice: the whole
-signature, tight-cropped, for the quiet sign-off at the foot of the
-dashboard, and a close crop of just its capital "A" — peak, the long
-downstroke, the short one, the crossbar — for the app-bar and splash logo,
-since the full signature is illegible at those sizes. Both land as
-`currentColor` SVGs applied through a CSS mask, so one asset works in both
-themes and takes whatever colour surrounds it.
+| Colour | Hex | Use |
+| --- | --- | --- |
+| Navy | `#0B2D4A` | dark-mode surfaces, light-mode text, icon tile |
+| Slate | `#5B6770` | secondary text |
+| Gold | `#C9A96B` | the emblem, the one accent colour, the tagline |
+| Ivory | `#F7F7F5` | light-mode paper, dark-mode text |
 
-The home-screen icon set spells out "Aerobook": the same traced "A", scaled
-up and given a heavier stroke so it stays the dominant glyph, followed by
-"erobook" hand-lettered in the same forward-leaning pen — there is no
-"erobook" in the source signature to trace, so those letters are invented
-strokes built to match its lean and weight.
+Type is Montserrat (self-hosted via `@fontsource-variable/montserrat`, so it
+works offline). All of it lives as tokens in `src/styles/tokens.css`.
+
+The logo is a winged gold emblem beside a widely spaced "AEROBOOK"
+wordmark — side by side in the app bar and Settings, stacked with the
+tagline "Turnkey solutions for the sky" on the splash screen
+(`src/components/Brand.tsx`). The home-screen icons are the emblem alone on
+the navy tile. The footer sign-off is still the owner's own signature,
+traced from `brand-source/signature.jpg`.
 
 ```bash
-npm run brand      # regenerates public/brand/ from brand-source/signature.jpg
+npm run brand      # regenerates public/brand/: emblem, icons, signature
 ```
 
-Needs Chromium (for the canvas-based ink matting) and `potrace` (the actual
-tracing), neither of which the normal build touches — outputs are committed.
-Run it only when the source signature changes.
+The emblem is drawn from geometry in `scripts/build-brand.mjs`; edit it
+there, never the SVG. The script needs Chromium (icon rendering and the
+signature's ink matting) and `potrace` (the signature trace), neither of
+which the normal build touches — outputs are committed.
 
 ## Deployment
 

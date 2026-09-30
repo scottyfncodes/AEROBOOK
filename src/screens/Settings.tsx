@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { AppBar } from '../components/AppBar';
 import { IconDownload, IconMail, IconTools, IconUpload } from '../components/Icons';
 import { Banner, ConfirmButton, KeyValue, SelectField, TextField, useToast } from '../components/ui';
-import { Mark } from '../components/Brand';
+import { Lockup } from '../components/Brand';
 import { useDatabase } from '../data/useStore';
 import { eraseEverything, flush, replaceDatabase, updateSettings } from '../data/store';
 import {
@@ -182,10 +182,7 @@ export default function Settings() {
             onConfirm={() => { void eraseEverything().then(() => toast('Everything erased')); }}
           />
           <div className="card small muted stack stack--sm">
-            <div className="row" style={{ gap: 10, color: 'var(--accent)' }}>
-              <Mark size={24} />
-              <span className="strong" style={{ letterSpacing: '0.18em', fontSize: 13 }}>AEROBOOK</span>
-            </div>
+            <Lockup tagline />
             <div>A personal CRM for aircraft brokerage and aviation insurance.</div>
             <div>
               AEROBOOK does not send email. It prepares a message and hands it to your mail client; the activity it
