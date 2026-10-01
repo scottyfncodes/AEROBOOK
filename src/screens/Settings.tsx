@@ -8,6 +8,7 @@ import { Wordmark } from '../components/Brand';
 import { LocalDataBanner } from '../components/localData';
 import { NotificationSettings } from '../components/NotificationSettings';
 import { AccountSection, TeamSection } from '../components/team';
+import { CompanyExportSection } from '../components/CompanyExport';
 import { useCurrentUser } from '../data/session';
 import { useDatabase } from '../data/useStore';
 import { sendDigestNow } from '../data/auth';
@@ -155,6 +156,8 @@ export default function Settings() {
           </Link>
         </section>
 
+        {isAdmin ? <CompanyExportSection /> : null}
+
         <section className="stack stack--sm">
           <h2 className="section-title">Data / Import &amp; export</h2>
           <div className="card">
@@ -172,27 +175,30 @@ export default function Settings() {
             <IconUpload /> Import a CSV
           </Link>
 
-          <div className="btn-group">
-            <button className="btn" onClick={() => exportCsv('contacts', contactsCsv(db))}>
-              <IconDownload /> Export contacts
-            </button>
-            <button className="btn" onClick={() => exportCsv('aircraft', aircraftCsv(db))}>
-              <IconDownload /> Export aircraft
-            </button>
-            <button className="btn" onClick={() => exportCsv('opportunities', opportunitiesCsv(db))}>
-              <IconDownload /> Export opportunities
-            </button>
-            <button className="btn" onClick={() => exportCsv('insurance', policiesCsv(db))}>
-              <IconDownload /> Export insurance
-            </button>
-            <button className="btn btn--primary" onClick={() => void exportAll()}>
-              <IconDownload /> Export everything
-            </button>
-          </div>
+          {/* Taking the company's data out in bulk is for admins, like the full export above. */}
+          {isAdmin ? (
+            <div className="btn-group">
+              <button className="btn" onClick={() => exportCsv('contacts', contactsCsv(db))}>
+                <IconDownload /> Export contacts
+              </button>
+              <button className="btn" onClick={() => exportCsv('aircraft', aircraftCsv(db))}>
+                <IconDownload /> Export aircraft
+              </button>
+              <button className="btn" onClick={() => exportCsv('opportunities', opportunitiesCsv(db))}>
+                <IconDownload /> Export opportunities
+              </button>
+              <button className="btn" onClick={() => exportCsv('insurance', policiesCsv(db))}>
+                <IconDownload /> Export insurance
+              </button>
+              <button className="btn" onClick={() => void exportAll()}>
+                <IconDownload /> Export everything (JSON)
+              </button>
+            </div>
+          ) : null}
           <p className="xsmall muted">
-            CSV opens in any spreadsheet. The full export is JSON and carries every record and every link between
-            them. It lists attached documents but not the files themselves, which stay in AEROBOOK's private
-            document storage. Keep originals of anything that matters.
+            {isAdmin
+              ? 'CSV opens in any spreadsheet. The JSON export carries every record and every link between them, and can be restored below; it lists documents but not the files. For everything, documents included, use Export Company Data above.'
+              : 'Exporting the team’s data is for admins.'}
           </p>
 
           {isAdmin ? (

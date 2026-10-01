@@ -32,7 +32,8 @@ export type SecurityAction =
   | 'two-factor-sign-in-failed'
   | 'two-factor-backup-code-used'
   | 'two-factor-reset'
-  | 'user-deleted';
+  | 'user-deleted'
+  | 'company-export';
 
 const SUMMARY: Record<SecurityAction, string> = {
   'two-factor-setup-started': 'Started setting up two-step sign-in',
@@ -45,6 +46,7 @@ const SUMMARY: Record<SecurityAction, string> = {
   'two-factor-backup-code-used': 'Signed in with a backup code',
   'two-factor-reset': 'Reset two-step sign-in',
   'user-deleted': 'Deleted the account',
+  'company-export': 'Exported all company data: records, documents, comments, users and the audit log',
 };
 
 export interface SecurityEvent {
