@@ -77,9 +77,9 @@ export function NotificationSettings() {
               </button>
             ) : null}
             {state === 'on' ? (
-              <div className="btn-group">
-                <button className="btn btn--ghost" disabled={busy} onClick={() => void test()}>Send a test notification</button>
-                <button className="btn btn--ghost" disabled={busy} onClick={() => void disable()}>Turn off on this device</button>
+              <div className="stack stack--sm">
+                <button className="btn btn--ghost btn--block" disabled={busy} onClick={() => void test()}>Send a test notification</button>
+                <button className="btn btn--ghost btn--block" disabled={busy} onClick={() => void disable()}>Turn off on this device</button>
               </div>
             ) : null}
           </>
