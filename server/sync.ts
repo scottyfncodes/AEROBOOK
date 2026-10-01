@@ -13,6 +13,8 @@
 import type { PoolClient } from 'pg';
 import { ensureAppSchema, getPool } from './db.js';
 import type { SessionUser } from './auth.js';
+import { notify, type NotifyEvent } from './notify.js';
+import { taskLabel } from './tasks.js';
 
 /** Collections everyone on the account shares. */
 export const SHARED_COLLECTIONS = [
@@ -137,6 +139,7 @@ export async function push(user: SessionUser, changes: Change[]): Promise<PushRe
     const conflicts: RemoteRecord[] = [];
     const refused: RemoteRecord[] = [];
     const refuseDeletes = user.role !== 'admin' && await overDeleteLimit(client, user, changes);
+    const given: NotifyEvent[] = [];
 
     for (const change of changes) {
       const { rows } = await client.query<{ data: Record<string, unknown> | null; version: number }>(
@@ -156,15 +159,18 @@ export async function push(user: SessionUser, changes: Change[]): Promise<PushRe
       }
 
       const version = (current?.version ?? 0) + 1;
-      await client.query(
+      const written = await client.query<{ seq: string }>(
         `insert into app_record (collection, id, data, version, updated_by)
          values ($1, $2, $3, $4, $5)
          on conflict (collection, id) do update
            set data = excluded.data, version = excluded.version, updated_by = excluded.updated_by,
-               updated_at = now(), seq = nextval('app_record_seq')`,
+               updated_at = now(), seq = nextval('app_record_seq')
+         returning seq`,
         [change.collection, change.id, change.data, version, user.id],
       );
       applied.push({ collection: change.collection, id: change.id, version });
+      const task = givenTask(user, change, current?.data ?? null, Number(written.rows[0].seq));
+      if (task) given.push(task);
 
       // A stored document whose record went is not deleted here: it waits in
       // the trash, and the maintenance run removes it once it has been there
@@ -189,6 +195,8 @@ export async function push(user: SessionUser, changes: Change[]): Promise<PushRe
     }
 
     await client.query('commit');
+    // Told only once the work is saved. notify() logs its own failures.
+    for (const event of given) await notify(event);
     // No cursor comes back: this device has not seen what others wrote before
     // it, and its next pull will return its own writes at versions it holds.
     return refused.length
@@ -200,6 +208,31 @@ export async function push(user: SessionUser, changes: Change[]): Promise<PushRe
   } finally {
     client.release();
   }
+}
+
+/**
+ * A follow-up this write gave to someone else, still open: a new one made
+ * for them, or one passed to them from whoever (or no one) had it.
+ */
+function givenTask(
+  user: SessionUser,
+  change: Change,
+  before: Record<string, unknown> | null,
+  seq: number,
+): NotifyEvent | null {
+  const data = change.data;
+  if (change.collection !== 'followUps' || !data) return null;
+  const assignee = data.assigneeId;
+  if (typeof assignee !== 'string' || !assignee || assignee === user.id) return null;
+  if (data.completed === true || before?.assigneeId === assignee) return null;
+  return {
+    kind: 'task',
+    sourceId: seq,
+    followUpId: change.id,
+    assigneeId: assignee,
+    label: taskLabel(data.kind),
+    actor: { id: user.id, name: user.name },
+  };
 }
 
 /**

@@ -13,10 +13,11 @@ import type { SessionUser } from './auth.js';
 import { ensureAppSchema, getPool } from './db.js';
 import { HttpError } from './http.js';
 import { describePush, linkFor, recordPresence } from './notify.js';
+import { taskLabel } from './tasks.js';
 
 export interface InboxEvent {
   id: number;
-  kind: 'message' | 'comment';
+  kind: 'message' | 'comment' | 'task';
   thread: string;
   url: string;
   text: string;
@@ -80,19 +81,22 @@ export async function inbox(user: SessionUser, body: unknown): Promise<Inbox> {
 /** Notifications after a cursor, for threads the person can still open. */
 async function eventsSince(user: SessionUser, since: number): Promise<InboxEvent[]> {
   const { rows } = await getPool().query<{
-    id: string; kind: 'message' | 'comment'; thread: string; actor_id: string | null; actor_name: string | null;
-    created_at: Date; conv_kind: string | null; conv_name: string | null; tail: string | null;
+    id: string; kind: 'message' | 'comment' | 'task'; thread: string; actor_id: string | null; actor_name: string | null;
+    created_at: Date; conv_kind: string | null; conv_name: string | null; tail: string | null; task_kind: string | null;
   }>(
     `select n.id, n.kind, n.thread, n.actor_id, u.name as actor_name, n.created_at,
-            c.kind as conv_kind, c.name as conv_name, a.data->>'tailNumber' as tail
+            c.kind as conv_kind, c.name as conv_name, a.data->>'tailNumber' as tail, f.data->>'kind' as task_kind
        from app_notification n
        left join "user" u on u.id = n.actor_id
        left join app_conversation c on n.kind = 'message' and c.id = substr(n.thread, 6)
        left join app_conversation_member m on m.conversation_id = c.id and m.user_id = n.user_id
        left join app_record a on n.kind = 'comment' and a.collection = 'aircraft' and a.id = substr(n.thread, 10)
+       left join app_record f on n.kind = 'task' and f.collection = 'followUps' and f.id = substr(n.thread, 6)
       where n.user_id = $1 and n.id > $2
         and ((n.kind = 'message' and m.left_at is null and m.user_id is not null)
-          or (n.kind = 'comment' and a.data is not null))
+          or (n.kind = 'comment' and a.data is not null)
+          -- A task still theirs; one taken back or deleted meanwhile is not news.
+          or (n.kind = 'task' and f.data->>'assigneeId' = n.user_id))
       order by n.id
       limit $3`,
     [user.id, since, EVENT_PAGE],
@@ -108,6 +112,7 @@ async function eventsSince(user: SessionUser, since: number): Promise<InboxEvent
       unread: 1,
       groupName: r.conv_kind === 'group' ? r.conv_name || 'a group' : null,
       tail: r.tail ?? undefined,
+      label: taskLabel(r.task_kind),
     }).body,
     actorId: r.actor_id,
     createdAt: r.created_at.toISOString(),

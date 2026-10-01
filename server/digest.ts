@@ -9,6 +9,7 @@
  * nothing twice.
  */
 import { ensureAppSchema, getPool } from './db.js';
+import { taskText } from './tasks.js';
 
 /** The day starts at midnight here, not in UTC where the server runs. */
 export const DEFAULT_TIME_ZONE = 'America/Los_Angeles';
@@ -133,7 +134,7 @@ export async function buildDigests(
       const item: DigestItem = {
         id: String(data.id),
         dueDate: due,
-        note: String(data.note ?? '').trim(),
+        note: taskText(data.kind, String(data.note ?? '')),
         priority: typeof data.priority === 'string' ? data.priority : undefined,
         about: [
           contactName(contacts.get(String(data.contactId))),

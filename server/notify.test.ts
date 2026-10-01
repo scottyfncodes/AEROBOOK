@@ -32,12 +32,15 @@ describe('what a notification says', () => {
     expect(describePush({ kind: 'comment', actorName: 'Scott', unread: 2, tail: 'N123AB' }).body)
       .toBe('2 new comments on N123AB · latest from Scott');
     expect(describePush({ kind: 'message', actorName: 'Scott', unread: 1 }).title).toBe('AEROBOOK');
+    expect(describePush({ kind: 'task', actorName: 'Scott', unread: 1, label: 'Send quote' }).body)
+      .toBe('Scott assigned you a task: Send quote');
   });
 
   it('opens the conversation, or the aircraft at its comments', () => {
     expect(linkFor('conv:cv_abc')).toBe('/chat/cv_abc');
     expect(linkFor('aircraft:air_1')).toBe('/aircraft/air_1#comments');
     expect(linkFor('aircraft:a/b')).toBe('/aircraft/a%2Fb#comments');
+    expect(linkFor('task:fup_1')).toBe('/follow-ups');
     expect(topicFor('conv:cv_abc')).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(topicFor('conv:cv_abc')).not.toBe(topicFor('conv:cv_abd'));
   });
@@ -95,6 +98,56 @@ describe.skipIf(!TEST_DB)('notifications', () => {
   const aircraft = async (id: string, tailNumber: string) => {
     await api('/api/sync', { cookie: alice, body: { changes: [{ collection: 'aircraft', id, data: { id, tailNumber }, baseVersion: 0 }] } });
   };
+
+  describe('assigned tasks', () => {
+    const save = (cookie: string, data: Record<string, unknown>, baseVersion = 0) =>
+      api('/api/sync', { cookie, body: { changes: [{ collection: 'followUps', data, id: data.id, baseVersion }] } });
+    const task = (over: Record<string, unknown> = {}) => ({
+      id: 'fup_1', kind: 'quote', note: 'Hull and liability, $1M on N123AB', dueDate: '2026-10-02',
+      completed: false, contactId: null, aircraftId: null, opportunityId: null, ...over,
+    });
+
+    it('tells the person given a task, with what to do but not the note', async () => {
+      await subscribe(bob, endpoint('bob-phone'));
+      await save(alice, task({ assigneeId: bobId }));
+      expect(await notifications()).toEqual([{ user_id: bobId, kind: 'task', thread: 'task:fup_1', push_status: 'sent' }]);
+      expect(sent[0].payload).toEqual({
+        title: 'AEROBOOK', body: 'Alice assigned you a task: Send quote', url: '/follow-ups', tag: 'task:fup_1',
+      });
+      expect(JSON.stringify(sent[0])).not.toMatch(/Hull|1M|N123AB/);
+    });
+
+    it('says nothing for your own task, an unassigned one, a finished one, or an edit that keeps who has it', async () => {
+      await subscribe(bob, endpoint('bob-phone'));
+      await save(bob, task({ id: 'fup_mine', assigneeId: bobId }));
+      await save(alice, task({ id: 'fup_open', assigneeId: null }));
+      await save(alice, task({ id: 'fup_done', assigneeId: bobId, completed: true }));
+      expect(await notifications()).toEqual([]);
+
+      await save(alice, task({ assigneeId: bobId }));
+      await save(alice, task({ assigneeId: bobId, note: 'changed' }), 1);
+      expect((await notifications()).map((n) => n.user_id)).toEqual([bobId]);
+    });
+
+    it('tells the new person when a task is passed on, and never someone whose access is off', async () => {
+      await save(alice, task({ assigneeId: null }));
+      await save(alice, task({ assigneeId: carolId }), 1);
+      await getPool().query('update "user" set banned = true where id = $1', [daveId]);
+      await save(alice, task({ id: 'fup_2', assigneeId: daveId }));
+      expect((await notifications()).map((n) => n.user_id)).toEqual([carolId]);
+    });
+
+    it('pops up in the app while it is open, while the task is still theirs', async () => {
+      const since = (await body(await api('/api/inbox', { cookie: bob, body: {} }))).cursor;
+      await save(alice, task({ assigneeId: bobId }));
+      const { events } = await body(await api('/api/inbox', { cookie: bob, body: { since } }));
+      expect(events.map((e: { text: string; url: string }) => [e.text, e.url]))
+        .toEqual([['Alice assigned you a task: Send quote', '/follow-ups']]);
+
+      await save(alice, task({ assigneeId: carolId }), 1);
+      expect((await body(await api('/api/inbox', { cookie: bob, body: { since } }))).events).toEqual([]);
+    });
+  });
 
   describe('chat', () => {
     it('notifies the other person, not the sender, with a push that opens the conversation', async () => {

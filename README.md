@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 530 tests; the 196 API, sync and messaging tests also need:
+npm test             # 508 tests; the 200 API, sync and messaging tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -70,7 +70,6 @@ src/lib/          domain logic, all pure and tested
   email.ts        template rendering and mailto building
   insurance.ts    renewal state, countdowns and what needs attention
   search.ts       one index across contacts, aircraft and opportunities
-  aviation.ts     ISA atmosphere, wind triangle, weight and balance, premiums
   links.ts        external links, built from stable endpoints only
 src/data/         types, the store, cloud sync, the device cache
 src/components/   shared UI
@@ -177,9 +176,12 @@ mistaken or malicious edit or deletion can be put back.
 
 ## Follow-ups
 
-Every follow-up can be for someone: whoever creates one owns it unless they
-pick someone else under **For**, and **Edit** hands it to another person or
-back to nobody. Unassigned follow-ups — including everything recorded before
+Every follow-up says what to do — Follow up, Call, Send quote, Send contract
+or Other — with a note, and can be for someone: anyone on the team can give
+one to anyone else. Whoever creates one owns it unless they pick someone else
+under **Assign to**, and **Edit** hands it to another person or back to
+nobody. The person given one gets a notification ("Scott assigned you a task:
+Send quote") — never the note, which stays in the app. Unassigned follow-ups — including everything recorded before
 accounts — count as everyone's until someone takes one.
 
 The follow-up list has three views: **Mine** (your own and the unassigned),
@@ -284,8 +286,10 @@ whether their devices also get a push:
   A comment: everyone **watching** that aircraft — commenting starts watching
   (unless you have said otherwise), and anyone can Watch or stop watching an
   aircraft from its Comments section. So a comment reaches the people in that
-  aircraft's discussion, never the whole team. Never the author, and never
-  anyone whose access is off.
+  aircraft's discussion, never the whole team. A task: the person it was just
+  given to, unless they gave it to themselves; editing it without changing
+  who has it says nothing. Never the author, and never anyone whose access is
+  off.
 - **In the app.** While AEROBOOK is open it checks every few seconds
   (`POST /api/inbox`; quicker in an open conversation, slower when nobody has
   touched the screen for a while, and not at all in the background). Something
@@ -406,7 +410,7 @@ while the account is still empty, and sends everything it held.
   email is recorded as *prepared*, *opened in mail* or *copied*.
 - **It ships no aviation data.** Aircraft performance, airport details and
   registrations come from the authoritative source via a link, not from a copy
-  that can go stale. The calculators work on numbers the user types.
+  that can go stale.
 - **It never discards a CSV column.** Anything unrecognised is kept as custom
   data on the record.
 - **It never silently overwrites.** An import that would replace an existing

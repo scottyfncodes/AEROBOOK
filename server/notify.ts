@@ -1,7 +1,8 @@
 /**
- * The one notification layer, shared by chat and aircraft comments.
+ * The one notification layer, shared by chat, aircraft comments and tasks
+ * given to someone.
  *
- * Something happens (a message, a comment); notify() works out who should
+ * Something happens (a message, a comment, a task); notify() works out who should
  * hear about it, records one app_notification row for each of them — which
  * the in-app pop-up reads — and decides, person by person, whether their
  * devices should also get a push:
@@ -36,7 +37,9 @@ export interface Actor {
 
 export type NotifyEvent =
   | { kind: 'message'; sourceId: number; conversationId: string; actor: Actor }
-  | { kind: 'comment'; sourceId: number; aircraftId: string; tail: string; actor: Actor };
+  | { kind: 'comment'; sourceId: number; aircraftId: string; tail: string; actor: Actor }
+  /** A follow-up given to someone else; sourceId is the write that gave it (app_record.seq). */
+  | { kind: 'task'; sourceId: number; followUpId: string; assigneeId: string; label: string; actor: Actor };
 
 export type PushStatus = 'sent' | 'present' | 'grouped' | 'no-device' | 'off' | 'failed';
 
@@ -46,6 +49,7 @@ export interface NotifyResult {
 }
 
 export function threadOf(event: NotifyEvent): string {
+  if (event.kind === 'task') return `task:${event.followUpId}`;
   return event.kind === 'message' ? `conv:${event.conversationId}` : `aircraft:${event.aircraftId}`;
 }
 
@@ -53,6 +57,7 @@ export function threadOf(event: NotifyEvent): string {
 export function linkFor(thread: string): string {
   if (thread.startsWith('conv:')) return `/chat/${encodeURIComponent(thread.slice(5))}`;
   if (thread.startsWith('aircraft:')) return `/aircraft/${encodeURIComponent(thread.slice(9))}#comments`;
+  if (thread.startsWith('task:')) return '/follow-ups';
   return '/';
 }
 
@@ -68,17 +73,22 @@ function tidy(text: string, max: number): string {
 
 /**
  * The words on the lock screen. Who, and about what — never what was said:
- * messages and comments carry client, insurance and money details that do
- * not belong on a lock screen.
+ * messages, comments and a task's note carry client, insurance and money
+ * details that do not belong on a lock screen.
  */
 export function describePush(input: {
-  kind: 'message' | 'comment';
+  kind: 'message' | 'comment' | 'task';
   actorName: string;
   unread: number;
   groupName?: string | null;
   tail?: string;
+  /** For a task: what to do, "Send quote". */
+  label?: string;
 }): { title: string; body: string } {
   const who = tidy(input.actorName, 40) || 'someone';
+  if (input.kind === 'task') {
+    return { title: 'AEROBOOK', body: `${who} assigned you a task: ${tidy(input.label ?? '', 30) || 'Follow up'}` };
+  }
   const many = input.unread > 1;
   if (input.kind === 'comment') {
     const tail = tidy(input.tail ?? '', 20) || 'an aircraft';
@@ -96,6 +106,14 @@ export function describePush(input: {
 
 /** The people who should hear about this: never the author, never anyone whose access is off. */
 export async function recipients(event: NotifyEvent): Promise<string[]> {
+  if (event.kind === 'task') {
+    if (event.assigneeId === event.actor.id) return [];
+    const { rows } = await getPool().query<{ id: string }>(
+      'select id from "user" where id = $1 and not coalesce(banned, false)',
+      [event.assigneeId],
+    );
+    return rows.map((r) => r.id);
+  }
   const { rows } = event.kind === 'message'
     ? await getPool().query<{ user_id: string }>(
       `select m.user_id from app_conversation_member m join "user" u on u.id = m.user_id
@@ -114,6 +132,7 @@ export async function recipients(event: NotifyEvent): Promise<string[]> {
 
 /** How many of this thread's messages or comments someone has not read, not counting their own. */
 export async function unreadIn(userId: string, thread: string): Promise<number> {
+  if (thread.startsWith('task:')) return 1;
   if (thread.startsWith('conv:')) {
     const { rows } = await getPool().query<{ n: number }>(
       `select count(*)::int as n from app_message msg
@@ -134,6 +153,8 @@ export async function unreadIn(userId: string, thread: string): Promise<number> 
 }
 
 async function lastRead(userId: string, thread: string): Promise<number> {
+  // A task has nothing to read; each time it is given counts.
+  if (thread.startsWith('task:')) return 0;
   const { rows } = thread.startsWith('conv:')
     ? await getPool().query<{ n: string }>(
       'select last_read_message_id as n from app_conversation_member where user_id = $1 and conversation_id = $2',
@@ -220,6 +241,7 @@ async function payloadFor(userId: string, event: NotifyEvent, thread: string): P
     unread: Math.max(unread, 1),
     groupName,
     tail: event.kind === 'comment' ? event.tail : undefined,
+    label: event.kind === 'task' ? event.label : undefined,
   });
   return { ...words, url: linkFor(thread), tag: thread };
 }

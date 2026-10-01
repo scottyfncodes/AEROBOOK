@@ -187,7 +187,7 @@ create table if not exists app_presence (
 create table if not exists app_notification (
   id bigserial primary key,
   user_id text not null references "user" ("id") on delete cascade,
-  kind text not null check (kind in ('message', 'comment')),
+  kind text not null check (kind in ('message', 'comment', 'task')),
   thread text not null,
   source_id bigint not null,
   actor_id text,
@@ -196,6 +196,15 @@ create table if not exists app_notification (
   unique (user_id, kind, source_id)
 );
 create index if not exists app_notification_thread_idx on app_notification (user_id, thread, id desc);
+-- Assigned tasks came later; a database from before then is let take them.
+do $$ begin
+  if exists (select 1 from pg_constraint where conname = 'app_notification_kind_check'
+              and pg_get_constraintdef(oid) not like '%task%') then
+    alter table app_notification drop constraint app_notification_kind_check;
+    alter table app_notification add constraint app_notification_kind_check
+      check (kind in ('message', 'comment', 'task'));
+  end if;
+end $$;
 
 -- People an admin deleted. Their "user" row stays as an empty, permanently
 -- disabled shell — no sign-in, no email, no sessions — so their name stays

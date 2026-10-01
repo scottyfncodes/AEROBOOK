@@ -283,7 +283,7 @@ await shot('10b-aircraft-insurance');
 // A renewal task, straight off the aircraft.
 await page.getByRole('button', { name: 'Renewal task' }).click();
 await page.waitForSelector('.sheet');
-const renewalNote = await page.getByLabel(/Why/).inputValue();
+const renewalNote = await page.locator('.sheet').getByLabel('Note', { exact: true }).inputValue();
 log('renewal follow-up note:', renewalNote);
 if (!renewalNote.includes('N917JH') || !renewalNote.includes('Global Aerospace')) {
   errors.push(`renewal follow-up note read "${renewalNote}"`);
@@ -514,7 +514,6 @@ for (const [path, name] of [
   ['/contacts', '14-contacts'],
   ['/aircraft', '15-aircraft'],
   ['/opportunities', '16-opportunities'],
-  ['/tools', '17-tools'],
   ['/templates', '19-templates'],
   ['/settings', '20-settings'],
   ['/import/history', '21-import-history'],
@@ -544,10 +543,9 @@ await page.waitForURL(/\/settings$/);
 await page.waitForSelector('text=Data / Import');
 log('settings reached via tab');
 
-await page.getByRole('link', { name: 'Aviation & insurance calculators' }).click();
-await page.waitForURL(/\/tools$/);
-await page.waitForSelector('.filter-bar');
-log('tools reached via settings link');
+await page.getByRole('link', { name: /Email templates/ }).click();
+await page.waitForURL(/\/templates$/);
+log('templates reached via settings link');
 
 await page.getByRole('link', { name: 'AEROBOOK Home' }).click();
 await page.waitForURL(`${BASE}/`);
@@ -557,15 +555,8 @@ log('home tab returns to dashboard from a nested screen');
 await page.goto(`${BASE}/layover`, { waitUntil: 'networkidle' });
 if (!(await page.getByText('Not found').isVisible())) errors.push('/layover no longer 404s — dead route left behind');
 
-// tools: exercise a calculator
 await page.goto(`${BASE}/tools`, { waitUntil: 'networkidle' });
-await page.waitForSelector('.card');
-const windResult = await page.locator('.card').nth(1).innerText();
-log('wind tool:', windResult.replace(/\n/g, ' / '));
-await page.getByRole('button', { name: 'Density altitude' }).click();
-await page.waitForTimeout(200);
-log('DA tool:', (await page.locator('.card').nth(1).innerText()).replace(/\n/g, ' / '));
-await shot('23-tools-da');
+if (!(await page.getByText('Not found').isVisible())) errors.push('/tools still opens — the calculators were removed');
 
 // --------------------------------------------------------- 11. dead buttons
 await page.goto(BASE, { waitUntil: 'networkidle' });
@@ -694,19 +685,20 @@ await shot('13a-history');
 await page.goto(tailUrl, { waitUntil: 'networkidle' });
 
 // ---------------------------------------------- 13b. whose follow-up it is
-// The admin gives a follow-up to the teammate: it is on the teammate's list,
-// not the admin's, and the teammate can hand it back.
+// The admin gives the teammate a task to send a quote: it is on the
+// teammate's list, saying what to do, not on the admin's.
 const TASK = 'Call the owner back about the quote';
 await page.getByRole('button', { name: 'Follow up' }).click();
 await page.waitForSelector('.sheet');
+await page.locator('.sheet').getByRole('button', { name: 'Send quote' }).click();
 await page.locator('.sheet textarea').fill(TASK);
-await page.locator('.sheet').getByLabel('For', { exact: true }).selectOption({ label: TEAMMATE.name });
+await page.locator('.sheet').getByLabel('Assign to', { exact: true }).selectOption({ label: TEAMMATE.name });
 await page.getByRole('button', { name: 'Set follow-up' }).click();
 await page.waitForTimeout(800);
 
 await phone.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
-await phone.waitForSelector(`text=${TASK}`, { timeout: 5000 })
-  .then(() => log('the teammate has the follow-up given to them'))
+await phone.waitForSelector(`text=Send quote — ${TASK}`, { timeout: 5000 })
+  .then(() => log('the teammate has the task given to them, saying what to do'))
   .catch(() => errors.push('a follow-up given to the teammate is not on their list'));
 
 await page.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
@@ -721,7 +713,7 @@ await shot('13c-follow-ups-all');
 
 await phone.locator('.card', { hasText: TASK }).getByRole('button', { name: 'Edit' }).click();
 await phone.waitForSelector('.sheet');
-await phone.locator('.sheet').getByLabel('For', { exact: true }).selectOption({ label: ADMIN.name });
+await phone.locator('.sheet').getByLabel('Assign to', { exact: true }).selectOption({ label: ADMIN.name });
 await phone.getByRole('button', { name: 'Save' }).click();
 await phone.waitForTimeout(800);
 if (await phone.getByText(TASK).count()) errors.push('a follow-up handed back still shows on the teammate’s list');

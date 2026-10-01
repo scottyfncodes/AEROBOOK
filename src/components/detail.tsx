@@ -11,7 +11,7 @@ import {
 } from './Icons';
 import { Banner, Chip, EmptyState, SelectField, Sheet, TextArea, TextField, useToast } from './ui';
 import type {
-  Activity, ActivityType, DocumentCategory, FollowUp, FollowUpPriority, FileRecord,
+  Activity, ActivityType, DocumentCategory, FollowUp, FollowUpKind, FollowUpPriority, FileRecord,
 } from '../data/types';
 import { ACTIVITY_TYPES, DOCUMENT_CATEGORIES } from '../data/types';
 import {
@@ -19,6 +19,7 @@ import {
   updateActivity, updateFollowUp,
 } from '../data/store';
 import { addDays, dateKey, formatDate, relativeDue, todayKey } from '../lib/dates';
+import { TASK_KINDS, taskLabel, taskText } from '../lib/tasks';
 import { DOCUMENT_ACCEPT, documentType, DOCUMENT_TYPES_HINT } from '../lib/documents';
 import { useCurrentUser, useTeam } from '../data/session';
 import type { ExternalLink } from '../lib/links';
@@ -89,7 +90,7 @@ export function Timeline({
                     <span className="strong small">Follow-up due</span>
                     <span className="xsmall muted nowrap">{relativeDue(f.dueDate)}</span>
                   </div>
-                  <div className="small secondary">{f.note || 'Follow up'}</div>
+                  <div className="small secondary">{taskText(f)}</div>
                   {f.assigneeId !== me.id ? <div className="xsmall muted">For {nameOf(f.assigneeId)}</div> : null}
                 </div>
               </div>
@@ -260,6 +261,7 @@ export function FollowUpSheet({
   const me = useCurrentUser();
   const { people, nameOf } = useTeam();
   const [dueDate, setDueDate] = useState(existing?.dueDate ?? defaultDueDate ?? addDays(7));
+  const [kind, setKind] = useState<FollowUpKind>(existing?.kind ?? 'follow-up');
   const [note, setNote] = useState(existing?.note ?? defaultNote);
   const [priority, setPriority] = useState<FollowUpPriority>(existing?.priority ?? 'Normal');
   // A new follow-up is the person's own unless they give it to someone.
@@ -275,19 +277,19 @@ export function FollowUpSheet({
   ];
 
   const save = () => {
-    const fields = { dueDate, note: note.trim(), priority, assigneeId: assigneeId || null };
+    const fields = { dueDate, kind, note: note.trim(), priority, assigneeId: assigneeId || null };
     if (existing) {
       updateFollowUp(existing.id, { ...fields, completed: false, completedAt: undefined });
       toast(
         (existing.assigneeId ?? '') !== assigneeId
-          ? assigneeId ? `Follow-up given to ${nameOf(assigneeId)}` : 'Follow-up is now unassigned'
+          ? assigneeId ? `${taskLabel(kind)} given to ${nameOf(assigneeId)}` : 'Follow-up is now unassigned'
           : 'Follow-up updated',
       );
     } else {
       createFollowUp({ ...links, ...fields });
       toast(
         assigneeId && assigneeId !== me.id
-          ? `Follow-up for ${nameOf(assigneeId)}, ${formatDate(dueDate)}`
+          ? `${taskLabel(kind)} for ${nameOf(assigneeId)}, ${formatDate(dueDate)}`
           : `Follow-up set for ${formatDate(dueDate)}`,
       );
     }
@@ -306,6 +308,36 @@ export function FollowUpSheet({
       }
     >
       <div className="stack">
+        <div className="field">
+          <span className="field__label">What to do</span>
+          <div className="row row--wrap" style={{ gap: 6 }}>
+            {TASK_KINDS.map((k) => (
+              <button
+                key={k.value}
+                type="button"
+                className={`filter-chip${kind === k.value ? ' is-active' : ''}`}
+                onClick={() => setKind(k.value)}
+                aria-pressed={kind === k.value}
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <SelectField
+          label="Assign to"
+          value={assigneeId}
+          options={assigneeOptions}
+          onChange={setAssigneeId}
+          hint={assigneeId && assigneeId !== me.id ? 'They get a notification on their phone.' : undefined}
+        />
+        <TextArea
+          label="Note"
+          value={note}
+          onChange={setNote}
+          rows={3}
+          placeholder={kind === 'quote' ? 'Hull and liability, $1M smooth' : 'Check if the aircraft is still available'}
+        />
         <div className="filter-bar">
           {PRESETS.map((p) => (
             <button
@@ -318,14 +350,6 @@ export function FollowUpSheet({
           ))}
         </div>
         <TextField label="Due date" value={dueDate} onChange={setDueDate} type="date" hint={relativeDue(dueDate)} />
-        <TextArea
-          label="Why — what is this follow-up for?"
-          value={note}
-          onChange={setNote}
-          rows={3}
-          placeholder="Check if the aircraft is still available"
-        />
-        <SelectField label="For" value={assigneeId} options={assigneeOptions} onChange={setAssigneeId} />
         <div className="field">
           <span className="field__label">Priority</span>
           <div className="row" style={{ gap: 6 }}>
@@ -401,7 +425,7 @@ export function CompleteFollowUpSheet({
       }
     >
       <div className="stack">
-        <div className="card card--tight small secondary">{followUp.note || 'Follow up'}</div>
+        <div className="card card--tight small secondary">{taskText(followUp)}</div>
         <TextArea
           label="What happened?"
           value={outcome}
@@ -451,7 +475,7 @@ export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onE
       {open.map((f) => (
         <div className="card card--tight" key={f.id}>
           <div className="row row--between">
-            <span className="small strong truncate">{f.note || 'Follow up'}</span>
+            <span className="small strong truncate">{taskText(f)}</span>
             <Chip tone={relativeDue(f.dueDate).includes('overdue') ? 'danger' : 'info'}>{relativeDue(f.dueDate)}</Chip>
           </div>
           {f.assigneeId !== me.id ? <div className="xsmall muted" style={{ marginTop: 4 }}>For {nameOf(f.assigneeId)}</div> : null}

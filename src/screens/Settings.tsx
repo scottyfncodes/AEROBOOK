@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
-import { IconClock, IconDownload, IconMail, IconTools, IconUpload } from '../components/Icons';
+import { IconClock, IconDownload, IconMail, IconUpload } from '../components/Icons';
 import { Banner, ConfirmButton, KeyValue, SelectField, TextField, useToast } from '../components/ui';
 import { Wordmark } from '../components/Brand';
 import { LocalDataBanner } from '../components/localData';
@@ -152,13 +152,6 @@ export default function Settings() {
           <h2 className="section-title">Email</h2>
           <Link className="btn btn--block btn--ghost" to="/templates">
             <IconMail /> Email templates ({db.templates.length})
-          </Link>
-        </section>
-
-        <section className="stack stack--sm">
-          <h2 className="section-title">Tools</h2>
-          <Link className="btn btn--block btn--ghost" to="/tools">
-            <IconTools /> Aviation &amp; insurance calculators
           </Link>
         </section>
 

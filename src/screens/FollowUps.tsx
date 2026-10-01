@@ -20,6 +20,7 @@ import {
 } from '../lib/selectors';
 import { useCurrentUser, useTeam } from '../data/session';
 import { formatDate, relativeDue } from '../lib/dates';
+import { taskText } from '../lib/tasks';
 import type { FollowUp } from '../data/types';
 
 export default function FollowUps() {
@@ -80,7 +81,7 @@ export default function FollowUps() {
                     <Chip tone={tone}>{relativeDue(f.dueDate)}</Chip>
                   </div>
                 </div>
-                <div className="small secondary">{f.note || 'Follow up'}</div>
+                <div className="small secondary">{taskText(f)}</div>
                 <div className="xsmall muted">
                   {[
                     `Due ${formatDate(f.dueDate)}`,
@@ -183,7 +184,7 @@ export default function FollowUps() {
                   <div className="link-row" key={f.id}>
                     <div className="grow">
                       <div className="small truncate">{followUpSubject(db, f)}</div>
-                      <div className="xsmall muted truncate">{f.outcome || f.note}</div>
+                      <div className="xsmall muted truncate">{f.outcome || taskText(f)}</div>
                     </div>
                     <button
                       className="btn btn--sm btn--ghost"

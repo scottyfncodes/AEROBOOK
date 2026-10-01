@@ -21,7 +21,6 @@ import FollowUps from './screens/FollowUps';
 import Import from './screens/Import';
 import ImportHistory from './screens/ImportHistory';
 import SearchScreen from './screens/Search';
-import Tools from './screens/Tools';
 import Templates from './screens/Templates';
 import Settings from './screens/Settings';
 import NotFound from './screens/NotFound';
@@ -31,8 +30,8 @@ import Chat from './screens/Chat';
 import Conversation from './screens/Conversation';
 
 /**
- * Six tabs: five places records live, and Chat. Opportunities, Prospects, Templates,
- * Import and Tools are reachable from the screens they belong to (Home, an
+ * Six tabs: five places records live, and Chat. Opportunities, Prospects, Templates
+ * and Import are reachable from the screens they belong to (Home, an
  * aircraft, a contact, Settings) rather than taking a tab of their own.
  * Every tab always returns to that section's top rather than toggling.
  */
@@ -140,7 +139,6 @@ function Shell() {
             <Route path="/follow-ups" element={<FollowUps />} />
             <Route path="/import" element={<Import />} />
             <Route path="/import/history" element={<ImportHistory />} />
-            <Route path="/tools" element={<Tools />} />
             <Route path="/templates" element={<Templates />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/history" element={<History />} />
