@@ -520,6 +520,13 @@ them). Each is additive and safe to run twice, and the code already deployed
 ignores what it adds. `db/migrations/2026-10-admin-two-factor.sql` is the
 one for two-step sign-in.
 
+### Disaster recovery
+
+What is backed up, how to restore it, and how to test that a restore works:
+[docs/disaster-recovery.md](docs/disaster-recovery.md). Restoration tests
+are recorded in [docs/dr-tests/](docs/dr-tests/); `scripts/dr/verify.sql`
+and `npm run dr:smoke` are the checks they use.
+
 ### Preview deployments
 
 Every branch gets a preview deployment, running whatever code is on that
