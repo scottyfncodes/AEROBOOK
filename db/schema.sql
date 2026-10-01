@@ -197,3 +197,13 @@ create table if not exists app_notification (
 );
 create index if not exists app_notification_thread_idx on app_notification (user_id, thread, id desc);
 
+-- People an admin deleted. Their "user" row stays as an empty, permanently
+-- disabled shell — no sign-in, no email, no sessions — so their name stays
+-- on what they wrote; this records who it was and who deleted them.
+create table if not exists app_deleted_user (
+  user_id text primary key references "user" ("id"),
+  name text not null,
+  deleted_at timestamptz not null default now(),
+  deleted_by text not null
+);
+

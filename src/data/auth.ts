@@ -119,6 +119,8 @@ export interface Person {
   name: string;
   /** False when an admin has turned their access off. */
   active: boolean;
+  /** Deleted by an admin: their name ("Name (deleted)") stays on what they did. */
+  deleted?: boolean;
 }
 
 export async function listPeople(): Promise<Person[]> {
@@ -138,13 +140,16 @@ export async function sendDigestNow(): Promise<string> {
 // ------------------------------------------------------------ admin only
 
 export async function listTeam(): Promise<TeamMember[]> {
+  // Deleted people are kept as empty shells (so their name stays on their
+  // work); they are not on the team any more.
+  const deleted = new Set((await listPeople()).filter((p) => p.deleted).map((p) => p.id));
   const { users } = await call<{
     users: {
       id: string; name: string; email: string; role?: string; banned?: boolean | null;
       twoFactorEnabled?: boolean | null; createdAt: string;
     }[];
   }>('/api/auth/admin/list-users?limit=100&sortBy=createdAt');
-  return users.map((u) => ({
+  return users.filter((u) => !deleted.has(u.id)).map((u) => ({
     ...toUser(u), banned: Boolean(u.banned), twoFactor: Boolean(u.twoFactorEnabled), createdAt: u.createdAt,
   }));
 }
@@ -167,6 +172,11 @@ export async function setPassword(userId: string, newPassword: string) {
 export async function setAccess(userId: string, allowed: boolean) {
   if (allowed) await call('/api/auth/admin/unban-user', { userId });
   else await call('/api/auth/admin/ban-user', { userId });
+}
+
+/** Deletes someone for good; what they recorded stays, under their name marked deleted. */
+export async function deleteMember(userId: string) {
+  await call('/api/team/delete', { userId });
 }
 
 /** For someone who lost their phone and backup codes: turns two-step sign-in off and signs them out. */

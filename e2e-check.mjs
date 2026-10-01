@@ -916,6 +916,32 @@ const signedOutHistory = await phone.request.get(`${BASE}/api/history`);
 if (signedOutHistory.status() !== 401) errors.push(`history API answered ${signedOutHistory.status()} when signed out`);
 await other.close();
 
+// ------------------------------------------------- 13e. deleting someone
+// The admin deletes the teammate for good: they leave the team list, and
+// what they wrote stays, under their name marked deleted.
+await page.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: `Manage ${TEAMMATE.name}` }).click();
+await page.getByRole('button', { name: `Delete ${TEAMMATE.name}…` }).click();
+const deleteButton = page.getByRole('button', { name: 'Delete for good' });
+if (!(await deleteButton.isDisabled())) errors.push('deleting did not wait for the name to be typed');
+await page.getByLabel(`Type “${TEAMMATE.name}” to confirm`).fill(TEAMMATE.name);
+await checkOverflow('delete person');
+await shot('19-delete-person');
+await deleteButton.click();
+await page.waitForSelector(`text=${TEAMMATE.name} was deleted`, { timeout: 10000 })
+  .then(() => log('the admin deleted the teammate'))
+  .catch(() => errors.push('deleting the teammate did not confirm'));
+await page.waitForTimeout(500);
+if (await page.getByRole('button', { name: `Manage ${TEAMMATE.name}` }).count()) errors.push('the deleted teammate is still in the team list');
+await page.goto(conversationUrl, { waitUntil: 'networkidle' });
+await page.waitForSelector(`.appbar__title:has-text("${TEAMMATE.name} (deleted)")`, { timeout: 10000 })
+  .then(() => log('their conversation stays, under their name marked deleted'))
+  .catch(() => errors.push('the conversation with the deleted teammate lost their name'));
+const deletedSignIn = await (await browser.newContext()).request.post(`${BASE}/api/auth/sign-in/email`, {
+  data: { email: TEAMMATE.email, password: TEAMMATE.password }, headers: { origin: BASE },
+});
+if (deletedSignIn.ok()) errors.push('a deleted teammate could still sign in');
+
 // ------------------------------------------------------ two-step sign-in
 // The admin turns on two-step sign-in with an authenticator app (this test
 // plays the app, from the key shown for typing in), then signs out and back

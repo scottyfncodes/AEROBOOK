@@ -43,7 +43,7 @@ export const DELETE_LIMIT_MESSAGE =
 
 const PULL_PAGE = 5000;
 /** Any number will do, as long as every push takes the same one. */
-const WRITE_LOCK = 4_217_001;
+export const WRITE_LOCK = 4_217_001;
 
 export interface RemoteRecord {
   collection: Collection;
