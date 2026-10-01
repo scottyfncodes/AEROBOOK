@@ -52,3 +52,16 @@ export function servedType(recorded: string | null | undefined): string {
   const t = (recorded ?? '').split(';')[0].trim().toLowerCase();
   return ALLOWED_DOCUMENT_TYPES.includes(t) ? t : 'application/octet-stream';
 }
+
+/**
+ * A new name for a stored document, or null when there is nothing usable.
+ * The original extension stays on, so the download still opens in the right
+ * app: the stored type does not change with the name.
+ */
+export function renamedDocument(original: string, input: string): string | null {
+  let name = input.replace(/[\u0000-\u001f\u007f/\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  const ext = /\.([a-z0-9]+)$/i.exec(original)?.[0] ?? '';
+  if (ext && name.toLowerCase().endsWith(ext.toLowerCase())) name = name.slice(0, -ext.length).trim();
+  if (!name) return null;
+  return `${name.slice(0, 200 - ext.length)}${ext}`;
+}
