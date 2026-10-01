@@ -4,6 +4,7 @@
  */
 import type { CloudUser } from './cloud';
 import type { HistoryEntry } from '../lib/history';
+import { toRole, type Role } from '../lib/roles';
 
 export interface TeamMember extends CloudUser {
   banned: boolean;
@@ -33,7 +34,7 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 }
 
 function toUser(u: { id: string; name: string; email: string; role?: string | null }): CloudUser {
-  return { id: u.id, name: u.name, email: u.email, role: u.role === 'admin' ? 'admin' : 'user' };
+  return { id: u.id, name: u.name, email: u.email, role: toRole(u.role) };
 }
 
 /** Who is signed in on this device, or null. Throws only when the server cannot be reached. */
@@ -161,11 +162,11 @@ export async function listTeam(): Promise<TeamMember[]> {
   }));
 }
 
-export async function addMember(input: { name: string; email: string; password: string; role: 'admin' | 'user' }) {
+export async function addMember(input: { name: string; email: string; password: string; role: Role }) {
   await call('/api/auth/admin/create-user', { ...input, email: input.email.trim().toLowerCase() });
 }
 
-export async function setRole(userId: string, role: 'admin' | 'user') {
+export async function setRole(userId: string, role: Role) {
   await call('/api/auth/admin/set-role', { userId, role });
 }
 

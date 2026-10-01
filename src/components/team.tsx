@@ -13,11 +13,18 @@ import * as auth from '../data/auth';
 import type { TeamMember } from '../data/auth';
 import { useCurrentUser, useSession, useTeam } from '../data/session';
 import { PROFILE_COLORS } from '../lib/colors';
+import { isAdmin, isDeveloper, ROLE_LABEL, withArticle, type Role } from '../lib/roles';
 
+/** Only a developer gives out the admin and developer roles. */
 const ROLE_OPTIONS = [
   { value: 'user', label: 'User — works with all the data' },
   { value: 'admin', label: 'Admin — also manages accounts' },
+  { value: 'developer', label: 'Developer — also decides who is an admin' },
 ];
+
+function RoleChip({ role }: { role: Role }) {
+  return <Chip tone={role === 'user' ? undefined : 'accent'}>{ROLE_LABEL[role]}</Chip>;
+}
 
 export function AccountSection() {
   const user = useCurrentUser();
@@ -33,7 +40,7 @@ export function AccountSection() {
             <div className="strong">{user.name}</div>
             <div className="small muted">{user.email}</div>
           </div>
-          <Chip tone={user.role === 'admin' ? 'accent' : undefined}>{user.role === 'admin' ? 'Admin' : 'User'}</Chip>
+          <RoleChip role={user.role} />
         </div>
       </div>
       <div className="btn-group">
@@ -143,7 +150,7 @@ function TwoFactorCard() {
       ) : (
         <>
           <p className="small muted">
-            {user.role === 'admin'
+            {isAdmin(user)
               ? 'Admins can manage everyone’s accounts, so a password alone is a lot to rest on. '
               : 'Your account holds client, aircraft and insurance details. '}
             Turn this on to also need a code from an authenticator app on your phone (Google Authenticator, Microsoft
@@ -425,7 +432,7 @@ export function TeamSection() {
             </span>
             {m.banned ? <Chip tone="danger">No access</Chip> : null}
             {m.twoFactor ? <Chip tone="success">Two-step</Chip> : null}
-            <Chip tone={m.role === 'admin' ? 'accent' : undefined}>{m.role === 'admin' ? 'Admin' : 'User'}</Chip>
+            <RoleChip role={m.role} />
           </button>
         ))}
       </div>
@@ -442,7 +449,8 @@ function AddMemberSheet({ onClose, onAdded }: { onClose: () => void; onAdded: ()
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin' | 'user'>('user');
+  const me = useCurrentUser();
+  const [role, setRole] = useState<Role>('user');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -486,7 +494,11 @@ function AddMemberSheet({ onClose, onAdded }: { onClose: () => void; onAdded: ()
           verbatim
           hint="No email is sent: give them this password yourself. They can change it under Settings."
         />
-        <SelectField label="Role" value={role} options={ROLE_OPTIONS} onChange={(v) => setRole(v as 'admin' | 'user')} />
+        {isDeveloper(me) ? (
+          <SelectField label="Role" value={role} options={ROLE_OPTIONS} onChange={(v) => setRole(v as Role)} />
+        ) : (
+          <p className="xsmall muted">They join as a user. Only a developer can make someone an admin.</p>
+        )}
         {error ? <Banner tone="danger">{error}</Banner> : null}
       </div>
     </Sheet>
@@ -501,11 +513,15 @@ function MemberSheet({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const me = useCurrentUser();
   const toast = useToast();
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Only a developer changes who is an admin, or touches a developer's account.
+  const canSetRole = isDeveloper(me);
+  const canManage = isDeveloper(me) || member.role !== 'developer';
 
   const run = async (job: () => Promise<void>, done: string) => {
     setBusy(true);
@@ -540,15 +556,21 @@ function MemberSheet({
       <div className="stack">
         <div className="small muted">{member.email}</div>
         {isMe ? (
-          <Banner tone="info">This is you. Another admin can change your role or access, so nobody locks themselves out.</Banner>
+          <Banner tone="info">This is you. Someone else changes your role or access, so nobody locks themselves out.</Banner>
+        ) : !canManage ? (
+          <Banner tone="info">{member.name} is a developer. Only a developer can manage their account.</Banner>
         ) : (
           <>
-            <SelectField
-              label="Role"
-              value={member.role}
-              options={ROLE_OPTIONS}
-              onChange={(v) => void run(() => auth.setRole(member.id, v as 'admin' | 'user'), `${member.name} is now ${v === 'admin' ? 'an admin' : 'a user'}`)}
-            />
+            {canSetRole ? (
+              <SelectField
+                label="Role"
+                value={member.role}
+                options={ROLE_OPTIONS}
+                onChange={(v) => void run(() => auth.setRole(member.id, v as Role), `${member.name} is now ${withArticle(v as Role)}`)}
+              />
+            ) : (
+              <p className="xsmall muted">{member.name} is {withArticle(member.role)}. Only a developer can change who is an admin.</p>
+            )}
             <TextField
               label="Set a new password"
               value={password}

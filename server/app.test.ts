@@ -82,7 +82,7 @@ describe.skipIf(!TEST_DB)('the API', () => {
       expect(r.status).toBe(409);
     });
 
-    it('creates the first admin only with the token', async () => {
+    it('creates the first account, a developer, only with the token', async () => {
       process.env.SETUP_TOKEN = 'setup-token-for-tests';
       await getPool().query('delete from "session"; delete from "account"; delete from "user";');
       const body = { name: 'Scott', email: 'Scott@Example.com', password: 'correct horse battery' };
@@ -90,7 +90,7 @@ describe.skipIf(!TEST_DB)('the API', () => {
       expect((await api('/api/setup', { body: { ...body, token: 'setup-token-for-tests' } })).ok).toBe(true);
       const cookie = await signIn('scott@example.com');
       const session = await (await api('/api/auth/get-session', { cookie })).json();
-      expect(session.user.role).toBe('admin');
+      expect(session.user.role).toBe('developer');
     });
 
     it('creates the tables on a brand-new database', async () => {
