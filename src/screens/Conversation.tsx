@@ -234,7 +234,10 @@ export default function Conversation() {
               const showName = isGroup && !mine && prev?.senderId !== m.senderId;
               const gap = !prev || Date.parse(m.createdAt) - Date.parse(prev.createdAt) > 10 * 60_000;
               return (
-                <div key={m.id} className={`bubble-row${mine ? ' bubble-row--mine' : ''}`}>
+                <div
+                  key={m.id}
+                  className={`bubble-row${mine ? ' bubble-row--mine' : ''}${prev && !gap && prev.senderId !== m.senderId ? ' bubble-row--turn' : ''}`}
+                >
                   {gap ? <div className="chat__time">{chatTime(m.createdAt)}</div> : null}
                   {showName ? <div className="bubble__name">{m.senderName}</div> : null}
                   <div className={`bubble${mine ? ' bubble--mine' : ''}`} title={new Date(m.createdAt).toLocaleString()}>
@@ -243,8 +246,11 @@ export default function Conversation() {
                 </div>
               );
             })}
-            {pending.map((p) => (
-              <div key={p.clientId} className="bubble-row bubble-row--mine">
+            {pending.map((p, i) => (
+              <div
+                key={p.clientId}
+                className={`bubble-row bubble-row--mine${i === 0 && messages.length && messages[messages.length - 1].senderId !== me.id ? ' bubble-row--turn' : ''}`}
+              >
                 <div className={`bubble bubble--mine bubble--pending${p.failed ? ' bubble--failed' : ''}`}>{p.body}</div>
                 <div className="bubble__status">
                   {p.failed ? (
