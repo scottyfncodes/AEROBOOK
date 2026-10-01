@@ -623,7 +623,7 @@ phone.on('requestfailed', (r) => {
   if (r.url().startsWith(BASE)) errors.push(`teammate requestfailed: ${r.method()} ${r.url()} ${r.failure()?.errorText}`);
 });
 await phone.goto(BASE, { waitUntil: 'networkidle' });
-await phone.waitForSelector('text=Sign in');
+await phone.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
 await phone.getByLabel('Email').fill(TEAMMATE.email);
 await phone.getByLabel('Password').fill('not the password');
 expectingRejection = true;
@@ -747,7 +747,7 @@ else log('the teammate opened the document the admin attached');
 
 await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
 await phone.getByRole('button', { name: 'Sign out' }).click();
-await phone.waitForSelector('text=Sign in');
+await phone.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
 await phone.getByLabel('Email').fill(TEAMMATE.email);
 await phone.getByLabel('Password').fill(TEAMMATE.password);
 await phone.getByRole('button', { name: 'Sign in' }).click();
@@ -918,7 +918,7 @@ expectingNoEmail = false;
 await phone.locator('section', { hasText: 'Daily email' }).first().screenshot({ path: `${SHOTS}/settings-daily-email.png` });
 
 await phone.getByRole('button', { name: 'Sign out' }).click();
-await phone.waitForSelector('text=Sign in');
+await phone.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
 await phone.goto(`${BASE}/aircraft`, { waitUntil: 'networkidle' });
 if (!(await phone.getByRole('button', { name: 'Sign in' }).isVisible())) errors.push('data still showing after sign-out');
 await phone.goto(`${BASE}/history`, { waitUntil: 'networkidle' });

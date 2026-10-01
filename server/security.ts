@@ -1,15 +1,14 @@
 /**
- * Two-step sign-in for admins, and the record of what happened to it.
+ * Two-step sign-in, for anyone who wants it, and the record of what happened
+ * to it.
  *
  * Better Auth's two-factor plugin does the work: an authenticator-app code
  * (TOTP) after the password, with single-use backup codes, its secret and
  * codes stored encrypted with BETTER_AUTH_SECRET. What AEROBOOK adds here:
  *
- * - only an admin may turn it on (someone who had it on as an admin keeps it
- *   if they stop being one: nothing loosens by itself);
  * - "trust this device" is refused, so a correct password is never enough on
  *   its own once it is on;
- * - turning it on signs the admin out everywhere else, so a session made with
+ * - turning it on signs that person out everywhere else, so a session made with
  *   the password alone does not outlive it;
  * - another admin can reset it for someone who lost their phone, which also
  *   signs that person out everywhere;
@@ -103,12 +102,6 @@ export const twoFactorBefore = createAuthMiddleware(async (ctx) => {
   if (path === '/two-factor/get-totp-uri') throw APIError.fromStatus('NOT_FOUND');
 
   if (path === '/two-factor/enable') {
-    const session = await getSessionFromCtx(ctx).catch(() => null);
-    // Signed out: the plugin answers that itself.
-    const role = (session?.user as { role?: string | null } | undefined)?.role;
-    if (session && role !== 'admin') {
-      throw APIError.fromStatus('FORBIDDEN', { message: 'Two-step sign-in is for admin accounts.' });
-    }
     if ((ctx.body as { method?: string } | undefined)?.method === 'otp') {
       throw APIError.fromStatus('BAD_REQUEST', { message: 'Use an authenticator app.' });
     }

@@ -45,10 +45,7 @@ export function AccountSection() {
   );
 }
 
-/**
- * Two-step sign-in: for admins, a code from an authenticator app after the
- * password. Shown to admins, and to anyone who still has it on from being one.
- */
+/** Two-step sign-in, for anyone: a code from an authenticator app after the password. */
 function TwoFactorCard() {
   const user = useCurrentUser();
   const [on, setOn] = useState<boolean | null>(null);
@@ -59,7 +56,7 @@ function TwoFactorCard() {
   }, []);
   useEffect(load, [load]);
 
-  if (on === null || (!on && user.role !== 'admin')) return null;
+  if (on === null) return null;
   const close = () => { setSheet(null); load(); };
 
   return (
@@ -82,9 +79,11 @@ function TwoFactorCard() {
       ) : (
         <>
           <p className="small muted">
-            Admins can manage everyone’s accounts, so a password alone is a lot to rest on. Turn this on to also need a
-            code from an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, 1Password and the
-            like) each time you sign in.
+            {user.role === 'admin'
+              ? 'Admins can manage everyone’s accounts, so a password alone is a lot to rest on. '
+              : 'Your account holds client, aircraft and insurance details. '}
+            Turn this on to also need a code from an authenticator app on your phone (Google Authenticator, Microsoft
+            Authenticator, 1Password and the like) each time you sign in.
           </p>
           <button className="btn btn--primary" onClick={() => setSheet('setup')}>Turn on two-step sign-in</button>
         </>

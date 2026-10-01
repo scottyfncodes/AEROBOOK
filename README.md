@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 512 tests; the 200 API, sync and messaging tests also need:
+npm test             # 515 tests; the 203 API, sync and messaging tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -110,14 +110,14 @@ refuse to give it access, a password or a role again. Only an admin with
 access can delete, never themselves, so an admin always remains. The
 deletion is written to the admin audit log, not the team's history.
 
-### Two-step sign-in (admins)
+### Two-step sign-in
 
-An admin can turn on **two-step sign-in** under **Settings → Account**: after
+Anyone can turn on **two-step sign-in** under **Settings → Account**: after
 the password, signing in also needs the six-digit code from an authenticator
 app (Google Authenticator, Microsoft Authenticator, 1Password and the like).
 Setup asks for the password, shows a QR code (and the key to type in by
 hand), shows ten single-use backup codes once, and only turns on when a code
-from the app has been entered. Turning it on signs that admin out on every
+from the app has been entered. Turning it on signs that person out on every
 other device, so a session made with the password alone does not outlive it.
 
 - Signing in: the right password gives no session, only a ten-minute
@@ -126,8 +126,9 @@ other device, so a session made with the password alone does not outlive it.
   minutes, and the endpoints are rate-limited. "Trust this device" is refused:
   every sign-in needs the code. A wrong password is answered the same whoever
   the account belongs to, so it does not show who has it on.
-- Only admins can turn it on. Someone who had it on as an admin keeps it if
-  they stop being one. Ordinary users sign in as before.
+- Anyone can turn it on for their own account; nobody can turn it on for
+  someone else. People who leave it off sign in as before. It gives no extra
+  access: account management stays with admins.
 - New backup codes and turning it off each need the password.
 - Lost phone and backup codes: another admin opens that person under
   **Settings → Team → Reset two-step sign-in**. It turns it off, signs them out
