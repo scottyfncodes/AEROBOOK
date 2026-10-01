@@ -1,7 +1,8 @@
 /**
- * Accounts: your own, and — for an admin — everyone else's. Removing someone
- * turns their access off rather than deleting them, so their name stays on
- * everything they recorded and access can be given back.
+ * Accounts: your own, and — for an admin — everyone else's. Turning someone's
+ * access off is the everyday, reversible way to remove them. Deleting them is
+ * for good: their account goes, and their name stays on everything they
+ * recorded, marked deleted.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { renderSVG } from 'uqr';
@@ -440,6 +441,7 @@ function MemberSheet({
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const run = async (job: () => Promise<void>, done: string) => {
     setBusy(true);
@@ -454,6 +456,20 @@ function MemberSheet({
       setBusy(false);
     }
   };
+
+  if (deleting) {
+    return (
+      <DeleteMemberSheet
+        member={member}
+        onClose={() => setDeleting(false)}
+        onDeleted={() => {
+          toast(`${member.name} was deleted`);
+          onChanged();
+          onClose();
+        }}
+      />
+    );
+  }
 
   return (
     <Sheet title={member.name} onClose={onClose}>
@@ -510,8 +526,67 @@ function MemberSheet({
                 </p>
               </>
             ) : null}
+            <button className="btn btn--danger btn--block" disabled={busy} onClick={() => setDeleting(true)}>
+              Delete {member.name}…
+            </button>
           </>
         )}
+        {error ? <Banner tone="danger">{error}</Banner> : null}
+      </div>
+    </Sheet>
+  );
+}
+
+/** Deleting is for good, so it asks for the person's name first. */
+function DeleteMemberSheet({ member, onClose, onDeleted }: {
+  member: TeamMember;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const matches = typed.trim().toLowerCase() === member.name.trim().toLowerCase();
+
+  const remove = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await auth.deleteMember(member.id);
+      onDeleted();
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet
+      title={`Delete ${member.name}`}
+      onClose={onClose}
+      footer={(
+        <>
+          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn--danger" disabled={busy || !matches} onClick={() => void remove()}>
+            {busy ? 'Deleting…' : 'Delete for good'}
+          </button>
+        </>
+      )}
+    >
+      <div className="stack">
+        <Banner tone="warn">This cannot be undone. To stop someone signing in for now, turn off their access instead.</Banner>
+        <div className="small stack stack--sm">
+          <div>
+            <span className="strong">Goes:</span> their sign-in and password, their email address on this account (free to
+            use for someone new), their notifications and devices, the aircraft they watch, and their place in group chats.
+            Follow-ups for them go back to everyone.
+          </div>
+          <div>
+            <span className="strong">Stays:</span> everything they recorded — contacts, aircraft, notes, documents, messages
+            and comments — shown as “{member.name} (deleted)”.
+          </div>
+        </div>
+        <TextField label={`Type “${member.name}” to confirm`} value={typed} onChange={setTyped} autoComplete="off" />
         {error ? <Banner tone="danger">{error}</Banner> : null}
       </div>
     </Sheet>

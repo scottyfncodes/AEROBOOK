@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 484 tests; the 157 API, sync and messaging tests also need:
+npm test             # 530 tests; the 196 API, sync and messaging tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -98,6 +98,18 @@ an admin, or turns their access off. Turning access off keeps their name on
 everything they recorded. Someone whose access is off is told *"Invalid email
 or password"* whatever they type, exactly as for a wrong password, so a
 guessed password is never confirmed. Sign-in attempts are rate-limited.
+
+An admin can also **delete** someone, under Settings → Team → Delete. It
+cannot be undone, and asks for their name first. The account is emptied —
+sign-in, password, two-step sign-in, sessions, push subscriptions, watched
+aircraft, read markers, personal settings and group memberships go, and the
+email address is free for a new account — while everything they recorded
+stays, shown as "Name (deleted)". Follow-ups for them go back to everyone.
+Their "user" row is kept as a disabled shell (listed in `app_deleted_user`)
+because messages, comments and history point at it, and the admin routes
+refuse to give it access, a password or a role again. Only an admin with
+access can delete, never themselves, so an admin always remains. The
+deletion is written to the admin audit log, not the team's history.
 
 ### Two-step sign-in (admins)
 

@@ -14,6 +14,7 @@ import { servedType } from '../src/lib/documents.js';
 import { checkWrite, error, HttpError, json, readJson } from './http.js';
 import { isMessagingPath, messaging } from './messaging.js';
 import { pruneNotifications } from './notify.js';
+import { deletedIds, deleteUser, isDeleted } from './people.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
 
 /**
@@ -70,10 +71,35 @@ async function setup(request: Request): Promise<Response> {
  * included, marked, so their name still shows on work they were given.
  */
 async function team(): Promise<Response> {
-  const { rows } = await getPool().query<{ id: string; name: string; banned: boolean | null }>(
-    'select id, name, banned from "user" order by name',
-  );
-  return json({ people: rows.map((r) => ({ id: r.id, name: r.name, active: !r.banned })) });
+  const [{ rows }, deleted] = await Promise.all([
+    getPool().query<{ id: string; name: string; banned: boolean | null }>('select id, name, banned from "user" order by name'),
+    deletedIds(),
+  ]);
+  return json({
+    people: rows.map((r) => ({ id: r.id, name: r.name, active: !r.banned, ...(deleted.has(r.id) ? { deleted: true } : {}) })),
+  });
+}
+
+/** An admin deletes someone for good, keeping their name on what they did. See people.ts. */
+async function deleteUserRoute(request: Request): Promise<Response> {
+  if (request.method !== 'POST') return error(405, 'Method not allowed');
+  const refused = checkWrite(request);
+  if (refused) return refused;
+  const user = await sessionUser(request);
+  if (!user) return error(401, 'Sign in first');
+  if (user.role !== 'admin') return error(403, 'Only an admin can do that');
+  return json(await deleteUser(user, await readJson(request)));
+}
+
+/**
+ * Better Auth's admin routes would happily give a deleted account its access,
+ * a password or a role back. A deleted account stays deleted.
+ */
+async function refuseDeletedTarget(request: Request, pathname: string): Promise<Response | null> {
+  if (request.method !== 'POST' || !pathname.startsWith('/api/auth/admin/')) return null;
+  const body = (await request.clone().json().catch(() => null)) as { userId?: unknown } | null;
+  if (typeof body?.userId !== 'string' || !body.userId) return null;
+  return (await isDeleted(body.userId)) ? error(409, 'That person was deleted') : null;
 }
 
 /**
@@ -246,6 +272,8 @@ async function resetTwoFactorRoute(request: Request): Promise<Response> {
  * The reply is made the same as for a wrong password.
  */
 async function authRoute(request: Request, pathname: string): Promise<Response> {
+  const deleted = await refuseDeletedTarget(request, pathname);
+  if (deleted) return deleted;
   const response = await getAuth().handler(request);
   const signIn = pathname === '/api/auth/sign-in/email';
   // Access turned off between the password and the two-step code.
@@ -300,6 +328,7 @@ export async function handle(request: Request): Promise<Response> {
       return await team();
     }
     if (pathname === '/api/team/reset-two-factor') return await resetTwoFactorRoute(request);
+    if (pathname === '/api/team/delete') return await deleteUserRoute(request);
     if (isMessagingPath(pathname)) {
       const user = await sessionUser(request);
       if (!user) return error(401, 'Sign in first');
