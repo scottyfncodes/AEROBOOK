@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import { mkdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 
 /**
@@ -801,6 +802,35 @@ else {
   else if (readFileSync(await got.path(), 'utf8') !== DOC.buffer.toString()) errors.push('the renamed document lost its contents');
   else log('a renamed document downloads under its new name, same contents');
 }
+
+// ---------------------------------------- 13c2. the company data export
+// The admin exports everything; the ZIP opens in the standard unzip tool and
+// holds the records, the notes and the document itself. The teammate, not an
+// admin, is not offered it.
+await page.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: 'Export Company Data' }).click();
+await page.waitForSelector('text=Export all company data?');
+const exported = page.waitForEvent('download', { timeout: 60000 });
+await page.locator('.sheet').getByRole('button', { name: 'Export', exact: true }).click();
+const zipFile = await exported;
+const zipPath = resolve(SHOTS, 'company-export.zip');
+await zipFile.saveAs(zipPath);
+try {
+  const listing = execFileSync('unzip', ['-l', zipPath]).toString();
+  for (const name of ['README.txt', 'contacts.csv', 'notes.csv', 'tasks.csv', 'activities.csv', 'documents.csv', 'audit-log.csv', 'documents/']) {
+    if (!listing.includes(`AEROBOOK-Company-Export/${name}`)) errors.push(`the company export has no ${name}`);
+  }
+  if (!listing.includes('N917JH insurance binder.pdf')) errors.push('the company export is missing the attached document');
+  execFileSync('unzip', ['-tq', zipPath]);
+  const contactsCsv = execFileSync('unzip', ['-p', zipPath, 'AEROBOOK-Company-Export/contacts.csv']).toString();
+  if (!contactsCsv.includes('Contact ID')) errors.push('the exported contacts.csv has no Contact ID column');
+  log(`company export: ${zipFile.suggestedFilename()}, ${listing.trim().split('\n').at(-1).trim()}`);
+} catch (e) {
+  errors.push(`the company export is not a readable ZIP: ${e.message}`);
+}
+await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+if (await phone.getByRole('button', { name: 'Export Company Data' }).count()) errors.push('a non-admin is offered the company export');
+if (await phone.getByRole('button', { name: /Export contacts/ }).count()) errors.push('a non-admin is offered bulk exports');
 const leaked = await (await browser.newContext()).request.get(`${BASE}/api/files/content?path=files/fil_abcd/x.pdf`);
 if (leaked.status() !== 401) errors.push(`a signed-out request for a document got ${leaked.status()}`);
 

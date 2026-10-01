@@ -16,6 +16,7 @@
     "db:migrate": "tsx scripts/schema.ts",
     "db:schema": "tsx scripts/schema.ts --print",
     "test:backup": "bash scripts/backup-db.test.sh",
+    "dr:smoke": "node scripts/dr/smoke.mjs",
     "test:server": "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgres://postgres:postgres@localhost:5432/aerobook_test} vitest run server"
   },
   "dependencies": {

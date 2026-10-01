@@ -22,14 +22,14 @@ Everything needs a Postgres database. Put these in `.env.local`:
 ```bash
 DATABASE_URL=postgres://...            # any Postgres; Neon in production
 BETTER_AUTH_SECRET=...                 # long random string: openssl rand -base64 32
-SETUP_TOKEN=...                        # only needed to create the first admin
+SETUP_TOKEN=...                        # only needed to create the first account
 ```
 
 ```bash
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 523 tests; the 210 API, sync and messaging tests also need:
+npm test             # 544 tests; the 219 API, sync and messaging tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -90,13 +90,26 @@ that it reads as a date, because a count that large is not a countdown.
 
 ## Accounts
 
-There is no sign-up. The first admin is created once, on the setup screen,
-with the `SETUP_TOKEN` set on the deployment; after that, an admin adds each
-person under **Settings → Team**, sets or resets their password, makes them
-an admin, or turns their access off. Turning access off keeps their name on
+There is no sign-up. The first account is created once, on the setup screen,
+with the `SETUP_TOKEN` set on the deployment, and is a **developer**. After
+that, an admin adds each person under **Settings → Team**, sets or resets
+their password, or turns their access off. Turning access off keeps their name on
 everything they recorded. Someone whose access is off is told *"Invalid email
 or password"* whatever they type, exactly as for a wrong password, so a
 guessed password is never confirmed. Sign-in attempts are rate-limited.
+
+There are three roles, each with everything the one below has: a **user**
+works with all the data; an **admin** also manages people's accounts; a
+**developer** also decides who is an admin or a developer. Only a developer
+can give or take away the admin or developer role, and only a developer can
+change anything about a developer's account (password, access, sessions,
+two-step sign-in, deleting). The server enforces this on Better Auth's admin
+routes (`refuseOutranked` in `server/app.ts`), not just in the app. To make an
+existing account a developer by hand:
+
+```sql
+update "user" set role = 'developer' where email = 'someone@example.com';
+```
 
 An admin can also **delete** someone, under Settings → Team → Delete. It
 cannot be undone, and asks for their name first. The account is emptied —
@@ -413,6 +426,48 @@ cloud storage (see Documents).
 A device that used AEROBOOK before accounts shows a one-time **Upload** banner
 while the account is still empty, and sends everything it held.
 
+## Company data export
+
+Everything the company keeps in AEROBOOK can be taken out by an admin,
+without a developer and without touching the database: **Settings → Data
+export → Export Company Data**, then **Export** to confirm. It downloads one
+ZIP, `AEROBOOK-Company-Export/`, that opens without AEROBOOK:
+
+- `contacts.csv`, `aircraft.csv`, `aircraft-ownership.csv`,
+  `opportunities.csv`, `insurance-policies.csv`, `activities.csv` (the
+  timeline), `tasks.csv` (follow-ups and assigned tasks), `notes.csv` (every
+  note in one list: timeline notes, aircraft comments and the Notes fields),
+  `documents.csv` plus `documents/<document id>/<original filename>` (the files
+  themselves), `aircraft-comments.csv`, `users.csv`, `audit-log.csv`,
+  `email-templates.csv`, `imports.csv`;
+- `aerobook-backup.json`, every record with its links, restorable under
+  **Restore from a full export**;
+- `README.txt`, which says what each file holds and how the IDs join them.
+
+CSVs are UTF-8 with a byte-order mark and a header row; every record keeps
+its ID and every reference carries the other record's ID beside its name.
+Times are UTC ISO 8601, calendar dates `YYYY-MM-DD`. "Recorded by" and "Last
+changed by" come from the audit log.
+
+The ZIP is put together in the admin's browser (`src/data/companyExport.ts`,
+`src/lib/companyExport.ts`, `src/lib/zip.ts`): records come down through the
+ordinary sync, documents through `/api/files/content`, and people, comments
+and the audit log from `POST /api/export/company` and `GET
+/api/export/audit`, which are admin-only. That way no one response has to
+carry every document — a Vercel Function's response is limited to a few
+megabytes. The POST also writes a `company-export` security event to
+`app_audit` (who and when; never the data). Nothing in the export comes from
+the `account`, `session`, `twoFactor` or push tables, or from the environment.
+
+Not exported: team chat messages, deleted records and comments, earlier
+versions of edited comments, and what a record held before each change
+(`app_audit.before`).
+
+The per-list CSV exports and the JSON backup in **Data / Import & export**
+are for admins too. Every signed-in person still sees, and syncs to their
+device, the records they work with; restricting who may *see* a customer
+would be a different feature.
+
 ## Things it deliberately does not do
 
 - **It never says an email was sent.** AEROBOOK has no mail integration, so an
@@ -519,6 +574,13 @@ its first write. Changes to the sign-in tables are not: each is a file in
 them). Each is additive and safe to run twice, and the code already deployed
 ignores what it adds. `db/migrations/2026-10-admin-two-factor.sql` is the
 one for two-step sign-in.
+
+### Disaster recovery
+
+What is backed up, how to restore it, and how to test that a restore works:
+[docs/disaster-recovery.md](docs/disaster-recovery.md). Restoration tests
+are recorded in [docs/dr-tests/](docs/dr-tests/); `scripts/dr/verify.sql`
+and `npm run dr:smoke` are the checks they use.
 
 ### Preview deployments
 

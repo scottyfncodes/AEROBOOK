@@ -19,6 +19,7 @@
 import type { PoolClient } from 'pg';
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { ensureAppSchema, getPool } from './db.js';
+import { isDeveloper, toRole, type Role } from '../src/lib/roles.js';
 
 export const SECURITY = 'security';
 
@@ -32,7 +33,8 @@ export type SecurityAction =
   | 'two-factor-sign-in-failed'
   | 'two-factor-backup-code-used'
   | 'two-factor-reset'
-  | 'user-deleted';
+  | 'user-deleted'
+  | 'company-export';
 
 const SUMMARY: Record<SecurityAction, string> = {
   'two-factor-setup-started': 'Started setting up two-step sign-in',
@@ -45,6 +47,7 @@ const SUMMARY: Record<SecurityAction, string> = {
   'two-factor-backup-code-used': 'Signed in with a backup code',
   'two-factor-reset': 'Reset two-step sign-in',
   'user-deleted': 'Deleted the account',
+  'company-export': 'Exported all company data: records, documents, comments, users and the audit log',
 };
 
 export interface SecurityEvent {
@@ -188,19 +191,22 @@ export class ResetRefused extends Error {
  * when they next sign in. Not for yourself: that is "Turn off", which asks
  * for your password.
  */
-export async function resetTwoFactor(admin: { id: string; name: string }, userId: string): Promise<void> {
+export async function resetTwoFactor(admin: { id: string; name: string; role: Role }, userId: string): Promise<void> {
   if (userId === admin.id) throw new ResetRefused(400, 'Use "Turn off" under your own account instead.');
   await ensureAppSchema();
   const client = await getPool().connect();
   try {
     await client.query('begin');
-    const { rows } = await client.query<{ on: boolean; set_up: boolean }>(
-      `select coalesce("twoFactorEnabled", false) as on,
+    const { rows } = await client.query<{ on: boolean; set_up: boolean; role: string | null }>(
+      `select coalesce("twoFactorEnabled", false) as on, role,
               exists (select 1 from "twoFactor" t where t."userId" = u.id) as set_up
          from "user" u where id = $1 for update`,
       [userId],
     );
     if (!rows[0]) throw new ResetRefused(404, 'No such person');
+    if (toRole(rows[0].role) === 'developer' && !isDeveloper(admin)) {
+      throw new ResetRefused(403, 'Only a developer can reset a developer’s two-step sign-in');
+    }
     if (!rows[0].on && !rows[0].set_up) throw new ResetRefused(400, 'They do not have two-step sign-in on');
     await client.query('delete from "twoFactor" where "userId" = $1', [userId]);
     await client.query('update "user" set "twoFactorEnabled" = false, "updatedAt" = now() where id = $1', [userId]);

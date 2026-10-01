@@ -15,6 +15,8 @@ import { checkWrite, error, HttpError, json, readJson } from './http.js';
 import { isMessagingPath, messaging } from './messaging.js';
 import { pruneNotifications } from './notify.js';
 import { deletedIds, deleteUser, isDeleted, setProfileColor } from './people.js';
+import { companyAuditPage, startCompanyExport } from './export.js';
+import { isAdmin, isDeveloper, PRIVILEGED_ROLES, toRole, type Role } from '../src/lib/roles.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
 
 /**
@@ -43,9 +45,9 @@ function sameSecret(a: string, b: string): boolean {
 }
 
 /**
- * The first admin. Only possible while nobody has an account, and only with
- * the SETUP_TOKEN set on the deployment — so finding the URL first is not
- * enough to claim it.
+ * The first account, a developer: the one who can then make admins. Only
+ * possible while nobody has an account, and only with the SETUP_TOKEN set on
+ * the deployment — so finding the URL first is not enough to claim it.
  */
 async function setup(request: Request): Promise<Response> {
   if (request.method === 'GET') return json({ needsSetup: (await userCount()) === 0 });
@@ -59,7 +61,7 @@ async function setup(request: Request): Promise<Response> {
   if (!body.name?.trim() || !body.email?.trim() || !body.password) return error(400, 'Name, email and password are required');
   if (body.password.length < 10) return error(400, 'Use at least 10 characters for the password');
   await getAuth().api.createUser({
-    body: { name: body.name.trim(), email: body.email.trim().toLowerCase(), password: body.password, role: 'admin' },
+    body: { name: body.name.trim(), email: body.email.trim().toLowerCase(), password: body.password, role: 'developer' },
   });
   return json({ ok: true });
 }
@@ -108,7 +110,7 @@ async function deleteUserRoute(request: Request): Promise<Response> {
   if (refused) return refused;
   const user = await sessionUser(request);
   if (!user) return error(401, 'Sign in first');
-  if (user.role !== 'admin') return error(403, 'Only an admin can do that');
+  if (!isAdmin(user)) return error(403, 'Only an admin can do that');
   return json(await deleteUser(user, await readJson(request)));
 }
 
@@ -121,6 +123,49 @@ async function refuseDeletedTarget(request: Request, pathname: string): Promise<
   const body = (await request.clone().json().catch(() => null)) as { userId?: unknown } | null;
   if (typeof body?.userId !== 'string' || !body.userId) return null;
   return (await isDeleted(body.userId)) ? error(409, 'That person was deleted') : null;
+}
+
+/** The roles a request asks for, however Better Auth would read them. */
+function requestedRoles(value: unknown): string[] {
+  const list = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  return list.flatMap((r) => (typeof r === 'string' ? r.split(',').map((x) => x.trim()) : [String(r)]));
+}
+
+/**
+ * Admins manage accounts; only a developer decides who is an admin or a
+ * developer. Better Auth lets anyone with its admin permissions set any role,
+ * so before its admin routes run, someone who is not a developer is refused:
+ *   - giving anyone the admin or developer role (set-role, create-user,
+ *     update-user)
+ *   - changing the role of someone who is an admin or a developer
+ *   - anything at all done to a developer's account (password, sessions,
+ *     access, impersonation, editing, removal)
+ * Reading (list-users, get-user) is unaffected.
+ */
+async function refuseOutranked(request: Request, pathname: string): Promise<Response | null> {
+  if (request.method !== 'POST' || !pathname.startsWith('/api/auth/admin/')) return null;
+  const caller = await sessionUser(request);
+  // Better Auth turns away anyone without a session or its admin permissions.
+  if (!caller || !isAdmin(caller) || isDeveloper(caller)) return null;
+  const body = (await request.clone().json().catch(() => undefined)) as
+    | { userId?: unknown; role?: unknown; data?: { role?: unknown } | null } | undefined;
+  if (!body || typeof body !== 'object') return error(400, 'Send the request as JSON');
+
+  const action = pathname.slice('/api/auth/admin/'.length);
+  const roleField = action === 'set-role' || action === 'create-user' ? body.role : undefined;
+  const asked = [...requestedRoles(roleField), ...requestedRoles(body.data?.role)];
+  const changesRole = asked.length > 0;
+  if (asked.some((r) => (PRIVILEGED_ROLES as readonly string[]).includes(r))) {
+    return error(403, 'Only a developer can make someone an admin or a developer');
+  }
+
+  if (typeof body.userId !== 'string' || !body.userId) return null;
+  const { rows } = await getPool().query<{ role: string | null }>('select role from "user" where id = $1', [body.userId]);
+  if (!rows[0]) return null;
+  const target: Role = toRole(rows[0].role);
+  if (target === 'developer') return error(403, 'Only a developer can manage a developer’s account');
+  if (changesRole && target === 'admin') return error(403, 'Only a developer can change an admin’s role');
+  return null;
 }
 
 /**
@@ -173,13 +218,17 @@ async function files(request: Request): Promise<Response> {
     const stored = await readStored(path);
     if (!stored) return error(404, 'The document is missing from storage');
     const name = (rows[0].name ?? 'document').replace(/["\\\r\n]/g, '');
+    // A header carries only Latin-1, so a name like "Binder — Ødegård.pdf" or
+    // "報告.pdf" goes in filename* (UTF-8, which browsers use), with a plain
+    // ASCII stand-in for any that do not; written raw, it would fail the download.
+    const ascii = name.replace(/[^\x20-\x7e]/g, '_');
     return new Response(stored.body as BodyInit, {
       headers: {
         // The type comes from the document record, which the browser wrote;
         // only a kind of file AEROBOOK keeps is served as itself.
         'content-type': servedType(rows[0].type),
         // Always a download, never rendered as a page on this site.
-        'content-disposition': `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+        'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`,
         'x-content-type-options': 'nosniff',
         'cache-control': 'private, no-store',
       },
@@ -274,7 +323,7 @@ async function resetTwoFactorRoute(request: Request): Promise<Response> {
   if (refused) return refused;
   const user = await sessionUser(request);
   if (!user) return error(401, 'Sign in first');
-  if (user.role !== 'admin') return error(403, 'Only an admin can do that');
+  if (!isAdmin(user)) return error(403, 'Only an admin can do that');
   const { userId } = (await readJson(request)) as { userId?: unknown };
   if (typeof userId !== 'string' || !userId) return error(400, 'Say whose two-step sign-in to reset');
   try {
@@ -295,6 +344,8 @@ async function resetTwoFactorRoute(request: Request): Promise<Response> {
 async function authRoute(request: Request, pathname: string): Promise<Response> {
   const deleted = await refuseDeletedTarget(request, pathname);
   if (deleted) return deleted;
+  const outranked = await refuseOutranked(request, pathname);
+  if (outranked) return outranked;
   const response = await getAuth().handler(request);
   const signIn = pathname === '/api/auth/sign-in/email';
   // Access turned off between the password and the two-step code.
@@ -351,6 +402,23 @@ export async function handle(request: Request): Promise<Response> {
     if (pathname === '/api/team/reset-two-factor') return await resetTwoFactorRoute(request);
     if (pathname === '/api/team/delete') return await deleteUserRoute(request);
     if (pathname === '/api/team/color') return await profileColorRoute(request);
+    if (pathname === '/api/export/company') {
+      // A POST, not a link: it is recorded, and it cannot be set off from another site.
+      if (request.method !== 'POST') return error(405, 'Method not allowed');
+      const refused = checkWrite(request);
+      if (refused) return refused;
+      const user = await sessionUser(request);
+      if (!user) return error(401, 'Sign in first');
+      return json(await startCompanyExport(user));
+    }
+    if (pathname === '/api/export/audit') {
+      if (request.method !== 'GET') return error(405, 'Method not allowed');
+      const user = await sessionUser(request);
+      if (!user) return error(401, 'Sign in first');
+      const after = Number(new URL(request.url).searchParams.get('after') ?? 0);
+      if (!Number.isInteger(after) || after < 0) return error(400, 'Bad cursor');
+      return json(await companyAuditPage(user, after));
+    }
     if (isMessagingPath(pathname)) {
       const user = await sessionUser(request);
       if (!user) return error(401, 'Sign in first');

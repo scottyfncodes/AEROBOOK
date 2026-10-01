@@ -20,6 +20,7 @@ import type { SessionUser } from './auth.js';
 import { ensureAppSchema, getPool } from './db.js';
 import { HttpError } from './http.js';
 import { notify, type NotifyResult } from './notify.js';
+import { isAdmin } from '../src/lib/roles.js';
 
 export const MAX_COMMENT_CHARS = 5000;
 
@@ -236,7 +237,7 @@ export async function deleteComment(user: SessionUser, aircraftId: string, rawId
   try {
     await client.query('begin');
     const current = await findOnAircraft(client, aircraftId, id);
-    if (current.author_id !== user.id && user.role !== 'admin') {
+    if (current.author_id !== user.id && !isAdmin(user)) {
       throw new HttpError(403, 'Only whoever wrote a comment, or an admin, can delete it');
     }
     if (current.deleted_at) {

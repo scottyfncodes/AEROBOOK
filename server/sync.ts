@@ -15,6 +15,7 @@ import { ensureAppSchema, getPool } from './db.js';
 import type { SessionUser } from './auth.js';
 import { notify, type NotifyEvent } from './notify.js';
 import { taskLabel } from './tasks.js';
+import { isAdmin } from '../src/lib/roles.js';
 
 /** Collections everyone on the account shares. */
 export const SHARED_COLLECTIONS = [
@@ -138,7 +139,7 @@ export async function push(user: SessionUser, changes: Change[]): Promise<PushRe
     const applied: PushResult['applied'] = [];
     const conflicts: RemoteRecord[] = [];
     const refused: RemoteRecord[] = [];
-    const refuseDeletes = user.role !== 'admin' && await overDeleteLimit(client, user, changes);
+    const refuseDeletes = !isAdmin(user) && await overDeleteLimit(client, user, changes);
     const given: NotifyEvent[] = [];
 
     for (const change of changes) {
