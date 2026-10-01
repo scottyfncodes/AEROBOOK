@@ -247,12 +247,15 @@ const PRESETS = [
 export function FollowUpSheet({
   links,
   existing,
+  assign = false,
   defaultNote = '',
   defaultDueDate,
   onClose,
 }: {
   links: Links;
   existing?: FollowUp;
+  /** Giving someone else a task, rather than setting a follow-up for yourself. */
+  assign?: boolean;
   defaultNote?: string;
   defaultDueDate?: string;
   onClose: () => void;
@@ -262,81 +265,92 @@ export function FollowUpSheet({
   const { people, nameOf } = useTeam();
   const [dueDate, setDueDate] = useState(existing?.dueDate ?? defaultDueDate ?? addDays(7));
   const [kind, setKind] = useState<FollowUpKind>(existing?.kind ?? 'follow-up');
-  const [note, setNote] = useState(existing?.note ?? defaultNote);
+  const [note, setNote] = useState(existing?.note ?? (assign ? '' : defaultNote));
   const [priority, setPriority] = useState<FollowUpPriority>(existing?.priority ?? 'Normal');
-  // A new follow-up is the person's own unless they give it to someone.
-  const [assigneeId, setAssigneeId] = useState(existing ? existing.assigneeId ?? '' : me.id);
+  // A follow-up is your own; a task needs someone picked.
+  const [assigneeId, setAssigneeId] = useState(existing?.assigneeId ?? (assign ? '' : me.id));
 
-  // People whose access is off cannot be given new work, but one already
-  // holding this follow-up still shows, so opening the sheet changes nothing.
+  // Someone else on the team, by name. People whose access is off cannot be
+  // given new work, but whoever already holds this one still shows, so
+  // opening the sheet changes nothing.
   const assigneeOptions = [
-    { value: '', label: 'Unassigned — anyone can take it' },
+    ...(assigneeId ? [] : [{ value: '', label: 'Choose someone' }]),
     ...people
-      .filter((p) => p.active || p.id === assigneeId)
+      .filter((p) => (p.active && p.id !== me.id) || p.id === assigneeId)
       .map((p) => ({ value: p.id, label: p.id === me.id ? `${p.name} (you)` : p.name })),
   ];
 
   const save = () => {
-    const fields = { dueDate, kind, note: note.trim(), priority, assigneeId: assigneeId || null };
+    if (assign && !assigneeId) return;
+    const fields = assign
+      ? { dueDate, kind, note: note.trim(), priority, assigneeId, assignedBy: existing?.assignedBy ?? me.id }
+      : { dueDate, note: note.trim(), priority, ...(existing ? {} : { assigneeId: me.id }) };
     if (existing) {
       updateFollowUp(existing.id, { ...fields, completed: false, completedAt: undefined });
       toast(
-        (existing.assigneeId ?? '') !== assigneeId
-          ? assigneeId ? `${taskLabel(kind)} given to ${nameOf(assigneeId)}` : 'Follow-up is now unassigned'
-          : 'Follow-up updated',
+        assign && existing.assigneeId !== assigneeId
+          ? `${taskLabel(kind)} given to ${nameOf(assigneeId)}`
+          : assign ? 'Task updated' : 'Follow-up updated',
       );
     } else {
       createFollowUp({ ...links, ...fields });
       toast(
-        assigneeId && assigneeId !== me.id
-          ? `${taskLabel(kind)} for ${nameOf(assigneeId)}, ${formatDate(dueDate)}`
+        assign
+          ? `${taskLabel(kind)} assigned to ${nameOf(assigneeId)}, due ${formatDate(dueDate)}`
           : `Follow-up set for ${formatDate(dueDate)}`,
       );
     }
     onClose();
   };
 
+  const title = existing ? (assign ? 'Edit task' : 'Edit follow-up') : (assign ? 'Assign a task' : 'Set a follow-up');
+  const action = existing ? 'Save' : (assign ? 'Assign' : 'Set follow-up');
+
   return (
     <Sheet
-      title={existing ? 'Edit follow-up' : 'Set a follow-up'}
+      title={title}
       onClose={onClose}
       footer={
         <>
           <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn--primary" onClick={save}>{existing ? 'Save' : 'Set follow-up'}</button>
+          <button className="btn btn--primary" disabled={assign && !assigneeId} onClick={save}>{action}</button>
         </>
       }
     >
       <div className="stack">
-        <div className="field">
-          <span className="field__label">What to do</span>
-          <div className="row row--wrap" style={{ gap: 6 }}>
-            {TASK_KINDS.map((k) => (
-              <button
-                key={k.value}
-                type="button"
-                className={`filter-chip${kind === k.value ? ' is-active' : ''}`}
-                onClick={() => setKind(k.value)}
-                aria-pressed={kind === k.value}
-              >
-                {k.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <SelectField
-          label="Assign to"
-          value={assigneeId}
-          options={assigneeOptions}
-          onChange={setAssigneeId}
-          hint={assigneeId && assigneeId !== me.id ? 'They get a notification on their phone.' : undefined}
-        />
+        {assign ? (
+          <>
+            <SelectField
+              label="Assign to"
+              value={assigneeId}
+              options={assigneeOptions}
+              onChange={setAssigneeId}
+              hint={assigneeId && assigneeId !== me.id ? 'They get a notification on their phone.' : undefined}
+            />
+            <div className="field">
+              <span className="field__label">What to do</span>
+              <div className="row row--wrap" style={{ gap: 6 }}>
+                {TASK_KINDS.map((k) => (
+                  <button
+                    key={k.value}
+                    type="button"
+                    className={`filter-chip${kind === k.value ? ' is-active' : ''}`}
+                    onClick={() => setKind(k.value)}
+                    aria-pressed={kind === k.value}
+                  >
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : null}
         <TextArea
-          label="Note"
+          label={assign ? 'Note for them' : 'Note'}
           value={note}
           onChange={setNote}
           rows={3}
-          placeholder={kind === 'quote' ? 'Hull and liability, $1M smooth' : 'Check if the aircraft is still available'}
+          placeholder={assign ? 'Hull and liability, owner wants it by Friday' : 'Check if the aircraft is still available'}
         />
         <div className="filter-bar">
           {PRESETS.map((p) => (

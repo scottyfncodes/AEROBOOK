@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { isTask } from '../lib/tasks';
 import { AppBar } from '../components/AppBar';
 import {
-  IconCalendar, IconEdit, IconMail, IconNote, IconPhone, IconPlus, IconShield, IconTarget,
+  IconCalendar, IconEdit, IconMail, IconNote, IconPhone, IconPlus, IconShield, IconTarget, IconUsers,
 } from '../components/Icons';
 import {
   ActivitySheet, ExternalLinkList, FilesSection, FollowUpList, FollowUpSheet, Timeline,
@@ -35,7 +36,7 @@ export default function AircraftDetail() {
   const aircraft = db.aircraft.find((a) => a.id === id);
   const owner = ownerOf(db, aircraft);
 
-  const [sheet, setSheet] = useState<'email' | 'activity' | 'followUp' | 'edit' | 'opportunity' | null>(null);
+  const [sheet, setSheet] = useState<'email' | 'activity' | 'followUp' | 'assign' | 'edit' | 'opportunity' | null>(null);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
   const [followUpNote, setFollowUpNote] = useState('');
   const [followUpPolicyId, setFollowUpPolicyId] = useState<string | null>(null);
@@ -204,6 +205,9 @@ export default function AircraftDetail() {
           <button className="btn" onClick={() => openFollowUp(`Follow up on ${aircraft.tailNumber}`)}>
             <IconCalendar /> Follow up
           </button>
+          <button className="btn" onClick={() => { setEditingFollowUp(undefined); setSheet('assign'); }}>
+            <IconUsers /> Assign
+          </button>
           <button className="btn" onClick={() => setSheet('opportunity')}>
             <IconTarget /> Add opportunity
           </button>
@@ -286,7 +290,7 @@ export default function AircraftDetail() {
             <h2 className="section-title">Follow-ups</h2>
             <FollowUpList
               followUps={timeline.followUps}
-              onEdit={(f) => { setEditingFollowUp(f); setSheet('followUp'); }}
+              onEdit={(f) => { setEditingFollowUp(f); setSheet(isTask(f) ? 'assign' : 'followUp'); }}
             />
           </section>
         ) : null}
@@ -358,8 +362,9 @@ export default function AircraftDetail() {
           onClose={() => setSheet(null)}
         />
       ) : null}
-      {sheet === 'followUp' ? (
+      {sheet === 'followUp' || sheet === 'assign' ? (
         <FollowUpSheet
+          assign={sheet === 'assign'}
           links={{
             aircraftId: aircraft.id,
             contactId: owner?.id ?? null,

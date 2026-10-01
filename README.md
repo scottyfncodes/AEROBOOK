@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 515 tests; the 203 API, sync and messaging tests also need:
+npm test             # 516 tests; the 203 API, sync and messaging tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -177,11 +177,12 @@ mistaken or malicious edit or deletion can be put back.
 
 ## Follow-ups
 
-Every follow-up says what to do — Follow up, Call, Send quote, Send contract
-or Other — with a note, and can be for someone: anyone on the team can give
-one to anyone else. Whoever creates one owns it unless they pick someone else
-under **Assign to**, and **Edit** hands it to another person or back to
-nobody. The person given one gets a notification ("Scott assigned you a task:
+**Follow up** sets a reminder for yourself: a note, a date and a priority.
+**Assign** gives someone else on the team a task: who, what to do (Follow up,
+Call, Send quote, Send contract or Other), a note for them, a date and a
+priority. Anyone can assign to anyone. A task remembers who gave it, shows
+"From …" on its holder's list, and **Edit** opens it as a task again, to
+change it or hand it to someone else. The person given one gets a notification ("Scott assigned you a task:
 Send quote") — never the note, which stays in the app. Unassigned follow-ups — including everything recorded before
 accounts — count as everyone's until someone takes one.
 

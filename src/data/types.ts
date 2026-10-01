@@ -294,6 +294,8 @@ export interface FollowUp {
    * own list until someone takes it.
    */
   assigneeId?: string | null;
+  /** Who gave it, when it was assigned as a task rather than set as a follow-up. */
+  assignedBy?: string | null;
   completed: boolean;
   /** What actually happened, recorded when the follow-up is completed. */
   outcome?: string;

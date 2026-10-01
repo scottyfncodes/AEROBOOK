@@ -685,15 +685,21 @@ await shot('13a-history');
 await page.goto(tailUrl, { waitUntil: 'networkidle' });
 
 // ---------------------------------------------- 13b. whose follow-up it is
-// The admin gives the teammate a task to send a quote: it is on the
-// teammate's list, saying what to do, not on the admin's.
+// The admin assigns the teammate a task to send a quote: it is on the
+// teammate's list, saying what to do and who from, not on the admin's.
+// Setting a follow-up has no way to give it to someone else.
 const TASK = 'Call the owner back about the quote';
 await page.getByRole('button', { name: 'Follow up' }).click();
+await page.waitForSelector('.sheet');
+if (await page.locator('.sheet').getByLabel('Assign to').count()) errors.push('the follow-up sheet still offers to assign');
+await page.getByRole('button', { name: 'Cancel' }).click();
+await page.getByRole('button', { name: 'Assign', exact: true }).click();
 await page.waitForSelector('.sheet');
 await page.locator('.sheet').getByRole('button', { name: 'Send quote' }).click();
 await page.locator('.sheet textarea').fill(TASK);
 await page.locator('.sheet').getByLabel('Assign to', { exact: true }).selectOption({ label: TEAMMATE.name });
-await page.getByRole('button', { name: 'Set follow-up' }).click();
+await shot('13a2-assign-sheet');
+await page.locator('.sheet').getByRole('button', { name: 'Assign', exact: true }).click();
 await page.waitForTimeout(800);
 
 await phone.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
@@ -711,6 +717,9 @@ if (!(await allCard.count())) errors.push('the teammate’s follow-up is missing
 else if (!has(await allCard.innerText(), TEAMMATE.name)) errors.push('the follow-up in All does not say who it is for');
 await shot('13c-follow-ups-all');
 
+if (!has(await phone.locator('.card', { hasText: TASK }).innerText(), `From ${ADMIN.name}`)) {
+  errors.push('the teammate’s task does not say who gave it');
+}
 await phone.locator('.card', { hasText: TASK }).getByRole('button', { name: 'Edit' }).click();
 await phone.waitForSelector('.sheet');
 await phone.locator('.sheet').getByLabel('Assign to', { exact: true }).selectOption({ label: ADMIN.name });
