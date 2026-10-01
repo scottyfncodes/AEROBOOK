@@ -55,6 +55,39 @@ export function Sheet({
   footer?: ReactNode;
 }) {
   const titleId = useId();
+  const backdrop = useRef<HTMLDivElement>(null);
+
+  // A phone's keyboard covers the bottom of the screen, where the sheet and
+  // its Save button sit. The sheet keeps to the part still showing, so it
+  // rides up above the keyboard, and the field being typed in stays in view.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const el = backdrop.current;
+    if (!vv || !el) return;
+    const fit = () => {
+      // A height of nothing is a viewport still settling: keep the full screen.
+      if (vv.height < 200) {
+        el.style.removeProperty('top');
+        el.style.removeProperty('height');
+        el.style.removeProperty('bottom');
+        return;
+      }
+      const keyboard = window.innerHeight - vv.height > 120;
+      el.style.top = `${vv.offsetTop}px`;
+      el.style.height = `${vv.height}px`;
+      el.style.bottom = 'auto';
+      el.classList.toggle('sheet-backdrop--keyboard', keyboard);
+      const focused = document.activeElement;
+      if (keyboard && focused instanceof HTMLElement && el.contains(focused)) focused.scrollIntoView({ block: 'nearest' });
+    };
+    fit();
+    vv.addEventListener('resize', fit);
+    vv.addEventListener('scroll', fit);
+    return () => {
+      vv.removeEventListener('resize', fit);
+      vv.removeEventListener('scroll', fit);
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -70,7 +103,7 @@ export function Sheet({
   }, [onClose]);
 
   return (
-    <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div ref={backdrop} className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="sheet__header">
           <h2 className="sheet__title" id={titleId}>{title}</h2>
