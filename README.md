@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 523 tests; the 210 API, sync and messaging tests also need:
+npm test             # 544 tests; the 219 API, sync and messaging tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -412,6 +412,48 @@ cloud storage (see Documents).
 
 A device that used AEROBOOK before accounts shows a one-time **Upload** banner
 while the account is still empty, and sends everything it held.
+
+## Company data export
+
+Everything the company keeps in AEROBOOK can be taken out by an admin,
+without a developer and without touching the database: **Settings → Data
+export → Export Company Data**, then **Export** to confirm. It downloads one
+ZIP, `AEROBOOK-Company-Export/`, that opens without AEROBOOK:
+
+- `contacts.csv`, `aircraft.csv`, `aircraft-ownership.csv`,
+  `opportunities.csv`, `insurance-policies.csv`, `activities.csv` (the
+  timeline), `tasks.csv` (follow-ups and assigned tasks), `notes.csv` (every
+  note in one list: timeline notes, aircraft comments and the Notes fields),
+  `documents.csv` plus `documents/<document id>/<original filename>` (the files
+  themselves), `aircraft-comments.csv`, `users.csv`, `audit-log.csv`,
+  `email-templates.csv`, `imports.csv`;
+- `aerobook-backup.json`, every record with its links, restorable under
+  **Restore from a full export**;
+- `README.txt`, which says what each file holds and how the IDs join them.
+
+CSVs are UTF-8 with a byte-order mark and a header row; every record keeps
+its ID and every reference carries the other record's ID beside its name.
+Times are UTC ISO 8601, calendar dates `YYYY-MM-DD`. "Recorded by" and "Last
+changed by" come from the audit log.
+
+The ZIP is put together in the admin's browser (`src/data/companyExport.ts`,
+`src/lib/companyExport.ts`, `src/lib/zip.ts`): records come down through the
+ordinary sync, documents through `/api/files/content`, and people, comments
+and the audit log from `POST /api/export/company` and `GET
+/api/export/audit`, which are admin-only. That way no one response has to
+carry every document — a Vercel Function's response is limited to a few
+megabytes. The POST also writes a `company-export` security event to
+`app_audit` (who and when; never the data). Nothing in the export comes from
+the `account`, `session`, `twoFactor` or push tables, or from the environment.
+
+Not exported: team chat messages, deleted records and comments, earlier
+versions of edited comments, and what a record held before each change
+(`app_audit.before`).
+
+The per-list CSV exports and the JSON backup in **Data / Import & export**
+are for admins too. Every signed-in person still sees, and syncs to their
+device, the records they work with; restricting who may *see* a customer
+would be a different feature.
 
 ## Things it deliberately does not do
 

@@ -73,6 +73,24 @@ describe.skipIf(!TEST_DB)('documents', () => {
     expect(r.headers.get('x-content-type-options')).toBe('nosniff');
   });
 
+  it('gives back a document whose name is not plain English', async () => {
+    const path = 'files/fil_abc124/Assurance — Ødegård 報告.pdf';
+    expect((await putLocal(path, PDF)).status).toBe(200);
+    await api('/api/sync', {
+      cookie,
+      body: { changes: [{ collection: 'files', id: 'fil_abc124', baseVersion: 0, data: {
+        id: 'fil_abc124', name: 'Assurance — Ødegård 報告.pdf', mimeType: 'application/pdf', size: PDF.length, blobPath: path,
+      } }] },
+    });
+    const r = await content(path);
+    expect(r.status).toBe(200);
+    expect(new Uint8Array(await r.arrayBuffer())).toEqual(PDF);
+    // A plain stand-in for old clients, and the real name for every browser that reads filename*.
+    expect(r.headers.get('content-disposition')).toBe(
+      `attachment; filename="Assurance _ _deg_rd __.pdf"; filename*=UTF-8''${encodeURIComponent('Assurance — Ødegård 報告.pdf')}`,
+    );
+  });
+
   it('reads only files a document record points at', async () => {
     await putLocal(PATH, PDF);
     expect((await content(PATH)).status).toBe(404);

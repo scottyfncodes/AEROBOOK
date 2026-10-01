@@ -15,6 +15,7 @@ import { checkWrite, error, HttpError, json, readJson } from './http.js';
 import { isMessagingPath, messaging } from './messaging.js';
 import { pruneNotifications } from './notify.js';
 import { deletedIds, deleteUser, isDeleted, setProfileColor } from './people.js';
+import { companyAuditPage, startCompanyExport } from './export.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
 
 /**
@@ -173,13 +174,17 @@ async function files(request: Request): Promise<Response> {
     const stored = await readStored(path);
     if (!stored) return error(404, 'The document is missing from storage');
     const name = (rows[0].name ?? 'document').replace(/["\\\r\n]/g, '');
+    // A header carries only Latin-1, so a name like "Binder — Ødegård.pdf" or
+    // "報告.pdf" goes in filename* (UTF-8, which browsers use), with a plain
+    // ASCII stand-in for any that do not; written raw, it would fail the download.
+    const ascii = name.replace(/[^\x20-\x7e]/g, '_');
     return new Response(stored.body as BodyInit, {
       headers: {
         // The type comes from the document record, which the browser wrote;
         // only a kind of file AEROBOOK keeps is served as itself.
         'content-type': servedType(rows[0].type),
         // Always a download, never rendered as a page on this site.
-        'content-disposition': `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+        'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`,
         'x-content-type-options': 'nosniff',
         'cache-control': 'private, no-store',
       },
@@ -351,6 +356,23 @@ export async function handle(request: Request): Promise<Response> {
     if (pathname === '/api/team/reset-two-factor') return await resetTwoFactorRoute(request);
     if (pathname === '/api/team/delete') return await deleteUserRoute(request);
     if (pathname === '/api/team/color') return await profileColorRoute(request);
+    if (pathname === '/api/export/company') {
+      // A POST, not a link: it is recorded, and it cannot be set off from another site.
+      if (request.method !== 'POST') return error(405, 'Method not allowed');
+      const refused = checkWrite(request);
+      if (refused) return refused;
+      const user = await sessionUser(request);
+      if (!user) return error(401, 'Sign in first');
+      return json(await startCompanyExport(user));
+    }
+    if (pathname === '/api/export/audit') {
+      if (request.method !== 'GET') return error(405, 'Method not allowed');
+      const user = await sessionUser(request);
+      if (!user) return error(401, 'Sign in first');
+      const after = Number(new URL(request.url).searchParams.get('after') ?? 0);
+      if (!Number.isInteger(after) || after < 0) return error(400, 'Bad cursor');
+      return json(await companyAuditPage(user, after));
+    }
     if (isMessagingPath(pathname)) {
       const user = await sessionUser(request);
       if (!user) return error(401, 'Sign in first');
