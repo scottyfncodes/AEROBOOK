@@ -206,6 +206,14 @@ do $$ begin
   end if;
 end $$;
 
+-- The color each person picked for themselves, shown beside their name on
+-- tasks. One person per color: whoever picks it first has it.
+create table if not exists app_profile_color (
+  user_id text primary key references "user" ("id") on delete cascade,
+  color text not null unique,
+  chosen_at timestamptz not null default now()
+);
+
 -- People an admin deleted. Their "user" row stays as an empty, permanently
 -- disabled shell — no sign-in, no email, no sessions — so their name stays
 -- on what they wrote; this records who it was and who deleted them.

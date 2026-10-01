@@ -12,7 +12,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AppBar } from '../components/AppBar';
 import { IconBell, IconCheck, IconPlus, IconTrash, IconUsers } from '../components/Icons';
 import { CompleteFollowUpSheet, FollowUpSheet } from '../components/detail';
-import { Chip, EmptyState, Metric, useToast } from '../components/ui';
+import { Chip, ColorDot, EmptyState, Metric, useToast } from '../components/ui';
 import { useDatabase } from '../data/useStore';
 import { completeFollowUp, deleteFollowUp } from '../data/store';
 import {
@@ -27,7 +27,7 @@ export default function FollowUps() {
   const db = useDatabase();
   const toast = useToast();
   const me = useCurrentUser();
-  const { nameOf } = useTeam();
+  const { nameOf, colorOf } = useTeam();
   const [params, setParams] = useSearchParams();
   const view = (FOLLOW_UP_VIEWS.some((v) => v.value === params.get('view')) ? params.get('view') : 'mine') as FollowUpView;
   const viewParams = (next: FollowUpView): Record<string, string> => (next === 'mine' ? {} : { view: next });
@@ -77,9 +77,9 @@ export default function FollowUps() {
                     {followUpSubject(db, f)}
                   </Link>
                   <div className="row" style={{ gap: 4 }}>
-                    {f.assigneeId !== me.id ? <Chip>{nameOf(f.assigneeId)}</Chip> : null}
+                    {f.assigneeId !== me.id ? <Chip><ColorDot color={colorOf(f.assigneeId)} />{nameOf(f.assigneeId)}</Chip> : null}
                     {isTask(f) && f.assigneeId === me.id && f.assignedBy !== me.id ? (
-                      <Chip tone="accent">From {nameOf(f.assignedBy)}</Chip>
+                      <Chip tone="accent"><ColorDot color={colorOf(f.assignedBy)} />From {nameOf(f.assignedBy)}</Chip>
                     ) : null}
                     {f.priority === 'High' ? <Chip tone="danger">High</Chip> : null}
                     <Chip tone={tone}>{relativeDue(f.dueDate)}</Chip>

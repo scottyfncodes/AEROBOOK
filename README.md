@@ -29,7 +29,7 @@ SETUP_TOKEN=...                        # only needed to create the first admin
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 516 tests; the 203 API, sync and messaging tests also need:
+npm test             # 523 tests; the 210 API, sync and messaging tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -182,7 +182,14 @@ mistaken or malicious edit or deletion can be put back.
 Call, Send quote, Send contract or Other), a note for them, a date and a
 priority. Anyone can assign to anyone. A task remembers who gave it, shows
 "From …" on its holder's list, and **Edit** opens it as a task again, to
-change it or hand it to someone else. The person given one gets a notification ("Scott assigned you a task:
+change it or hand it to someone else.
+
+Everyone can pick a color for their name under **Settings → Account → Your
+color**: a small dot beside their name on tasks ("From Scott", "For Andrew").
+Ten colors, one person each, first come first served — the database's unique
+index settles two people picking the same one at once. Tapping yours again
+gives it up, and deleting someone frees theirs. The name is always beside the
+dot, so nothing depends on telling colors apart. The person given one gets a notification ("Scott assigned you a task:
 Send quote") — never the note, which stays in the app. Unassigned follow-ups — including everything recorded before
 accounts — count as everyone's until someone takes one.
 

@@ -4,7 +4,7 @@
  */
 import { timingSafeEqual } from 'node:crypto';
 import { getAuth, migrate, sessionUser, type SessionUser } from './auth.js';
-import { getPool } from './db.js';
+import { ensureAppSchema, getPool } from './db.js';
 import { resetTwoFactor, ResetRefused } from './security.js';
 import { BadRequest, history, isEmpty, pull, push, validateChanges } from './sync.js';
 import {
@@ -14,7 +14,7 @@ import { servedType } from '../src/lib/documents.js';
 import { checkWrite, error, HttpError, json, readJson } from './http.js';
 import { isMessagingPath, messaging } from './messaging.js';
 import { pruneNotifications } from './notify.js';
-import { deletedIds, deleteUser, isDeleted } from './people.js';
+import { deletedIds, deleteUser, isDeleted, setProfileColor } from './people.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
 
 /**
@@ -71,13 +71,34 @@ async function setup(request: Request): Promise<Response> {
  * included, marked, so their name still shows on work they were given.
  */
 async function team(): Promise<Response> {
+  await ensureAppSchema();
   const [{ rows }, deleted] = await Promise.all([
-    getPool().query<{ id: string; name: string; banned: boolean | null }>('select id, name, banned from "user" order by name'),
+    getPool().query<{ id: string; name: string; banned: boolean | null; color: string | null }>(
+      `select u.id, u.name, u.banned, c.color from "user" u
+         left join app_profile_color c on c.user_id = u.id
+        order by u.name`,
+    ),
     deletedIds(),
   ]);
   return json({
-    people: rows.map((r) => ({ id: r.id, name: r.name, active: !r.banned, ...(deleted.has(r.id) ? { deleted: true } : {}) })),
+    people: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      active: !r.banned,
+      ...(r.color ? { color: r.color } : {}),
+      ...(deleted.has(r.id) ? { deleted: true } : {}),
+    })),
   });
+}
+
+/** Someone picks the color shown beside their name, or gives it up. */
+async function profileColorRoute(request: Request): Promise<Response> {
+  if (request.method !== 'POST') return error(405, 'Method not allowed');
+  const refused = checkWrite(request);
+  if (refused) return refused;
+  const user = await sessionUser(request);
+  if (!user) return error(401, 'Sign in first');
+  return json(await setProfileColor(user, await readJson(request)));
 }
 
 /** An admin deletes someone for good, keeping their name on what they did. See people.ts. */
@@ -329,6 +350,7 @@ export async function handle(request: Request): Promise<Response> {
     }
     if (pathname === '/api/team/reset-two-factor') return await resetTwoFactorRoute(request);
     if (pathname === '/api/team/delete') return await deleteUserRoute(request);
+    if (pathname === '/api/team/color') return await profileColorRoute(request);
     if (isMessagingPath(pathname)) {
       const user = await sessionUser(request);
       if (!user) return error(401, 'Sign in first');

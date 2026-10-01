@@ -11,6 +11,7 @@ import { CloudSync, forgetCache, SessionExpired, type CloudUser } from './cloud'
 import * as store from './store';
 import { forgetDevice } from './push';
 import { stopInbox } from './inbox';
+import { colorHex } from '../lib/colors';
 
 export type SessionStatus = 'checking' | 'setup' | 'signed-out' | 'ready' | 'unreachable';
 
@@ -177,7 +178,12 @@ export function useSession(): SessionValue {
  * The team, and a way to name the person a follow-up is for. The signed-in
  * person is always in the list, even before it has loaded.
  */
-export function useTeam(): { people: auth.Person[]; nameOf(id: string | null | undefined): string } {
+export function useTeam(): {
+  people: auth.Person[];
+  nameOf(id: string | null | undefined): string;
+  /** The color someone picked for their name, as a CSS color, if any. */
+  colorOf(id: string | null | undefined): string | undefined;
+} {
   const { team, user } = useSession();
   const people = user && !team.some((p) => p.id === user.id)
     ? [{ id: user.id, name: user.name, active: true }, ...team]
@@ -188,6 +194,9 @@ export function useTeam(): { people: auth.Person[]; nameOf(id: string | null | u
       if (!id) return 'Unassigned';
       if (id === user?.id) return 'You';
       return people.find((p) => p.id === id)?.name ?? 'Someone else';
+    },
+    colorOf(id) {
+      return id ? colorHex(people.find((p) => p.id === id)?.color) : undefined;
     },
   };
 }
