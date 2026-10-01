@@ -420,7 +420,8 @@ function AddMemberSheet({ onClose, onAdded }: { onClose: () => void; onAdded: ()
           onChange={setPassword}
           type="text"
           autoComplete="off"
-          hint="Give it to them yourself; they can change it under Settings."
+          verbatim
+          hint="No email is sent: give them this password yourself. They can change it under Settings."
         />
         <SelectField label="Role" value={role} options={ROLE_OPTIONS} onChange={(v) => setRole(v as 'admin' | 'user')} />
         {error ? <Banner tone="danger">{error}</Banner> : null}
@@ -491,6 +492,7 @@ function MemberSheet({
               onChange={setPassword}
               type="text"
               autoComplete="off"
+              verbatim
               hint="Signs them out everywhere. At least 10 characters."
             />
             <button
