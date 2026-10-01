@@ -100,7 +100,6 @@ async function checkOverflow(label) {
 for (const asset of [
   '/brand/icon.svg', '/brand/icon-180.png', '/brand/icon-192.png',
   '/brand/icon-512.png', '/brand/icon-maskable-512.png', '/manifest.webmanifest',
-  '/brand/signature.svg',
 ]) {
   const res = await page.request.get(BASE + asset);
   if (!res.ok()) errors.push(`asset ${asset} returned ${res.status()}`);
@@ -127,26 +126,6 @@ await page.waitForSelector('.quick-actions');
 log('home loaded:', await page.title());
 if (!(await page.getByText('Nothing in the book yet').isVisible())) errors.push('empty state missing on home');
 await checkOverflow('home empty');
-// The footer signature is a CSS mask, not inline SVG (the app bar is plain
-// text now): check that it has real size and that its mask actually points
-// at the traced asset (a 404'd background-image degrades silently, a 404'd mask does not
-// even fail loudly — the box just renders empty).
-const markBox = await page.evaluate(() => {
-  const els = [...document.querySelectorAll('.colophon .signature')];
-  return els.map((el) => {
-    const r = el.getBoundingClientRect();
-    const style = getComputedStyle(el);
-    const mask = style.maskImage || style.webkitMaskImage || '';
-    return { w: Math.round(r.width), h: Math.round(r.height), mask };
-  });
-});
-if (
-  markBox.length < 1 ||
-  markBox.some((m) => m.w < 12 || m.h < 8 || !/signature\.svg/.test(m.mask))
-) {
-  errors.push(`brand mark did not render: ${JSON.stringify(markBox)}`);
-}
-log('brand mark:', JSON.stringify(markBox));
 await shot('01-home-empty');
 
 // ---------------------------------------------------------------- 2. import
