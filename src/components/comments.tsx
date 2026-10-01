@@ -15,6 +15,7 @@ import { useCurrentUser, useSession } from '../data/session';
 import { useInbox } from '../data/inbox';
 import * as api from '../data/messaging';
 import { chatTime } from '../lib/inbox';
+import { isAdmin } from '../lib/roles';
 
 const REFRESH_MS = 15_000;
 /** How soon to look again for an aircraft whose first save has not landed yet. */
@@ -225,7 +226,7 @@ export function AircraftComments({ aircraftId }: { aircraftId: string }) {
                   ) : (
                     <>
                       <div className="comment__body">{c.body}</div>
-                      {c.authorId === me.id || me.role === 'admin' ? (
+                      {c.authorId === me.id || isAdmin(me) ? (
                         <div className="row comment__actions">
                           {c.authorId === me.id ? (
                             <button className="btn btn--sm btn--ghost" onClick={() => setEditing(c.id)}>Edit</button>

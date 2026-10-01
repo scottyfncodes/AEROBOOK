@@ -22,7 +22,7 @@ Everything needs a Postgres database. Put these in `.env.local`:
 ```bash
 DATABASE_URL=postgres://...            # any Postgres; Neon in production
 BETTER_AUTH_SECRET=...                 # long random string: openssl rand -base64 32
-SETUP_TOKEN=...                        # only needed to create the first admin
+SETUP_TOKEN=...                        # only needed to create the first account
 ```
 
 ```bash
@@ -90,13 +90,26 @@ that it reads as a date, because a count that large is not a countdown.
 
 ## Accounts
 
-There is no sign-up. The first admin is created once, on the setup screen,
-with the `SETUP_TOKEN` set on the deployment; after that, an admin adds each
-person under **Settings → Team**, sets or resets their password, makes them
-an admin, or turns their access off. Turning access off keeps their name on
+There is no sign-up. The first account is created once, on the setup screen,
+with the `SETUP_TOKEN` set on the deployment, and is a **developer**. After
+that, an admin adds each person under **Settings → Team**, sets or resets
+their password, or turns their access off. Turning access off keeps their name on
 everything they recorded. Someone whose access is off is told *"Invalid email
 or password"* whatever they type, exactly as for a wrong password, so a
 guessed password is never confirmed. Sign-in attempts are rate-limited.
+
+There are three roles, each with everything the one below has: a **user**
+works with all the data; an **admin** also manages people's accounts; a
+**developer** also decides who is an admin or a developer. Only a developer
+can give or take away the admin or developer role, and only a developer can
+change anything about a developer's account (password, access, sessions,
+two-step sign-in, deleting). The server enforces this on Better Auth's admin
+routes (`refuseOutranked` in `server/app.ts`), not just in the app. To make an
+existing account a developer by hand:
+
+```sql
+update "user" set role = 'developer' where email = 'someone@example.com';
+```
 
 An admin can also **delete** someone, under Settings → Team → Delete. It
 cannot be undone, and asks for their name first. The account is emptied —

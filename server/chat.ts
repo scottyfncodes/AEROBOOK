@@ -23,6 +23,7 @@ import type { SessionUser } from './auth.js';
 import { ensureAppSchema, getPool } from './db.js';
 import { HttpError } from './http.js';
 import { notify, type NotifyResult } from './notify.js';
+import { isAdmin } from '../src/lib/roles.js';
 
 export const MAX_MESSAGE_CHARS = 5000;
 export const MAX_GROUP_NAME = 80;
@@ -478,7 +479,7 @@ export async function removeMember(user: SessionUser, conversationId: string, bo
   const group = await requireGroup(user, conversationId);
   const target = (body as { userId?: unknown })?.userId ?? user.id;
   if (typeof target !== 'string' || !target) throw new HttpError(400, 'Say who');
-  if (target !== user.id && group.createdBy !== user.id && user.role !== 'admin') {
+  if (target !== user.id && group.createdBy !== user.id && !isAdmin(user)) {
     throw new HttpError(403, 'Only whoever made the group, or an admin, can remove someone');
   }
   const client = await getPool().connect();

@@ -17,6 +17,7 @@ import { useCurrentUser } from '../data/session';
 import { useInbox } from '../data/inbox';
 import * as api from '../data/messaging';
 import { chatTime } from '../lib/inbox';
+import { isAdmin } from '../lib/roles';
 import { PeoplePicker, usePeople } from './Chat';
 
 interface Pending {
@@ -309,7 +310,7 @@ function GroupSheet({ conversation, onChange, onClose }: {
   const [name, setName] = useState(conversation.name ?? '');
   const [adding, setAdding] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const canRemove = conversation.createdBy === me.id || me.role === 'admin';
+  const canRemove = conversation.createdBy === me.id || isAdmin(me);
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
