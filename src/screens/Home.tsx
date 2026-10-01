@@ -16,7 +16,6 @@ import {
 } from '../components/Icons';
 import { Chip, EmptyState, Metric } from '../components/ui';
 import { PolicyRow } from '../components/insurance';
-import { Colophon } from '../components/Brand';
 import { useDatabase } from '../data/useStore';
 import {
   bucketFollowUps, followUpsInView, followUpSubject, openOpportunities, pipeline, recentActivity,
@@ -288,7 +287,6 @@ export default function Home() {
           </Link>
         </section>
 
-        <Colophon />
       </main>
     </>
   );
