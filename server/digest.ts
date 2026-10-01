@@ -252,12 +252,45 @@ export function emailEnabled(): boolean {
   return Boolean(process.env.RESEND_API_KEY);
 }
 
-export class EmailError extends Error {}
+/**
+ * A send that did not go. `kind` says why, in terms a screen can explain
+ * without passing on what the email service said: not set up here, too large
+ * for the service, or refused or unreachable.
+ */
+export class EmailError extends Error {
+  constructor(message: string, public kind: 'disabled' | 'too-large' | 'refused' = 'refused', public status?: number) {
+    super(message);
+  }
+}
 
-/** Resend's HTTP API. The idempotency key stops a retried request from sending twice. */
-export async function sendEmail(to: string, email: RenderedDigest, idempotencyKey?: string): Promise<void> {
+/** A file sent with an email, its bytes read on the server. */
+export interface EmailAttachment {
+  filename: string;
+  contentType: string;
+  content: Uint8Array;
+}
+
+export interface SendOptions {
+  /** Defaults to DIGEST_FROM, or AEROBOOK's own address. */
+  from?: string;
+  /** Where the recipient's reply goes. */
+  replyTo?: string;
+  attachments?: EmailAttachment[];
+}
+
+/**
+ * Resend's HTTP API. The idempotency key stops a retried request from sending
+ * twice. Attachments go as base64 content in the request itself (Resend's
+ * server-side way): nothing is put anywhere a link could reach.
+ */
+export async function sendEmail(
+  to: string,
+  email: { subject: string; text: string; html?: string },
+  idempotencyKey?: string,
+  options: SendOptions = {},
+): Promise<void> {
   const key = process.env.RESEND_API_KEY;
-  if (!key) throw new EmailError('Email is not set up on this deployment yet');
+  if (!key) throw new EmailError('Email is not set up on this deployment yet', 'disabled');
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -266,16 +299,29 @@ export async function sendEmail(to: string, email: RenderedDigest, idempotencyKe
       ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}),
     },
     body: JSON.stringify({
-      from: process.env.DIGEST_FROM || DEFAULT_FROM,
+      from: options.from || process.env.DIGEST_FROM || DEFAULT_FROM,
       to: [to],
       subject: email.subject,
-      html: email.html,
+      ...(email.html !== undefined ? { html: email.html } : {}),
       text: email.text,
+      ...(options.replyTo ? { reply_to: options.replyTo } : {}),
+      ...(options.attachments?.length
+        ? {
+          attachments: options.attachments.map((a) => ({
+            filename: a.filename,
+            content: Buffer.from(a.content).toString('base64'),
+            content_type: a.contentType,
+          })),
+        }
+        : {}),
     }),
   });
   if (!response.ok) {
     const detail = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new EmailError(`The email service said ${response.status}${detail?.message ? `: ${detail.message}` : ''}`);
+    const kind = response.status === 413 ? 'too-large' : 'refused';
+    throw new EmailError(
+      `The email service said ${response.status}${detail?.message ? `: ${detail.message}` : ''}`, kind, response.status,
+    );
   }
 }
 

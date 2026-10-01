@@ -18,6 +18,7 @@ import { deletedIds, deleteUser, isDeleted, setProfileColor } from './people.js'
 import { companyAuditPage, startCompanyExport } from './export.js';
 import { isAdmin, isDeveloper, PRIVILEGED_ROLES, toRole, type Role } from '../src/lib/roles.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
+import { emailConfig, sendCustomerEmail } from './customer-email.js';
 
 /**
  * How many accounts exist. On a brand-new database the tables are not there
@@ -284,6 +285,26 @@ async function digest(request: Request): Promise<Response> {
   return error(404, 'Not found');
 }
 
+/**
+ * Emailing a customer from AEROBOOK, with documents from their profile
+ * attached. Anyone who may open those documents may send them; what may go,
+ * and to whom, is decided in customer-email.ts.
+ */
+async function customerEmail(request: Request, user: SessionUser): Promise<Response> {
+  const { pathname } = new URL(request.url);
+  if (pathname === '/api/email/config') {
+    if (request.method !== 'GET') return error(405, 'Method not allowed');
+    return json(emailConfig());
+  }
+  if (pathname === '/api/email/send') {
+    if (request.method !== 'POST') return error(405, 'Method not allowed');
+    const refused = checkWrite(request);
+    if (refused) return refused;
+    return json(await sendCustomerEmail(user, await readJson(request)));
+  }
+  return error(404, 'Not found');
+}
+
 async function sync(request: Request, user: SessionUser): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === '/api/sync/status') return json({ empty: await isEmpty() });
@@ -386,6 +407,11 @@ export async function handle(request: Request): Promise<Response> {
       return await files(request);
     }
     if (pathname.startsWith('/api/digest/')) return await digest(request);
+    if (pathname.startsWith('/api/email/')) {
+      const user = await sessionUser(request);
+      if (!user) return error(401, 'Sign in first');
+      return await customerEmail(request, user);
+    }
     if (pathname === '/api/maintenance/run') {
       // Clears out the files of documents deleted long enough ago, and old notifications.
       const refused = checkCron(request, 'Maintenance');

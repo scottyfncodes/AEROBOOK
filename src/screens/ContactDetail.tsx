@@ -43,6 +43,8 @@ export default function ContactDetail() {
   >(null);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
   const [followUpNote, setFollowUpNote] = useState('');
+  // Documents to start the email with, when it is opened from the documents.
+  const [emailFiles, setEmailFiles] = useState<string[]>([]);
 
   const timeline = useMemo(
     () => (contact ? timelineFor(db, { contactId: contact.id }) : { activities: [], followUps: [] }),
@@ -108,7 +110,7 @@ export default function ContactDetail() {
         ) : null}
 
         <section className="btn-group">
-          <button className="btn btn--primary" onClick={() => setSheet('email')}>
+          <button className="btn btn--primary" onClick={() => { setEmailFiles([]); setSheet('email'); }}>
             <IconMail /> Email
           </button>
           <a
@@ -330,7 +332,11 @@ export default function ContactDetail() {
 
         <section className="stack stack--sm">
           <h2 className="section-title">Documents</h2>
-          <FilesSection documents={documents} links={{ contactId: contact.id }} />
+          <FilesSection
+            documents={documents}
+            links={{ contactId: contact.id }}
+            onEmail={(fileIds) => { setEmailFiles(fileIds); setSheet('email'); }}
+          />
         </section>
 
         <ExternalLinkList links={links} title="Links" />
@@ -350,7 +356,13 @@ export default function ContactDetail() {
       </main>
 
       {sheet === 'email' ? (
-        <EmailComposer contact={contact} aircraft={primaryAircraft} onClose={() => setSheet(null)} />
+        <EmailComposer
+          contact={contact}
+          aircraft={primaryAircraft}
+          documents={documents}
+          initialAttachments={emailFiles}
+          onClose={() => setSheet(null)}
+        />
       ) : null}
       {sheet === 'activity' ? (
         <ActivitySheet

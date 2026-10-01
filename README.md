@@ -57,6 +57,7 @@ server/           the API: sign-in, sync, first-time setup
   push.ts         web push subscriptions and sending
   inbox.ts        unread counts and new events, polled by the open app
   messaging.ts    the routes for all of the above
+  customer-email.ts  emailing a customer with documents from their profile
 db/schema.sql     the whole database schema
 src/lib/          domain logic, all pure and tested
   csv.ts          RFC 4180 reader that never throws on malformed input; the
@@ -234,6 +235,42 @@ can be restored, and is then removed by the daily maintenance run
 daily email). A file any document record points at again is never removed,
 so a second record naming another document's file cannot be used to delete
 it. Without `CRON_SECRET` nothing is ever removed from storage.
+
+### Emailing documents to a customer
+
+On a contact's profile, each document has an **Attach to email** button (the
+envelope), and **Choose documents to email** picks several at once. Either
+opens the email composer with those documents attached; the composer's
+**Email** button on the profile can attach them too. Nothing is sent until
+**Send** is pressed. A mail app cannot be handed a file through a link, so an
+email with attachments is sent by AEROBOOK itself, through the same Resend
+account as the daily email (`POST /api/email/send`):
+
+- The browser sends only ids — the contact, the documents — and the subject
+  and message. The email goes to the address **on the contact's record**,
+  never one the browser names, so a customer's documents only go to them.
+- Every document must be one shown on that contact's profile (their own, or
+  on the aircraft they own now, their opportunities or their policies — the
+  same rule as the profile's list). One that is not, one deleted, one missing
+  from storage or one still only on the device it was added from stops the
+  whole email, with a message saying which and why.
+- The server reads each file from private storage and sends the file itself
+  as the attachment. No link is made, nothing is made public, and no storage
+  credential leaves the server.
+- Anyone signed in whose access is on may send, as anyone may open a
+  document. At most 10 documents and 25 MB together per email (Resend takes
+  40 MB once encoded); a refusal from Resend is explained without passing on
+  its words, and nothing about the message or files is logged.
+- Replies go to the sender's own address. `EMAIL_FROM` sets the sending
+  address (the sender's name is put in front of it, "Alice via AEROBOOK");
+  without it, `DIGEST_FROM` or the default is used.
+- What went, to whom and with which documents is recorded as an **Email**
+  activity on the contact's timeline, written like any other change, so it
+  is in the activity history with who sent it. A retried send (a dropped
+  connection) is sent and recorded once.
+
+Without attachments the composer works as before: copy the message or open
+it in the mail app, and record what you did.
 
 A document attached before cloud storage (or while offline) stays in that
 browser until it can be moved up, which the app does on its own the next time
@@ -470,8 +507,10 @@ would be a different feature.
 
 ## Things it deliberately does not do
 
-- **It never says an email was sent.** AEROBOOK has no mail integration, so an
-  email is recorded as *prepared*, *opened in mail* or *copied*.
+- **It never says an email was sent unless it sent it.** An email handed to
+  the mail app is recorded as *prepared*, *opened in mail* or *copied*; only
+  one AEROBOOK sent itself, with documents attached, is recorded as sent (see
+  Emailing documents to a customer).
 - **It ships no aviation data.** Aircraft performance, airport details and
   registrations come from the authoritative source via a link, not from a copy
   that can go stale.
@@ -559,7 +598,9 @@ uploads use presigned URLs scoped to one path) or `BLOB_READ_WRITE_TOKEN`
 The daily email needs `RESEND_API_KEY` (a Resend sending key for a verified
 domain) and `CRON_SECRET` (any long random string; Vercel sends it with each
 cron call); `APP_URL` overrides the link in it, which otherwise is the
-production URL.
+production URL. Emailing documents to customers uses the same
+`RESEND_API_KEY`; set `EMAIL_FROM` (e.g. `AEROBOOK <mail@yourdomain.com>`, on
+the verified domain) for the address customers see.
 Push notifications need `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` (a key
 pair made once with `npx web-push generate-vapid-keys`; the private key is a
 secret, the public one is handed to browsers) and `VAPID_SUBJECT` (a contact
