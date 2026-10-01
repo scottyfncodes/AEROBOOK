@@ -576,7 +576,8 @@ button, input, select, textarea {
 .sheet {
   width: 100%;
   max-width: 640px;
-  max-height: 92vh;
+  /* Of the visible screen: the backdrop shrinks to it while a keyboard is up. */
+  max-height: min(92vh, calc(100% - 12px));
   display: flex;
   flex-direction: column;
   background: var(--bg-elevated);
@@ -604,6 +605,8 @@ button, input, select, textarea {
   border-top: 1px solid var(--border);
 }
 .sheet__footer > .btn { flex: 1; }
+/* With the keyboard up the home-indicator gap is under the keyboard, not here. */
+.sheet-backdrop--keyboard .sheet__footer { padding-bottom: 12px; }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slide-up { from { transform: translateY(14px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
