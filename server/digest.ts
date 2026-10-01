@@ -82,7 +82,8 @@ const byDue = (a: DigestItem, b: DigestItem) =>
 
 /**
  * Everyone's digest for `day`, from the shared records. People whose access
- * is off, who turned the email off, or who have nothing coming up are left out.
+ * is off or who turned the email off are left out. Someone with nothing coming
+ * up still gets one, saying so, so a quiet day is not mistaken for a broken one.
  */
 export async function buildDigests(
   now = new Date(),
@@ -282,7 +283,7 @@ export interface RunResult {
   day: string;
   enabled: boolean;
   sent: number;
-  /** Already sent today, or nothing on their list. */
+  /** Already sent today. */
   skipped: number;
   failed: number;
 }
@@ -296,10 +297,6 @@ export async function runDigest(now = new Date()): Promise<RunResult> {
   // A database set up before the daily email existed gets its table here.
   await ensureAppSchema();
   for (const digest of await buildDigests(now)) {
-    if (isEmptyDigest(digest)) {
-      result.skipped++;
-      continue;
-    }
     // Claim the day first, so two overlapping runs cannot both send.
     const claimed = await pool.query(
       'insert into app_digest (user_id, day) values ($1, $2) on conflict do nothing returning user_id',

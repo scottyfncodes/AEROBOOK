@@ -140,7 +140,7 @@ export default function Settings() {
               />
               <span>Email me each morning with my overdue, today's and this week's follow-ups</span>
             </label>
-            <p className="muted">Sent to {me.email}. Nothing is sent on a day with nothing due.</p>
+            <p className="muted">Sent to {me.email}. On a day with nothing due, it says so.</p>
             {digestError ? <Banner tone="danger">{digestError}</Banner> : null}
             <button className="btn btn--ghost btn--block" disabled={sending} onClick={() => void sendDigest()}>
               <IconMail /> {sending ? 'Sending…' : 'Send me today’s email now'}
