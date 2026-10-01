@@ -17,6 +17,7 @@ import type { SessionUser } from './auth.js';
 import { ensureAppSchema, getPool } from './db.js';
 import { HttpError } from './http.js';
 import { recordSecurityEvent } from './security.js';
+import { isAdmin, toRole, type Role } from '../src/lib/roles.js';
 
 export const AUDIT_EXPORT_PAGE = 5000;
 
@@ -25,7 +26,7 @@ export interface ExportPerson {
   name: string;
   /** Blank for someone deleted: their address was released. */
   email: string;
-  role: 'admin' | 'user';
+  role: Role;
   access: 'active' | 'off' | 'deleted';
   twoStepSignIn: boolean;
   createdAt: string;
@@ -53,7 +54,7 @@ export interface ExportAuditEntry {
 }
 
 function requireAdmin(user: SessionUser): void {
-  if (user.role !== 'admin') throw new HttpError(403, 'Only an admin can export the company’s data');
+  if (!isAdmin(user)) throw new HttpError(403, 'Only an admin can export the company’s data');
 }
 
 /** Starts an export: records that it happened, and hands over people and comments. */
@@ -96,7 +97,7 @@ export async function startCompanyExport(user: SessionUser): Promise<{
       id: r.id,
       name: r.name,
       email: r.deleted ? '' : r.email,
-      role: r.role === 'admin' ? 'admin' : 'user',
+      role: toRole(r.role),
       access: r.deleted ? 'deleted' : r.banned ? 'off' : 'active',
       twoStepSignIn: Boolean(r.two_factor),
       createdAt: r.created_at.toISOString(),

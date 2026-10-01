@@ -5,6 +5,7 @@
 import { handle } from './app.js';
 import { getAuth, migrate, resetAuth } from './auth.js';
 import { getPool, resetPool } from './db.js';
+import type { Role } from '../src/lib/roles.js';
 
 export const TEST_DB = process.env.TEST_DATABASE_URL;
 export const ORIGIN = 'http://localhost:4173';
@@ -19,7 +20,7 @@ export async function freshDatabase(): Promise<void> {
   await migrate();
 }
 
-export async function createUser(name: string, email: string, role: 'admin' | 'user' = 'user', password = 'correct horse battery') {
+export async function createUser(name: string, email: string, role: Role = 'user', password = 'correct horse battery') {
   const { user } = await getAuth().api.createUser({ body: { name, email, password, role } });
   return user;
 }

@@ -18,6 +18,7 @@ import { toCsv } from './csv';
 import { displayName } from './names';
 import { taskLabel } from './tasks';
 import type { ZipEntry } from './zip';
+import { ROLE_LABEL, type Role } from './roles';
 
 export const EXPORT_FOLDER = 'AEROBOOK-Company-Export';
 
@@ -26,7 +27,7 @@ export interface ExportPerson {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'user';
+  role: Role;
   access: 'active' | 'off' | 'deleted';
   twoStepSignIn: boolean;
   createdAt: string;
@@ -366,7 +367,7 @@ export function buildCompanyExport(input: CompanyExportInput): ZipEntry[] {
 
   add('users.csv', csvFile(
     ['User ID', 'Name', 'Email', 'Role', 'Access', 'Two-step sign-in', 'Created'],
-    people.map((p) => [p.id, p.name, p.email, p.role === 'admin' ? 'Admin' : 'User',
+    people.map((p) => [p.id, p.name, p.email, ROLE_LABEL[p.role],
       p.access === 'active' ? 'Active' : p.access === 'off' ? 'Access off' : 'Deleted', yesNo(p.twoStepSignIn), exportTime(p.createdAt)]),
   ));
 

@@ -13,6 +13,7 @@ import { useCurrentUser } from '../data/session';
 import { useDatabase } from '../data/useStore';
 import { sendDigestNow } from '../data/auth';
 import { eraseEverything, flush, replaceDatabase, updateSettings } from '../data/store';
+import { isAdmin as canManageAccounts } from '../lib/roles';
 import {
   aircraftCsv, contactsCsv, downloadText, exportFilename, fullJson, opportunitiesCsv, parseFullJson,
   policiesCsv,
@@ -21,7 +22,7 @@ import {
 export default function Settings() {
   const db = useDatabase();
   const me = useCurrentUser();
-  const isAdmin = me.role === 'admin';
+  const isAdmin = canManageAccounts(me);
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState('');
