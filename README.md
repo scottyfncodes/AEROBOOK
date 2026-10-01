@@ -15,6 +15,12 @@ its insurance stands, what is happening with it commercially, and what the next
 move is. Open any contact and it answers what they have, what they *want*, and
 when you next owe them something.
 
+**What may be stored in it.** AEROBOOK is visible to the whole team and keeps
+every earlier version of what is written in it, so some customer information
+must never go in at all. [docs/data-handling-policy.md](docs/data-handling-policy.md)
+says what is permitted, what belongs only in approved systems, and what to do
+when something prohibited is entered.
+
 ## Running it
 
 Everything needs a Postgres database. Put these in `.env.local`:
