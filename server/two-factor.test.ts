@@ -1,6 +1,6 @@
 /**
- * Two-step sign-in for admins: setting it up, signing in with it, losing the
- * phone, and everything that must stay as it was — ordinary users, accounts
+ * Two-step sign-in, for anyone: setting it up, signing in with it, losing the
+ * phone, and everything that must stay as it was — people without it, accounts
  * whose access is off, the activity history, and secrets that must never be
  * shown or logged.
  */
@@ -78,12 +78,34 @@ describe.skipIf(!TEST_DB)('two-step sign-in', () => {
       expect((await r.json()).twoFactorRedirect).toBeUndefined();
     });
 
-    it('leaves ordinary users exactly as they were, and cannot be turned on for them', async () => {
+    it('leaves someone who has not turned it on exactly as they were', async () => {
       expect((await attempt('bob@example.com')).status).toBe(200);
-      const r = await api('/api/auth/two-factor/enable', { cookie: bob, body: { password: PASSWORD } });
-      expect(r.status).toBe(403);
       expect(await getPool().query('select 1 from "twoFactor"')).toMatchObject({ rowCount: 0 });
       expect((await whoIs(bob)).twoFactorEnabled).toBe(false);
+    });
+  });
+
+  describe('for someone who is not an admin', () => {
+    it('can be turned on, and then their sign-in needs the code too', async () => {
+      const { secret } = await enroll(bob);
+      const step = await passwordStep('bob@example.com');
+      expect(step.body.twoFactorRedirect).toBe(true);
+      expect(await whoIs(step.challenge)).toBeNull();
+      const done = await api('/api/auth/two-factor/verify-totp', { cookie: step.challenge, body: { code: totp(secret) } });
+      expect(done.status).toBe(200);
+      expect((await whoIs(join(cookiesOf(done)))).email).toBe('bob@example.com');
+    });
+
+    it('gives them no more than before: account management stays with admins', async () => {
+      const { cookie } = await enroll(bob);
+      expect((await api('/api/auth/admin/list-users', { cookie })).status).toBe(403);
+    });
+
+    it('can be reset by an admin when they lose their phone', async () => {
+      await enroll(bob);
+      const r = await api('/api/team/reset-two-factor', { cookie: alice, body: { userId: bobId } });
+      expect(r.status).toBe(200);
+      expect((await passwordStep('bob@example.com')).body.twoFactorRedirect).toBeUndefined();
     });
   });
 
