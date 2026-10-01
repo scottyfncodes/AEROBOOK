@@ -107,7 +107,7 @@ describe.skipIf(!TEST_DB)('daily digest', () => {
     expect((await runDigest(new Date('2026-09-30T16:00:00Z'))).sent).toBe(2);
   });
 
-  it('leaves out people who turned it off or whose access is off', async () => {
+  it('leaves out people who turned it off, whose access is off, or who have nothing due', async () => {
     const bobCookie = await signIn('bob@example.com');
     await push(bobCookie, [{ collection: 'settings', id: bob.id, data: { dailyDigest: false } }]);
     const carol = await createUser('Carol', 'carol@example.com');
@@ -118,16 +118,15 @@ describe.skipIf(!TEST_DB)('daily digest', () => {
     await runDigest(NOW);
     expect(sent.map((m) => m.to[0]).sort()).toEqual(['alice@example.com', 'dan@example.com']);
 
-    // With the unassigned ones done, Dan has nothing, and is told so.
+    // With the unassigned ones done, Dan has nothing, so gets nothing.
     sent = [];
     await getPool().query(
       `update app_record set data = jsonb_set(data, '{completed}', 'true')
         where collection = 'followUps' and data->>'assigneeId' is null`,
     );
     const next = await runDigest(new Date('2026-09-30T16:00:00Z'));
-    expect(sent.map((m) => m.to[0]).sort()).toEqual(['alice@example.com', 'dan@example.com']);
-    expect(sent.find((m) => m.to[0] === 'dan@example.com')!.subject).toBe('AEROBOOK · nothing due — Sep 30');
-    expect(next).toMatchObject({ sent: 2, skipped: 0 });
+    expect(sent.map((m) => m.to[0])).toEqual(['alice@example.com']);
+    expect(next).toMatchObject({ sent: 1, skipped: 1 });
   });
 
   it('sends nothing without an API key', async () => {
