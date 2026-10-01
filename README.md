@@ -539,3 +539,80 @@ Settings → Environment Variables. The guard is there for the time between:
 it stops a branch from touching production data by accident, but code on a
 branch could remove it, so the separate settings are what actually close
 the door.
+
+## Backups
+
+Every night at 07:17 UTC, `.github/workflows/backup.yml` runs
+`scripts/backup-db.sh`. It dumps the production database, checks that the
+dump reads back and holds the accounts table, encrypts it to an
+[age](https://age-encryption.org) public key, and uploads it to an
+S3-compatible bucket (Backblaze B2, Cloudflare R2 or AWS S3). A failed run
+fails the job, and GitHub emails about it.
+
+It exists for the day one of our accounts is taken over. Someone holding the
+Vercel or Neon login can delete the database and Neon's six hours of
+history with it, so the copy lives somewhere that login cannot reach, under
+rules that login cannot change:
+
+- **A separate storage account**, under its own login with its own MFA, not
+  signed in with GitHub, Google or Vercel.
+- **Object lock** (B2, S3) or a bucket lock (R2) of at least 30 days, so
+  nobody can delete or overwrite a backup in that time, us included. A
+  lifecycle rule removes them after a year.
+- **A key that can only add files.** On B2 that is an application key for this
+  bucket with `writeFiles` and nothing else; on S3 a policy allowing only
+  `s3:PutObject`. Whoever reads it out of GitHub can add files, not remove them.
+- **Encrypted before it leaves.** The job holds only the public key. The
+  private key (`AGE-SECRET-KEY-…`) is kept offline — printed, and in a
+  password manager — and never put in GitHub, Vercel or the bucket. Without
+  it the backups cannot be read, so keep two copies.
+
+The documents in Blob storage are not in it; only the database is.
+
+### Setting it up
+
+1. Make the key pair on your own computer: `age-keygen -o aerobook-backup.key`.
+   It prints the public key (`age1…`). Store the file offline as above.
+2. Create the bucket, the object lock, the lifecycle rule and the add-only key.
+3. Give the backup its own read-only database role. Run this in Neon's SQL
+   editor on the production branch (a role made from the Roles page could
+   write):
+
+   ```sql
+   create role aerobook_backup with login password '<long random string>';
+   grant pg_read_all_data to aerobook_backup;
+   ```
+
+   Its connection string is the production one with this role and password.
+4. In GitHub → Settings → Environments, create an environment named `backup`
+   and add:
+
+   | Kind | Name | Value |
+   |---|---|---|
+   | secret | `BACKUP_DATABASE_URL` | the read-only connection string |
+   | secret | `BACKUP_S3_KEY_ID` | the add-only key's id |
+   | secret | `BACKUP_S3_SECRET` | the add-only key's secret |
+   | variable | `BACKUP_AGE_RECIPIENT` | the `age1…` public key |
+   | variable | `BACKUP_S3_BUCKET` | the bucket name |
+   | variable | `BACKUP_S3_ENDPOINT` | e.g. `https://s3.us-west-004.backblazeb2.com`; empty for AWS |
+   | variable | `BACKUP_S3_REGION` | e.g. `us-west-004`; `auto` for R2 |
+
+5. Actions → Nightly database backup → Run workflow, and check a file
+   appears in the bucket. Then restore it once, as below, so you know it works.
+
+GitHub pauses scheduled workflows in a repository with no commits for 60
+days and emails before it does; re-enable it from the Actions tab.
+
+### Restoring
+
+Download the file you want from the bucket, then restore into a new, empty
+database, such as a fresh Neon branch or project, never over the one in use:
+
+```bash
+age -d -i aerobook-backup.key aerobook-2026-10-01T0717Z.dump.age > aerobook.dump
+pg_restore --no-owner --no-privileges -d "postgres://…new database…" aerobook.dump
+```
+
+`pg_restore --list aerobook.dump` shows what is inside, and `-t <table>` restores
+one table. Check the data, then point production's `DATABASE_URL` at the
+restored database and redeploy.
