@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { documentType, servedType } from './documents';
+import { documentType, renamedDocument, servedType } from './documents';
 
 describe('documentType', () => {
   it('keeps PDFs, photos and office documents', () => {
@@ -38,5 +38,26 @@ describe('servedType', () => {
     expect(servedType('text/html')).toBe('application/octet-stream');
     expect(servedType('image/svg+xml')).toBe('application/octet-stream');
     expect(servedType(null)).toBe('application/octet-stream');
+  });
+});
+
+describe('renamedDocument', () => {
+  it('keeps the original extension, whether or not it was typed', () => {
+    expect(renamedDocument('IMG_2041.pdf', 'N123AB insurance binder')).toBe('N123AB insurance binder.pdf');
+    expect(renamedDocument('IMG_2041.pdf', 'Binder.PDF')).toBe('Binder.pdf');
+    expect(renamedDocument('scan.jpeg', 'Logbook page 3')).toBe('Logbook page 3.jpeg');
+  });
+
+  it('tidies spaces and leaves out slashes and control characters', () => {
+    expect(renamedDocument('a.pdf', '  Hull / liability\nquote  ')).toBe('Hull liability quote.pdf');
+  });
+
+  it('refuses a name with nothing in it', () => {
+    expect(renamedDocument('a.pdf', '   ')).toBeNull();
+    expect(renamedDocument('a.pdf', '.pdf')).toBeNull();
+  });
+
+  it('keeps a name within 200 characters', () => {
+    expect(renamedDocument('a.pdf', 'x'.repeat(300))).toHaveLength(200);
   });
 });

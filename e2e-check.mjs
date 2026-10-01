@@ -755,6 +755,25 @@ await phone.getByRole('button', { name: 'Sign in' }).click();
 await phone.waitForSelector('nav.tabbar');
 if ((await openDoc(phone)) !== DOC.buffer.toString()) errors.push('the document was gone after signing out and back in');
 else log('the document is still there after signing out and back in');
+// The admin renames it; the teammate downloads it under the new name, same bytes.
+await page.goto(tailUrl, { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: `Rename ${DOC.name}` }).first().click();
+await page.locator('.sheet').getByLabel('File name').fill('N917JH insurance binder');
+await page.locator('.sheet').getByRole('button', { name: 'Save' }).click();
+await page.waitForSelector('text=N917JH insurance binder.pdf', { timeout: 5000 })
+  .catch(() => errors.push('a renamed document does not show its new name'));
+await page.waitForTimeout(800);
+await phone.goto(tailUrl, { waitUntil: 'networkidle' });
+const renamed = await phone.waitForSelector('text=N917JH insurance binder.pdf', { timeout: 10000 }).then(() => true, () => false);
+if (!renamed) errors.push('the teammate does not see the new name');
+else {
+  const download = phone.waitForEvent('download');
+  await phone.getByRole('button', { name: /N917JH insurance binder\.pdf/ }).first().click();
+  const got = await download;
+  if (got.suggestedFilename() !== 'N917JH insurance binder.pdf') errors.push(`the renamed document downloads as "${got.suggestedFilename()}"`);
+  else if (readFileSync(await got.path(), 'utf8') !== DOC.buffer.toString()) errors.push('the renamed document lost its contents');
+  else log('a renamed document downloads under its new name, same contents');
+}
 const leaked = await (await browser.newContext()).request.get(`${BASE}/api/files/content?path=files/fil_abcd/x.pdf`);
 if (leaked.status() !== 401) errors.push(`a signed-out request for a document got ${leaked.status()}`);
 

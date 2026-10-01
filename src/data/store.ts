@@ -704,6 +704,11 @@ export async function removeFile(id: string): Promise<void> {
   set((db) => ({ ...db, files: db.files.filter((f) => f.id !== id) }));
 }
 
+/** Only the name changes; the stored file stays where it is. */
+export function renameFile(id: string, name: string): void {
+  set((db) => ({ ...db, files: db.files.map((f) => (f.id === id ? { ...f, name } : f)) }));
+}
+
 export async function getFile(id: string): Promise<Blob | undefined> {
   const record = state.files.find((f) => f.id === id);
   if (record?.blobPath && backend.loadFile) return backend.loadFile(record);

@@ -15,12 +15,12 @@ import type {
 } from '../data/types';
 import { ACTIVITY_TYPES, DOCUMENT_CATEGORIES } from '../data/types';
 import {
-  addFile, completeFollowUp, createFollowUp, deleteFollowUp, getFile, logActivity, removeFile,
+  addFile, completeFollowUp, createFollowUp, deleteFollowUp, getFile, logActivity, removeFile, renameFile,
   updateActivity, updateFollowUp,
 } from '../data/store';
 import { addDays, dateKey, formatDate, relativeDue, todayKey } from '../lib/dates';
 import { TASK_KINDS, taskLabel, taskText } from '../lib/tasks';
-import { DOCUMENT_ACCEPT, documentType, DOCUMENT_TYPES_HINT } from '../lib/documents';
+import { DOCUMENT_ACCEPT, documentType, DOCUMENT_TYPES_HINT, renamedDocument } from '../lib/documents';
 import { useCurrentUser, useTeam } from '../data/session';
 import type { ExternalLink } from '../lib/links';
 import type { LinkedDocument } from '../lib/selectors';
@@ -511,6 +511,7 @@ export function FilesSection({
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [category, setCategory] = useState<DocumentCategory>(defaultCategory);
+  const [renaming, setRenaming] = useState<FileRecord | null>(null);
 
   const onPick = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
@@ -572,6 +573,9 @@ export function FilesSection({
                   {[via ? `On ${via}` : '', f.category ?? 'Other', formatBytes(f.size), formatDate(f.createdAt)].filter(Boolean).join(' · ')}
                 </div>
               </button>
+              <button className="btn btn--sm btn--ghost" onClick={() => setRenaming(f)} aria-label={`Rename ${f.name}`}>
+                <IconEdit />
+              </button>
               <button
                 className="btn btn--sm btn--ghost"
                 onClick={() => { void removeFile(f.id).then(() => toast('File removed')); }}
@@ -592,7 +596,47 @@ export function FilesSection({
         Documents are stored privately in the cloud: everyone on the team can open them, and only people
         signed in to AEROBOOK. A JSON backup carries the list but not the files.
       </p>
+      {renaming ? <RenameFileSheet file={renaming} onClose={() => setRenaming(null)} /> : null}
     </div>
+  );
+}
+
+function RenameFileSheet({ file, onClose }: { file: FileRecord; onClose: () => void }) {
+  const toast = useToast();
+  const ext = /\.[a-z0-9]+$/i.exec(file.name)?.[0] ?? '';
+  const [name, setName] = useState(ext ? file.name.slice(0, -ext.length) : file.name);
+  const next = renamedDocument(file.name, name);
+
+  const save = () => {
+    if (!next) return;
+    if (next !== file.name) {
+      renameFile(file.id, next);
+      toast(`Renamed to ${next}`);
+    }
+    onClose();
+  };
+
+  return (
+    <Sheet
+      title="Rename document"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn--primary" disabled={!next} onClick={save}>Save</button>
+        </>
+      }
+    >
+      <div className="stack">
+        <TextField
+          label="File name"
+          value={name}
+          onChange={setName}
+          autoComplete="off"
+          hint={ext ? `Saved as ${next ?? `…${ext}`}` : undefined}
+        />
+      </div>
+    </Sheet>
   );
 }
 
