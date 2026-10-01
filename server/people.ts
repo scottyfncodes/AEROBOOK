@@ -88,6 +88,8 @@ export async function deleteUser(admin: SessionUser, body: unknown): Promise<{ o
     await client.query('delete from app_notification where user_id = $1', [userId]);
     await client.query('delete from app_aircraft_watch where user_id = $1', [userId]);
     await client.query('delete from app_aircraft_comment_read where user_id = $1', [userId]);
+    // Their color is free for someone else.
+    await client.query('delete from app_profile_color where user_id = $1', [userId]);
     // Out of every group; a direct conversation stays, readable by the other person.
     await client.query(
       `update app_conversation_member m set left_at = now()
@@ -137,4 +139,44 @@ export async function deleteUser(admin: SessionUser, body: unknown): Promise<{ o
   } finally {
     client.release();
   }
+}
+
+// ------------------------------------------------------------- profile color
+
+/** The colors anyone may pick; the app keeps how each looks (src/lib/colors.ts). */
+export const PROFILE_COLORS = [
+  'red', 'orange', 'yellow', 'green', 'teal', 'sky', 'blue', 'purple', 'pink', 'brown',
+] as const;
+
+/**
+ * Someone picks a color for themselves, or (null) gives theirs up. One
+ * person per color: the unique index decides who was first, so two people
+ * picking the same one at once cannot both get it.
+ */
+export async function setProfileColor(user: SessionUser, body: unknown): Promise<{ color: string | null }> {
+  const color = (body as { color?: unknown })?.color ?? null;
+  if (color !== null && !(PROFILE_COLORS as readonly unknown[]).includes(color)) throw new HttpError(400, 'Pick one of the colors offered');
+  await ensureAppSchema();
+  if (color === null) {
+    await getPool().query('delete from app_profile_color where user_id = $1', [user.id]);
+    return { color: null };
+  }
+  try {
+    await getPool().query(
+      `insert into app_profile_color (user_id, color) values ($1, $2)
+       on conflict (user_id) do update set color = excluded.color, chosen_at = now()
+         where app_profile_color.color <> excluded.color`,
+      [user.id, color],
+    );
+  } catch (e) {
+    if ((e as { code?: string }).code === '23505') {
+      const { rows } = await getPool().query<{ name: string }>(
+        'select u.name from app_profile_color c join "user" u on u.id = c.user_id where c.color = $1',
+        [color],
+      );
+      throw new HttpError(409, `${rows[0]?.name ?? 'Someone'} already has that color`);
+    }
+    throw e;
+  }
+  return { color: color as string };
 }

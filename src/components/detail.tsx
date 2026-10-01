@@ -2,14 +2,14 @@
  * The pieces every detail screen shares: the timeline, the activity and
  * follow-up sheets, the file list, and the external-link list.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 
 import {
   IconAlert, IconCalendar, IconCheck, IconClock, IconDoc, IconEdit, IconExternal, IconMail, IconNote,
   IconPhone, IconPlus, IconTarget, IconTrash, IconUpload,
 } from './Icons';
-import { Banner, Chip, EmptyState, SelectField, Sheet, TextArea, TextField, useToast } from './ui';
+import { Banner, Chip, ColorDot, EmptyState, SelectField, Sheet, TextArea, TextField, useToast } from './ui';
 import type {
   Activity, ActivityType, DocumentCategory, FollowUp, FollowUpKind, FollowUpPriority, FileRecord,
 } from '../data/types';
@@ -19,7 +19,7 @@ import {
   updateActivity, updateFollowUp,
 } from '../data/store';
 import { addDays, dateKey, formatDate, relativeDue, todayKey } from '../lib/dates';
-import { TASK_KINDS, taskLabel, taskText } from '../lib/tasks';
+import { isTask, TASK_KINDS, taskLabel, taskText } from '../lib/tasks';
 import { DOCUMENT_ACCEPT, documentType, DOCUMENT_TYPES_HINT, renamedDocument } from '../lib/documents';
 import { useCurrentUser, useTeam } from '../data/session';
 import type { ExternalLink } from '../lib/links';
@@ -59,8 +59,6 @@ export function Timeline({
   onDeleteActivity?: (id: string) => void;
 }) {
   const [editing, setEditing] = useState<Activity | null>(null);
-  const me = useCurrentUser();
-  const { nameOf } = useTeam();
 
   type Entry =
     | { kind: 'activity'; at: string; activity: Activity }
@@ -91,7 +89,7 @@ export function Timeline({
                     <span className="xsmall muted nowrap">{relativeDue(f.dueDate)}</span>
                   </div>
                   <div className="small secondary">{taskText(f)}</div>
-                  {f.assigneeId !== me.id ? <div className="xsmall muted">For {nameOf(f.assigneeId)}</div> : null}
+                  <WhoLine f={f} />
                 </div>
               </div>
             );
@@ -477,10 +475,27 @@ export function CompleteFollowUpSheet({
 
 // ------------------------------------------------------------- follow-ups
 
+/**
+ * Who a follow-up is for, when not you, and who gave you a task, when someone
+ * did: each name with the dot of the color they picked.
+ */
+function WhoLine({ f, style }: { f: FollowUp; style?: CSSProperties }) {
+  const me = useCurrentUser();
+  const { nameOf, colorOf } = useTeam();
+  const forSomeoneElse = f.assigneeId !== me.id;
+  const fromSomeoneElse = isTask(f) && f.assignedBy !== me.id && !forSomeoneElse;
+  if (!forSomeoneElse && !fromSomeoneElse) return null;
+  const who = forSomeoneElse ? f.assigneeId : f.assignedBy;
+  return (
+    <div className="xsmall muted row" style={{ gap: 5, ...style }}>
+      <ColorDot color={colorOf(who)} />
+      <span>{forSomeoneElse ? 'For' : 'From'} {nameOf(who)}</span>
+    </div>
+  );
+}
+
 export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onEdit: (f: FollowUp) => void }) {
   const toast = useToast();
-  const me = useCurrentUser();
-  const { nameOf } = useTeam();
   const [completing, setCompleting] = useState<FollowUp | null>(null);
   const open = followUps.filter((f) => !f.completed);
   if (open.length === 0) return null;
@@ -492,7 +507,7 @@ export function FollowUpList({ followUps, onEdit }: { followUps: FollowUp[]; onE
             <span className="small strong truncate">{taskText(f)}</span>
             <Chip tone={relativeDue(f.dueDate).includes('overdue') ? 'danger' : 'info'}>{relativeDue(f.dueDate)}</Chip>
           </div>
-          {f.assigneeId !== me.id ? <div className="xsmall muted" style={{ marginTop: 4 }}>For {nameOf(f.assigneeId)}</div> : null}
+          <WhoLine f={f} style={{ marginTop: 4 }} />
           <div className="row" style={{ gap: 6, marginTop: 8 }}>
             {/* One tap completes it; the sheet is for when there is more to say. */}
             <button className="btn btn--sm grow" onClick={() => { completeFollowUp(f.id); toast('Follow-up completed'); }}>

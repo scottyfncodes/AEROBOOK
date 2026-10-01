@@ -121,6 +121,13 @@ export interface Person {
   active: boolean;
   /** Deleted by an admin: their name ("Name (deleted)") stays on what they did. */
   deleted?: boolean;
+  /** The color they picked for their name (lib/colors.ts), if any. */
+  color?: string;
+}
+
+/** Picks the color shown beside your name, or (null) gives it up. Refused when someone else has it. */
+export async function setProfileColor(color: string | null): Promise<void> {
+  await call('/api/team/color', { color });
 }
 
 export async function listPeople(): Promise<Person[]> {

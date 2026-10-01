@@ -689,6 +689,13 @@ await page.goto(tailUrl, { waitUntil: 'networkidle' });
 // teammate's list, saying what to do and who from, not on the admin's.
 // Setting a follow-up has no way to give it to someone else.
 const TASK = 'Call the owner back about the quote';
+// The admin picks a color first: it marks the tasks they give.
+await page.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+await page.getByRole('radio', { name: 'Teal' }).click();
+await page.waitForSelector('.swatch.is-active', { timeout: 5000 })
+  .catch(() => errors.push('picking a color did not stick'));
+await shot('20b-settings-color');
+await page.goto(tailUrl, { waitUntil: 'networkidle' });
 await page.getByRole('button', { name: 'Follow up' }).click();
 await page.waitForSelector('.sheet');
 if (await page.locator('.sheet').getByLabel('Assign to').count()) errors.push('the follow-up sheet still offers to assign');
@@ -720,6 +727,17 @@ await shot('13c-follow-ups-all');
 if (!has(await phone.locator('.card', { hasText: TASK }).innerText(), `From ${ADMIN.name}`)) {
   errors.push('the teammate’s task does not say who gave it');
 }
+if (!(await phone.locator('.card', { hasText: TASK }).locator('.color-dot').count())) {
+  errors.push('the task does not carry the color of who gave it');
+}
+await phone.locator('.card', { hasText: TASK }).scrollIntoViewIfNeeded();
+await shot('13b2-teammate-task-from');
+await phone.goto(`${BASE}/settings`, { waitUntil: 'networkidle' });
+const tealForTeammate = phone.getByRole('radio', { name: `Teal, taken by ${ADMIN.name}` });
+if (!(await tealForTeammate.count()) || !(await tealForTeammate.isDisabled())) {
+  errors.push('a color someone else has can still be picked');
+} else log('a color is first come, first served');
+await phone.goto(`${BASE}/follow-ups`, { waitUntil: 'networkidle' });
 await phone.locator('.card', { hasText: TASK }).getByRole('button', { name: 'Edit' }).click();
 await phone.waitForSelector('.sheet');
 await phone.locator('.sheet').getByLabel('Assign to', { exact: true }).selectOption({ label: ADMIN.name });

@@ -282,6 +282,12 @@ export function KeyValue({ k, children }: { k: string; children: ReactNode }) {
   );
 }
 
+/** The small dot of someone's picked color, beside their name. Nothing when they have none. */
+export function ColorDot({ color }: { color: string | undefined }) {
+  if (!color) return null;
+  return <span className="color-dot" style={{ background: color }} aria-hidden />;
+}
+
 export function Chip({ tone, children }: { tone?: 'accent' | 'info' | 'success' | 'warn' | 'danger'; children: ReactNode }) {
   return <span className={`chip${tone ? ` chip--${tone}` : ''}`}>{children}</span>;
 }

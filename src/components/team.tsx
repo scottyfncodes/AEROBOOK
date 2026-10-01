@@ -7,11 +7,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { renderSVG } from 'uqr';
 
-import { IconPlus } from './Icons';
+import { IconCheck, IconPlus } from './Icons';
 import { Banner, Chip, ConfirmButton, SelectField, Sheet, TextField, useToast } from './ui';
 import * as auth from '../data/auth';
 import type { TeamMember } from '../data/auth';
-import { useCurrentUser, useSession } from '../data/session';
+import { useCurrentUser, useSession, useTeam } from '../data/session';
+import { PROFILE_COLORS } from '../lib/colors';
 
 const ROLE_OPTIONS = [
   { value: 'user', label: 'User — works with all the data' },
@@ -40,8 +41,71 @@ export function AccountSection() {
         <button className="btn" onClick={() => void session.signOut()}>Sign out</button>
       </div>
       {changing ? <ChangePasswordSheet onClose={() => setChanging(false)} /> : null}
+      <ProfileColorCard />
       <TwoFactorCard />
     </section>
+  );
+}
+
+/**
+ * The color beside your name on tasks. One person per color: a color someone
+ * else has shows their name and cannot be picked until they let it go.
+ */
+function ProfileColorCard() {
+  const me = useCurrentUser();
+  const toast = useToast();
+  const { reloadTeam } = useSession();
+  const { people } = useTeam();
+  const [busy, setBusy] = useState(false);
+  // Fresh when Settings opens: someone may have picked one since.
+  useEffect(reloadTeam, [reloadTeam]);
+
+  const mine = people.find((p) => p.id === me.id)?.color;
+  const holder = (key: string) => people.find((p) => p.color === key && p.id !== me.id);
+
+  const pick = async (key: string | null) => {
+    setBusy(true);
+    try {
+      await auth.setProfileColor(key);
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      reloadTeam();
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card stack stack--sm">
+      <div className="strong">Your color</div>
+      <p className="small muted">
+        Shown as a small dot beside your name on tasks, so the team can tell at a glance who assigned what. Each
+        color belongs to one person: first come, first served.
+      </p>
+      <div className="swatches" role="radiogroup" aria-label="Your color">
+        {PROFILE_COLORS.map((c) => {
+          const taken = holder(c.key);
+          const active = mine === c.key;
+          return (
+            <button
+              key={c.key}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              className={`swatch${active ? ' is-active' : ''}`}
+              disabled={busy || Boolean(taken)}
+              onClick={() => void pick(active ? null : c.key)}
+              aria-label={taken ? `${c.label}, taken by ${taken.name}` : c.label}
+              title={taken ? `${taken.name} has ${c.label.toLowerCase()}` : c.label}
+            >
+              <span className="swatch__color" style={{ background: c.hex }}>{active ? <IconCheck /> : null}</span>
+              <span className="swatch__label">{taken ? taken.name.split(/\s+/)[0] : c.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      {mine ? <p className="xsmall muted">Tap your color again to give it up.</p> : null}
+    </div>
   );
 }
 
