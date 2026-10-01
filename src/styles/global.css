@@ -117,9 +117,10 @@ button, input, select, textarea {
   z-index: 50;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+  /* minmax(0, …): equal columns, never stretched by a long label. */
+  grid-auto-columns: minmax(0, 1fr);
   gap: 2px;
-  padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
   background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -133,12 +134,15 @@ button, input, select, textarea {
   justify-content: center;
   gap: 3px;
   min-height: 46px;
-  padding: 4px 2px;
+  padding: 4px 0;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: 10px;
+  /* Six tabs on a 375px phone leave ~60px each: every label stays on one
+   * line at this size, "Follow-up" included. */
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
   text-transform: uppercase;
   text-decoration: none;
   transition: color 0.15s var(--ease), background 0.15s var(--ease);
@@ -147,6 +151,11 @@ button, input, select, textarea {
 .tabbar__item:hover { text-decoration: none; }
 .tabbar__item.is-active { color: var(--accent); background: var(--accent-dim); }
 .tabbar__item svg { width: 21px; height: 21px; }
+
+/* Narrower than a 375px phone, step the labels down so "Follow-up" still fits. */
+@media (max-width: 370px) {
+  .tabbar__item { font-size: 8px; letter-spacing: 0; }
+}
 
 /* ------------------------------------------------------------------ cards */
 
@@ -468,6 +477,33 @@ button, input, select, textarea {
 .empty__title { font-size: 16px; font-weight: 640; color: var(--text-secondary); }
 .empty__body { font-size: 14px; max-width: 34ch; }
 
+/*
+ * A screen whose whole list is empty: the empty state takes all the room
+ * left above the tab bar, framed, with its message centred in it, rather
+ * than floating near the top over a band of bare page. Inside cards and
+ * sheets it stays the compact version above.
+ */
+.page > .empty {
+  flex: 1;
+  justify-content: center;
+  min-height: 280px;
+  margin-bottom: 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+.page > .empty svg {
+  box-sizing: content-box;
+  width: 30px;
+  height: 30px;
+  padding: 18px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--accent);
+  opacity: 1;
+}
+.page > .empty .empty__title { font-size: 18px; color: var(--text); }
+
 /* ----------------------------------------------------------------- sheet */
 
 .sheet-backdrop {
@@ -646,27 +682,6 @@ button, input, select, textarea {
 
 /* ----------------------------------------------------------------- brand */
 
-/*
- * The owner's signature, used as a mask so it takes the surrounding text
- * colour and works in both themes from one asset. Decorative, so hidden from
- * assistive technology wherever it appears.
- */
-.signature {
-  --signature-width: 180px;
-  width: var(--signature-width);
-  aspect-ratio: 2361.52 / 967.50;
-  background-color: currentColor;
-  -webkit-mask-image: url('/brand/signature.svg');
-  mask-image: url('/brand/signature.svg');
-  -webkit-mask-size: contain;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
-  flex: none;
-}
-
 .appbar__brand {
   display: flex;
   align-items: center;
@@ -687,30 +702,6 @@ button, input, select, textarea {
 }
 
 .wordmark--large { font-size: 30px; font-weight: 500; }
-
-.colophon {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 26px 0 8px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.colophon .signature {
-  --signature-width: 168px;
-  opacity: 0.55;
-  transition: opacity 0.2s var(--ease);
-}
-
-.colophon:hover .signature { opacity: 0.85; }
-
-.colophon__line {
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
 
 /* Centred on the screen itself, not the space left under a header. */
 .splash {

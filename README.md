@@ -452,17 +452,15 @@ works offline). All of it lives as tokens in `src/styles/tokens.css`.
 
 The logo is the name alone: a widely spaced "AEROBOOK" wordmark
 (`src/components/Brand.tsx`). The home-screen icons are a gold jet on the
-navy tile. The footer sign-off is the owner's own signature, traced from
-`brand-source/signature.jpg`.
+navy tile.
 
 ```bash
-npm run brand      # regenerates public/brand/: icons, signature
+npm run brand      # regenerates the icons in public/brand/
 ```
 
 The icons are drawn from geometry in `scripts/build-brand.mjs`; edit them
-there, never the output files. The script needs Chromium (icon rendering and
-the signature's ink matting) and `potrace` (the signature trace), neither of
-which the normal build touches — outputs are committed.
+there, never the output files. The script needs Chromium to render them,
+which the normal build does not — outputs are committed.
 
 ## Deployment
 
