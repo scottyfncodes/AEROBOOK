@@ -65,3 +65,32 @@ export function renamedDocument(original: string, input: string): string | null 
   if (!name) return null;
   return `${name.slice(0, 200 - ext.length)}${ext}`;
 }
+
+/**
+ * Why a document cannot be sent as an email attachment, in words for the
+ * person sending it; null when it can. The server checks all of this again.
+ */
+export function attachmentProblem(
+  file: { name: string; mimeType: string; size: number; blobPath?: string },
+  maxFileBytes: number,
+): string | null {
+  if (!file.blobPath) return 'Still only on the device it was added from, so it cannot be sent yet';
+  if (!ALLOWED_DOCUMENT_TYPES.includes((file.mimeType ?? '').split(';')[0].trim().toLowerCase())) {
+    return 'Not a kind of file AEROBOOK sends';
+  }
+  if (file.size > maxFileBytes) return 'Too large to email';
+  return null;
+}
+
+/** Why these documents together cannot go on one email; null when they can. */
+export function attachmentsProblem(
+  files: { size: number }[],
+  limits: { maxFiles: number; maxBytes: number },
+): string | null {
+  if (files.length > limits.maxFiles) return `One email can carry at most ${limits.maxFiles} documents. Remove some, or send them in two emails.`;
+  const total = files.reduce((sum, f) => sum + (f.size || 0), 0);
+  if (total > limits.maxBytes) {
+    return `These documents come to more than ${Math.round(limits.maxBytes / (1024 * 1024))} MB, too much for one email. Remove some, or send them in two emails.`;
+  }
+  return null;
+}

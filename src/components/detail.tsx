@@ -532,15 +532,22 @@ export function FilesSection({
   documents,
   links,
   defaultCategory = 'Other',
+  onEmail,
 }: {
   documents: LinkedDocument[];
   links: Links;
   defaultCategory?: DocumentCategory;
+  /** Given on a customer's profile: opens an email to them with these documents attached. */
+  onEmail?: (fileIds: string[]) => void;
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [category, setCategory] = useState<DocumentCategory>(defaultCategory);
   const [renaming, setRenaming] = useState<FileRecord | null>(null);
+  // Choosing several documents to email at once; null when not choosing.
+  const [picking, setPicking] = useState<string[] | null>(null);
+  const togglePicked = (id: string, on: boolean) =>
+    setPicking((ids) => (ids ? (on ? [...ids, id] : ids.filter((x) => x !== id)) : ids));
 
   const onPick = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
@@ -591,6 +598,25 @@ export function FilesSection({
     <div className="stack stack--sm">
       {documents.length === 0 ? (
         <div className="card small muted">No documents attached.</div>
+      ) : picking ? (
+        <div className="list list--flush">
+          {documents.map(({ file: f, via }) => (
+            <label className="checkbox-row picker-row" key={f.id}>
+              <input
+                className="checkbox"
+                type="checkbox"
+                checked={picking.includes(f.id)}
+                onChange={(e) => togglePicked(f.id, e.target.checked)}
+              />
+              <span className="grow truncate">
+                <span className="small truncate" style={{ display: 'block' }}>{f.name}</span>
+                <span className="xsmall muted">
+                  {[via ? `On ${via}` : '', formatBytes(f.size)].filter(Boolean).join(' · ')}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
       ) : (
         <div className="list list--flush">
           {documents.map(({ file: f, via }) => (
@@ -602,6 +628,16 @@ export function FilesSection({
                   {[via ? `On ${via}` : '', f.category ?? 'Other', formatBytes(f.size), formatDate(f.createdAt)].filter(Boolean).join(' · ')}
                 </div>
               </button>
+              {onEmail ? (
+                <button
+                  className="btn btn--sm btn--ghost"
+                  onClick={() => onEmail([f.id])}
+                  aria-label={`Attach ${f.name} to an email`}
+                  title="Attach to email"
+                >
+                  <IconMail />
+                </button>
+              ) : null}
               <button className="btn btn--sm btn--ghost" onClick={() => setRenaming(f)} aria-label={`Rename ${f.name}`}>
                 <IconEdit />
               </button>
@@ -616,6 +652,24 @@ export function FilesSection({
           ))}
         </div>
       )}
+      {onEmail && documents.length > 0 ? (
+        picking ? (
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn btn--sm btn--ghost grow" onClick={() => setPicking(null)}>Cancel</button>
+            <button
+              className="btn btn--sm btn--primary grow"
+              disabled={picking.length === 0}
+              onClick={() => { onEmail(picking); setPicking(null); }}
+            >
+              <IconMail /> {picking.length > 1 ? `Email ${picking.length} documents` : 'Email document'}
+            </button>
+          </div>
+        ) : documents.length > 1 ? (
+          <button className="btn btn--sm btn--ghost btn--block" onClick={() => setPicking([])}>
+            <IconMail /> Choose documents to email
+          </button>
+        ) : null
+      ) : null}
       <SelectField label="Category for the next attachment" value={category} options={DOCUMENT_CATEGORIES} onChange={setCategory} />
       <label className="btn btn--ghost btn--block" style={{ cursor: 'pointer' }}>
         <IconUpload /> {busy ? 'Attaching…' : 'Attach a document'}

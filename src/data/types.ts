@@ -269,6 +269,8 @@ export interface Activity {
   date: string;
   subject: string;
   notes: string;
+  /** Documents sent with an email AEROBOOK sent itself; set only on those. */
+  attachments?: { fileId: string; name: string }[];
   createdAt: string;
   /** Set only when the entry is changed after it was recorded. */
   updatedAt?: string;

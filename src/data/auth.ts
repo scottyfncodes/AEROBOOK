@@ -13,6 +13,9 @@ export interface TeamMember extends CloudUser {
   createdAt: string;
 }
 
+/** The request never got an answer: it may or may not have reached the server. */
+export class Unreachable extends Error {}
+
 async function call<T>(path: string, body?: unknown): Promise<T> {
   let response: Response;
   try {
@@ -23,7 +26,7 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new Error('Could not reach AEROBOOK. Check the connection and try again.');
+    throw new Unreachable('Could not reach AEROBOOK. Check the connection and try again.');
   }
   const data = (await response.json().catch(() => null)) as ({ message?: string; error?: string } & T) | null;
   if (!response.ok) {
@@ -143,6 +146,42 @@ export async function fetchHistory(before?: number): Promise<{ entries: HistoryE
 /** Sends today's digest to the signed-in person's own address, now. */
 export async function sendDigestNow(): Promise<string> {
   return (await call<{ sentTo: string }>('/api/digest/send', {})).sentTo;
+}
+
+/** Whether this deployment can send email itself, and how much one email may carry. */
+export interface EmailConfig {
+  enabled: boolean;
+  maxFiles: number;
+  maxBytes: number;
+  maxFileBytes: number;
+}
+
+export async function emailConfig(): Promise<EmailConfig> {
+  return call('/api/email/config');
+}
+
+export interface SentEmail {
+  sentTo: string;
+  attachments: { fileId: string; name: string; size: number }[];
+  /** The Email activity recorded on the customer; null if the email went but could not be recorded. */
+  activityId: string | null;
+}
+
+/**
+ * Emails a customer, with documents from their profile attached. Only ids
+ * go: the server sends to the address on the customer's record and reads
+ * the documents from storage itself.
+ */
+export async function sendCustomerEmail(input: {
+  contactId: string;
+  fileIds: string[];
+  subject: string;
+  body: string;
+  sendId: string;
+  aircraftId?: string | null;
+  opportunityId?: string | null;
+}): Promise<SentEmail> {
+  return call('/api/email/send', input);
 }
 
 // ------------------------------------------------------------ admin only
