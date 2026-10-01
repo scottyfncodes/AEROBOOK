@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { isTask } from '../lib/tasks';
 import { AppBar } from '../components/AppBar';
-import { IconCalendar, IconEdit, IconMail, IconNote } from '../components/Icons';
+import { IconCalendar, IconEdit, IconMail, IconNote, IconUsers } from '../components/Icons';
 import { ActivitySheet, FilesSection, FollowUpList, FollowUpSheet, Timeline } from '../components/detail';
 import { InsuranceSection } from '../components/insurance';
 import { StageControl } from '../components/opportunity';
@@ -28,7 +29,7 @@ export default function OpportunityDetail() {
   const toast = useToast();
 
   const opportunity = db.opportunities.find((o) => o.id === id);
-  const [sheet, setSheet] = useState<'edit' | 'activity' | 'followUp' | 'email' | null>(null);
+  const [sheet, setSheet] = useState<'edit' | 'activity' | 'followUp' | 'assign' | 'email' | null>(null);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
 
   const timeline = useMemo(
@@ -136,6 +137,9 @@ export default function OpportunityDetail() {
           <button className="btn" onClick={() => { setEditingFollowUp(undefined); setSheet('followUp'); }}>
             <IconCalendar /> Follow up
           </button>
+          <button className="btn" onClick={() => { setEditingFollowUp(undefined); setSheet('assign'); }}>
+            <IconUsers /> Assign
+          </button>
         </section>
 
         {isInsurance || policies.length > 0 ? (
@@ -161,7 +165,7 @@ export default function OpportunityDetail() {
         {timeline.followUps.some((f) => !f.completed) ? (
           <section className="stack stack--sm">
             <h2 className="section-title">Follow-ups</h2>
-            <FollowUpList followUps={timeline.followUps} onEdit={(f) => { setEditingFollowUp(f); setSheet('followUp'); }} />
+            <FollowUpList followUps={timeline.followUps} onEdit={(f) => { setEditingFollowUp(f); setSheet(isTask(f) ? 'assign' : 'followUp'); }} />
           </section>
         ) : null}
 
@@ -200,8 +204,9 @@ export default function OpportunityDetail() {
           onClose={() => setSheet(null)}
         />
       ) : null}
-      {sheet === 'followUp' ? (
+      {sheet === 'followUp' || sheet === 'assign' ? (
         <FollowUpSheet
+          assign={sheet === 'assign'}
           links={{ opportunityId: opportunity.id, contactId: contact?.id ?? null, aircraftId: aircraft?.id ?? null }}
           existing={editingFollowUp}
           defaultNote={opportunity.nextAction || opportunity.title || `Follow up on this ${opportunity.type.toLowerCase()}`}

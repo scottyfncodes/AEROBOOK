@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { isTask } from '../lib/tasks';
 import { AppBar } from '../components/AppBar';
 import {
-  IconCalendar, IconEdit, IconMail, IconNote, IconPhone, IconPlane, IconPlus, IconTarget,
+  IconCalendar, IconEdit, IconMail, IconNote, IconPhone, IconPlane, IconPlus, IconTarget, IconUsers,
 } from '../components/Icons';
 import {
   ActivitySheet, ExternalLinkList, FilesSection, FollowUpList, FollowUpSheet, NeedsReviewBanner, Timeline,
@@ -38,7 +39,7 @@ export default function ContactDetail() {
 
   const contact = db.contacts.find((c) => c.id === id);
   const [sheet, setSheet] = useState<
-    'email' | 'activity' | 'followUp' | 'edit' | 'opportunity' | 'intent' | 'aircraft' | null
+    'email' | 'activity' | 'followUp' | 'assign' | 'edit' | 'opportunity' | 'intent' | 'aircraft' | null
   >(null);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUp | undefined>();
   const [followUpNote, setFollowUpNote] = useState('');
@@ -138,6 +139,9 @@ export default function ContactDetail() {
             }}
           >
             <IconCalendar /> Follow up
+          </button>
+          <button className="btn" onClick={() => { setEditingFollowUp(undefined); setSheet('assign'); }}>
+            <IconUsers /> Assign
           </button>
           <button className="btn" onClick={() => setSheet('opportunity')}>
             <IconTarget /> Add opportunity
@@ -303,7 +307,7 @@ export default function ContactDetail() {
             <h2 className="section-title">Follow-ups</h2>
             <FollowUpList
               followUps={timeline.followUps}
-              onEdit={(f) => { setEditingFollowUp(f); setSheet('followUp'); }}
+              onEdit={(f) => { setEditingFollowUp(f); setSheet(isTask(f) ? 'assign' : 'followUp'); }}
             />
           </section>
         ) : null}
@@ -354,8 +358,9 @@ export default function ContactDetail() {
           onClose={() => setSheet(null)}
         />
       ) : null}
-      {sheet === 'followUp' ? (
+      {sheet === 'followUp' || sheet === 'assign' ? (
         <FollowUpSheet
+          assign={sheet === 'assign'}
           links={{ contactId: contact.id, aircraftId: primaryAircraft?.id ?? null }}
           existing={editingFollowUp}
           defaultNote={followUpNote || `Follow up with ${displayName(contact)}`}

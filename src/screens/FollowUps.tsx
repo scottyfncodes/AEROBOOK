@@ -10,7 +10,7 @@ import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { AppBar } from '../components/AppBar';
-import { IconBell, IconCheck, IconPlus, IconTrash } from '../components/Icons';
+import { IconBell, IconCheck, IconPlus, IconTrash, IconUsers } from '../components/Icons';
 import { CompleteFollowUpSheet, FollowUpSheet } from '../components/detail';
 import { Chip, EmptyState, Metric, useToast } from '../components/ui';
 import { useDatabase } from '../data/useStore';
@@ -20,7 +20,7 @@ import {
 } from '../lib/selectors';
 import { useCurrentUser, useTeam } from '../data/session';
 import { formatDate, relativeDue } from '../lib/dates';
-import { taskText } from '../lib/tasks';
+import { isTask, taskText } from '../lib/tasks';
 import type { FollowUp } from '../data/types';
 
 export default function FollowUps() {
@@ -36,6 +36,7 @@ export default function FollowUps() {
   const [editing, setEditing] = useState<FollowUp | undefined>();
   const [completing, setCompleting] = useState<FollowUp | undefined>();
   const creatingGeneral = params.get('new') === '1';
+  const assigning = params.get('assign') === '1';
 
   const buckets = useMemo(() => bucketFollowUps(followUpsInView(db, view, me.id)), [db, view, me.id]);
   const counts = useMemo(
@@ -77,6 +78,9 @@ export default function FollowUps() {
                   </Link>
                   <div className="row" style={{ gap: 4 }}>
                     {f.assigneeId !== me.id ? <Chip>{nameOf(f.assigneeId)}</Chip> : null}
+                    {isTask(f) && f.assigneeId === me.id && f.assignedBy !== me.id ? (
+                      <Chip tone="accent">From {nameOf(f.assignedBy)}</Chip>
+                    ) : null}
                     {f.priority === 'High' ? <Chip tone="danger">High</Chip> : null}
                     <Chip tone={tone}>{relativeDue(f.dueDate)}</Chip>
                   </div>
@@ -118,13 +122,22 @@ export default function FollowUps() {
       <AppBar
         title="Follow-ups"
         actions={
-          <button
-            className="btn btn--ghost btn--icon"
-            onClick={() => setParams({ ...viewParams(view), new: '1' })}
-            aria-label="New follow-up"
-          >
-            <IconPlus />
-          </button>
+          <>
+            <button
+              className="btn btn--ghost btn--icon"
+              onClick={() => setParams({ ...viewParams(view), assign: '1' })}
+              aria-label="Assign a task"
+            >
+              <IconUsers />
+            </button>
+            <button
+              className="btn btn--ghost btn--icon"
+              onClick={() => setParams({ ...viewParams(view), new: '1' })}
+              aria-label="New follow-up"
+            >
+              <IconPlus />
+            </button>
+          </>
         }
       />
       <main className="page stack stack--lg">
@@ -204,15 +217,17 @@ export default function FollowUps() {
         <FollowUpSheet
           links={{ contactId: editing.contactId, aircraftId: editing.aircraftId, opportunityId: editing.opportunityId }}
           existing={editing}
+          assign={isTask(editing)}
           onClose={() => setEditing(undefined)}
         />
       ) : null}
       {completing ? (
         <CompleteFollowUpSheet followUp={completing} onClose={() => setCompleting(undefined)} />
       ) : null}
-      {creatingGeneral ? (
+      {creatingGeneral || assigning ? (
         <FollowUpSheet
           links={{}}
+          assign={assigning}
           onClose={() => setView(view)}
         />
       ) : null}

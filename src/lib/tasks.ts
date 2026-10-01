@@ -13,6 +13,11 @@ export const TASK_KINDS: { value: FollowUpKind; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
+/** A task someone was given with Assign, rather than a follow-up they set themselves. */
+export function isTask(f: Pick<FollowUp, 'assignedBy'>): boolean {
+  return Boolean(f.assignedBy);
+}
+
 export function taskLabel(kind: FollowUpKind | undefined): string {
   return TASK_KINDS.find((k) => k.value === kind)?.label ?? 'Follow up';
 }
