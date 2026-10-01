@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import { ToastProvider, useToast } from './components/ui';
@@ -158,11 +158,69 @@ function Shell() {
   );
 }
 
-/** The tabs, with Chat's unread count on its icon. */
+/** Fields that bring up a phone's keyboard. */
+function typesText(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  if (el.isContentEditable || el instanceof HTMLTextAreaElement) return true;
+  return el instanceof HTMLInputElement
+    && !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'range', 'color'].includes(el.type);
+}
+
+/**
+ * The tabs, with Chat's unread count on its icon.
+ *
+ * iOS leaves a fixed bar wherever the bottom of the screen was while the
+ * keyboard was up, so after typing in Settings it floated mid-page until the
+ * next scroll. The bar steps aside while someone types (as native tab bars
+ * do), and follows the bottom of what is actually on screen otherwise.
+ */
 function TabBar() {
   const { chatUnread } = useInbox();
+  const [typing, setTyping] = useState(false);
+  const nav = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    let blur: ReturnType<typeof setTimeout> | undefined;
+    // Only where typing brings up an on-screen keyboard.
+    if (!window.matchMedia?.('(pointer: coarse)').matches) return;
+    const onFocusIn = (e: FocusEvent) => {
+      if (!typesText(e.target)) return;
+      clearTimeout(blur);
+      setTyping(true);
+    };
+    // Moving from one field to the next keeps the keyboard up; wait to see.
+    const onFocusOut = () => {
+      clearTimeout(blur);
+      blur = setTimeout(() => setTyping(typesText(document.activeElement)), 100);
+    };
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    return () => {
+      clearTimeout(blur);
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+    };
+  }, []);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const pin = () => {
+      // How far the bottom of what is on screen sits from where the page thinks it is.
+      const off = Math.round(vv.height + vv.offsetTop - window.innerHeight);
+      nav.current?.style.setProperty('transform', off ? `translateY(${off}px)` : '');
+    };
+    pin();
+    vv.addEventListener('resize', pin);
+    vv.addEventListener('scroll', pin);
+    return () => {
+      vv.removeEventListener('resize', pin);
+      vv.removeEventListener('scroll', pin);
+    };
+  }, []);
+
   return (
-    <nav className="tabbar" aria-label="Main">
+    <nav ref={nav} className={`tabbar${typing ? ' tabbar--typing' : ''}`} aria-label="Main">
       {TABS.map(({ to, label, Icon, end, ariaLabel }) => (
         <NavLink
           key={to}
