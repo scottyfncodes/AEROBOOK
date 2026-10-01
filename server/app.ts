@@ -15,6 +15,7 @@ import { checkWrite, error, HttpError, json, readJson } from './http.js';
 import { isMessagingPath, messaging } from './messaging.js';
 import { pruneNotifications } from './notify.js';
 import { deletedIds, deleteUser, isDeleted, setProfileColor } from './people.js';
+import { isAdmin, isDeveloper, PRIVILEGED_ROLES, toRole, type Role } from '../src/lib/roles.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
 
 /**
@@ -43,9 +44,9 @@ function sameSecret(a: string, b: string): boolean {
 }
 
 /**
- * The first admin. Only possible while nobody has an account, and only with
- * the SETUP_TOKEN set on the deployment — so finding the URL first is not
- * enough to claim it.
+ * The first account, a developer: the one who can then make admins. Only
+ * possible while nobody has an account, and only with the SETUP_TOKEN set on
+ * the deployment — so finding the URL first is not enough to claim it.
  */
 async function setup(request: Request): Promise<Response> {
   if (request.method === 'GET') return json({ needsSetup: (await userCount()) === 0 });
@@ -59,7 +60,7 @@ async function setup(request: Request): Promise<Response> {
   if (!body.name?.trim() || !body.email?.trim() || !body.password) return error(400, 'Name, email and password are required');
   if (body.password.length < 10) return error(400, 'Use at least 10 characters for the password');
   await getAuth().api.createUser({
-    body: { name: body.name.trim(), email: body.email.trim().toLowerCase(), password: body.password, role: 'admin' },
+    body: { name: body.name.trim(), email: body.email.trim().toLowerCase(), password: body.password, role: 'developer' },
   });
   return json({ ok: true });
 }
@@ -108,7 +109,7 @@ async function deleteUserRoute(request: Request): Promise<Response> {
   if (refused) return refused;
   const user = await sessionUser(request);
   if (!user) return error(401, 'Sign in first');
-  if (user.role !== 'admin') return error(403, 'Only an admin can do that');
+  if (!isAdmin(user)) return error(403, 'Only an admin can do that');
   return json(await deleteUser(user, await readJson(request)));
 }
 
@@ -121,6 +122,49 @@ async function refuseDeletedTarget(request: Request, pathname: string): Promise<
   const body = (await request.clone().json().catch(() => null)) as { userId?: unknown } | null;
   if (typeof body?.userId !== 'string' || !body.userId) return null;
   return (await isDeleted(body.userId)) ? error(409, 'That person was deleted') : null;
+}
+
+/** The roles a request asks for, however Better Auth would read them. */
+function requestedRoles(value: unknown): string[] {
+  const list = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  return list.flatMap((r) => (typeof r === 'string' ? r.split(',').map((x) => x.trim()) : [String(r)]));
+}
+
+/**
+ * Admins manage accounts; only a developer decides who is an admin or a
+ * developer. Better Auth lets anyone with its admin permissions set any role,
+ * so before its admin routes run, someone who is not a developer is refused:
+ *   - giving anyone the admin or developer role (set-role, create-user,
+ *     update-user)
+ *   - changing the role of someone who is an admin or a developer
+ *   - anything at all done to a developer's account (password, sessions,
+ *     access, impersonation, editing, removal)
+ * Reading (list-users, get-user) is unaffected.
+ */
+async function refuseOutranked(request: Request, pathname: string): Promise<Response | null> {
+  if (request.method !== 'POST' || !pathname.startsWith('/api/auth/admin/')) return null;
+  const caller = await sessionUser(request);
+  // Better Auth turns away anyone without a session or its admin permissions.
+  if (!caller || !isAdmin(caller) || isDeveloper(caller)) return null;
+  const body = (await request.clone().json().catch(() => undefined)) as
+    | { userId?: unknown; role?: unknown; data?: { role?: unknown } | null } | undefined;
+  if (!body || typeof body !== 'object') return error(400, 'Send the request as JSON');
+
+  const action = pathname.slice('/api/auth/admin/'.length);
+  const roleField = action === 'set-role' || action === 'create-user' ? body.role : undefined;
+  const asked = [...requestedRoles(roleField), ...requestedRoles(body.data?.role)];
+  const changesRole = asked.length > 0;
+  if (asked.some((r) => (PRIVILEGED_ROLES as readonly string[]).includes(r))) {
+    return error(403, 'Only a developer can make someone an admin or a developer');
+  }
+
+  if (typeof body.userId !== 'string' || !body.userId) return null;
+  const { rows } = await getPool().query<{ role: string | null }>('select role from "user" where id = $1', [body.userId]);
+  if (!rows[0]) return null;
+  const target: Role = toRole(rows[0].role);
+  if (target === 'developer') return error(403, 'Only a developer can manage a developer’s account');
+  if (changesRole && target === 'admin') return error(403, 'Only a developer can change an admin’s role');
+  return null;
 }
 
 /**
@@ -274,7 +318,7 @@ async function resetTwoFactorRoute(request: Request): Promise<Response> {
   if (refused) return refused;
   const user = await sessionUser(request);
   if (!user) return error(401, 'Sign in first');
-  if (user.role !== 'admin') return error(403, 'Only an admin can do that');
+  if (!isAdmin(user)) return error(403, 'Only an admin can do that');
   const { userId } = (await readJson(request)) as { userId?: unknown };
   if (typeof userId !== 'string' || !userId) return error(400, 'Say whose two-step sign-in to reset');
   try {
@@ -295,6 +339,8 @@ async function resetTwoFactorRoute(request: Request): Promise<Response> {
 async function authRoute(request: Request, pathname: string): Promise<Response> {
   const deleted = await refuseDeletedTarget(request, pathname);
   if (deleted) return deleted;
+  const outranked = await refuseOutranked(request, pathname);
+  if (outranked) return outranked;
   const response = await getAuth().handler(request);
   const signIn = pathname === '/api/auth/sign-in/email';
   // Access turned off between the password and the two-step code.

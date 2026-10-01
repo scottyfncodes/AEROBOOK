@@ -13,12 +13,13 @@
  *   kept   — their messages, comments, timeline notes, documents, records
  *            and audit history, shown under "Name (deleted)"
  *
- * Only an admin may do it, never to themselves, and never to the last admin
- * with access. It is written to the admin audit log (collection "security").
+ * Only an admin may do it (and only a developer to a developer), never to
+ * themselves, and never to the last admin or developer with access. It is written to the admin audit log (collection "security").
  */
 import type { SessionUser } from './auth.js';
 import { ensureAppSchema, getPool } from './db.js';
 import { HttpError } from './http.js';
+import { isAdmin, isDeveloper, toRole } from '../src/lib/roles.js';
 import { recordSecurityEvent } from './security.js';
 import { describe, WRITE_LOCK } from './sync.js';
 
@@ -40,7 +41,7 @@ export async function deletedIds(): Promise<Set<string>> {
 }
 
 export async function deleteUser(admin: SessionUser, body: unknown): Promise<{ ok: true }> {
-  if (admin.role !== 'admin') throw new HttpError(403, 'Only an admin can delete someone');
+  if (!isAdmin(admin)) throw new HttpError(403, 'Only an admin can delete someone');
   const userId = (body as { userId?: unknown })?.userId;
   if (typeof userId !== 'string' || !userId) throw new HttpError(400, 'Say who to delete');
   if (userId === admin.id) throw new HttpError(400, 'You cannot delete yourself. Another admin can.');
@@ -60,10 +61,12 @@ export async function deleteUser(admin: SessionUser, body: unknown): Promise<{ o
     const target = rows[0];
     if (!target || target.deleted) throw new HttpError(404, 'No such person');
 
-    if (target.role === 'admin') {
+    const targetRole = toRole(target.role);
+    if (targetRole === 'developer' && !isDeveloper(admin)) throw new HttpError(403, 'Only a developer can delete a developer');
+    if (targetRole !== 'user') {
       const others = await client.query<{ n: number }>(
         `select count(*)::int as n from "user" u
-          where u.role = 'admin' and u.id <> $1 and not coalesce(u.banned, false)
+          where u.role in ('admin', 'developer') and u.id <> $1 and not coalesce(u.banned, false)
             and not exists (select 1 from app_deleted_user d where d.user_id = u.id)`,
         [userId],
       );

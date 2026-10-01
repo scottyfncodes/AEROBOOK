@@ -21,12 +21,13 @@ import {
   type RecordChange, type RemoteRecord,
 } from './sync';
 import { emptyDatabase, type Database, type FileRecord } from './types';
+import type { Role } from '../lib/roles';
 
 export interface CloudUser {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'user';
+  role: Role;
 }
 
 const PUSH_CHUNK = 500;

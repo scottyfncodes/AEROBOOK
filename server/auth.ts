@@ -1,14 +1,17 @@
 /**
  * Sign-in. Accounts are invite-only: there is no sign-up form, an admin
- * creates each person from Settings, and the very first admin is created once
- * through /api/setup with a token only the deployer knows.
+ * creates each person from Settings, and the very first account — a
+ * developer — is created once through /api/setup with a token only the
+ * deployer knows.
  */
 import { betterAuth } from 'better-auth';
 import { admin } from 'better-auth/plugins';
+import { adminAc, userAc } from 'better-auth/plugins/admin/access';
 import { twoFactor } from 'better-auth/plugins/two-factor';
 import { getMigrations } from 'better-auth/db/migration';
 import { APP_SCHEMA, getPool } from './db.js';
 import { twoFactorAfter, twoFactorBefore } from './security.js';
+import { toRole, type Role } from '../src/lib/roles.js';
 
 /**
  * The addresses this deployment answers on: Vercel's own for production and
@@ -64,7 +67,15 @@ function options() {
     plugins: [
       // A turned-off account is told the same as a wrong password (see
       // authRoute in app.ts, which also evens out the status and code).
-      admin({ defaultRole: 'user', adminRoles: ['admin'], bannedUserMessage: 'Invalid email or password' }),
+      // Developers and admins may use the same account controls; which of
+      // them may change whom is decided in app.ts (refuseOutranked), and
+      // naming the roles here means no other role can be given.
+      admin({
+        defaultRole: 'user',
+        roles: { developer: adminAc, admin: adminAc, user: userAc },
+        adminRoles: ['developer', 'admin'],
+        bannedUserMessage: 'Invalid email or password',
+      }),
       // Two-step sign-in for admins: an authenticator-app code after the
       // password, with single-use backup codes. Setup only counts once a code
       // from the app has been entered. See security.ts for what AEROBOOK adds.
@@ -109,7 +120,7 @@ export interface SessionUser {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'user';
+  role: Role;
 }
 
 export async function sessionUser(request: Request): Promise<SessionUser | null> {
@@ -117,5 +128,5 @@ export async function sessionUser(request: Request): Promise<SessionUser | null>
   if (!session) return null;
   const u = session.user as { id: string; name: string; email: string; role?: string | null; banned?: boolean | null };
   if (u.banned) return null;
-  return { id: u.id, name: u.name, email: u.email, role: u.role === 'admin' ? 'admin' : 'user' };
+  return { id: u.id, name: u.name, email: u.email, role: toRole(u.role) };
 }
