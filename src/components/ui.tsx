@@ -110,7 +110,7 @@ export function Field({
 }
 
 export function TextField({
-  label, value, onChange, placeholder, type = 'text', hint, error, inputMode, autoComplete,
+  label, value, onChange, placeholder, type = 'text', hint, error, inputMode, autoComplete, verbatim,
 }: {
   label: string;
   value: string;
@@ -121,6 +121,8 @@ export function TextField({
   error?: string;
   inputMode?: 'text' | 'email' | 'tel' | 'numeric' | 'decimal' | 'url' | 'search';
   autoComplete?: string;
+  /** Kept exactly as typed: no capital first letter, autocorrect or spellcheck from a phone keyboard. */
+  verbatim?: boolean;
 }) {
   return (
     <Field label={label} hint={hint} error={error}>
@@ -132,6 +134,7 @@ export function TextField({
           value={value}
           inputMode={inputMode}
           autoComplete={autoComplete}
+          {...(verbatim ? { autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false } : {})}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
         />
