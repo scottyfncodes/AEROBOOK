@@ -22,6 +22,7 @@ import {
 } from '../lib/selectors';
 import { renewalSummary, renewalsNeedingAttention } from '../lib/insurance';
 import { formatDate, formatDateTime, relativeDue } from '../lib/dates';
+import { taskText } from '../lib/tasks';
 import { displayName } from '../lib/names';
 
 export default function Home() {
@@ -124,7 +125,7 @@ export default function Home() {
                     <span className="strong truncate">{followUpSubject(db, f)}</span>
                     <Chip tone={buckets.overdue.includes(f) ? 'danger' : 'warn'}>{relativeDue(f.dueDate)}</Chip>
                   </div>
-                  <div className="small secondary truncate">{f.note || 'Follow up'}</div>
+                  <div className="small secondary truncate">{taskText(f)}</div>
                 </Link>
               ))}
             </div>

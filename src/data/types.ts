@@ -274,6 +274,9 @@ export interface Activity {
   updatedAt?: string;
 }
 
+/** What the follow-up asks for; see lib/tasks.ts for the labels. */
+export type FollowUpKind = 'follow-up' | 'call' | 'quote' | 'contract' | 'other';
+
 export interface FollowUp {
   id: string;
   contactId: string | null;
@@ -281,6 +284,8 @@ export interface FollowUp {
   opportunityId: string | null;
   insurancePolicyId?: string | null;
   dueDate: string;
+  /** Missing is a plain follow-up. */
+  kind?: FollowUpKind;
   note: string;
   priority?: FollowUpPriority;
   /**

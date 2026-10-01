@@ -32,10 +32,6 @@ export const IconBell = (p: P) => (
   <svg {...base} {...p}><path d="M6.5 10a5.5 5.5 0 1 1 11 0c0 4 1.5 5.5 1.5 5.5H5S6.5 14 6.5 10Z" /><path d="M10 18.5a2.2 2.2 0 0 0 4 0" /></svg>
 );
 
-export const IconTools = (p: P) => (
-  <svg {...base} {...p}><path d="M14.5 6.2a3.8 3.8 0 0 0 5 5L15 15.7l-3-3z" /><path d="m12 12.7-6.6 6.6a1.9 1.9 0 0 1-2.7-2.7L9.3 10" /></svg>
-);
-
 export const IconSearch = (p: P) => (
   <svg {...base} {...p}><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></svg>
 );

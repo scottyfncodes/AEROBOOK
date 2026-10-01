@@ -559,6 +559,7 @@ export function deleteActivity(id: string): void {
 
 export function createFollowUp(input: {
   dueDate: string;
+  kind?: import('./types').FollowUpKind;
   note: string;
   priority?: import('./types').FollowUpPriority;
   contactId?: string | null;
@@ -575,6 +576,7 @@ export function createFollowUp(input: {
     opportunityId: input.opportunityId ?? null,
     insurancePolicyId: input.insurancePolicyId ?? null,
     dueDate: input.dueDate,
+    kind: input.kind ?? 'follow-up',
     note: input.note,
     priority: input.priority ?? 'Normal',
     assigneeId: input.assigneeId ?? null,
