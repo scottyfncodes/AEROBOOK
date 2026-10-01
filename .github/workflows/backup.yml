@@ -15,15 +15,31 @@ concurrency:
 
 jobs:
   backup:
+    # From main only. The backup environment is limited to main as well (see
+    # the README), so a workflow changed on another branch cannot reach its
+    # secrets either.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: backup
+    # An empty Postgres on this runner alone. Every dump is restored into it
+    # and compared with the database before anything is uploaded.
+    services:
+      verify:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
-      - name: Install pg_dump 18 and age
+      - name: Install the Postgres 18 tools and age
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-common age jq
@@ -31,10 +47,11 @@ jobs:
           sudo apt-get install -y -qq postgresql-client-18
           echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
 
-      - name: Dump, encrypt and upload
+      - name: Dump, restore and check, encrypt, upload
         run: scripts/backup-db.sh
         env:
           DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_VERIFY_URL: postgres://postgres:verify@127.0.0.1:5432/postgres
           BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
           BACKUP_S3_BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
           BACKUP_S3_ENDPOINT: ${{ vars.BACKUP_S3_ENDPOINT }}

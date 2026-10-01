@@ -543,10 +543,14 @@ the door.
 ## Backups
 
 Every night at 07:17 UTC, `.github/workflows/backup.yml` runs
-`scripts/backup-db.sh`. It dumps the production database, checks that the
-dump reads back and holds the accounts table, encrypts it to an
+`scripts/backup-db.sh`. It dumps the production database, restores the dump
+in full into an empty Postgres on the runner and checks it, encrypts it to an
 [age](https://age-encryption.org) public key, and uploads it to a Backblaze B2
-or AWS S3 bucket. Any failure fails the job, and GitHub emails about it.
+or AWS S3 bucket. Any failure fails the job, and GitHub emails about it;
+nothing is uploaded from a run that fails.
+
+The dump is every schema except `neon_auth`, which belongs to Neon Auth and
+which AEROBOOK does not use; all of AEROBOOK's tables are in `public`.
 
 **Uploaded documents are not backed up.** The files in Vercel Blob storage
 (everything attached under Documents) are not in these backups; only the
@@ -561,14 +565,26 @@ on unless these hold, so a weakened setup stops the backups loudly instead
 of quietly:
 
 - **Read-only.** The database role cannot insert, update, delete or truncate
-  any table, and is not a superuser or member of `neon_superuser`.
+  any table or column, cannot change a sequence, owns nothing and cannot
+  `SET ROLE` to anything that does, and is not a superuser or a member of
+  `neon_superuser` or `pg_write_all_data`.
+- **A whole, faithful copy.** Before the dump, every table is counted inside
+  a read-only transaction, and `pg_dump` dumps from that same snapshot. The
+  dump must then restore without a single error into the empty Postgres on
+  the runner (never anywhere else: the script accepts only an empty database
+  on localhost), every table's row count must match, and `public."user"`
+  must have at least one account. A dump cut short or damaged, an empty
+  database, or one missing the accounts table is refused.
 - **Locked.** The bucket has Object Lock on with a default retention of at
   least 30 days in COMPLIANCE mode, which no one can shorten or lift, us
-  included.
+  included. The 30-day minimum cannot be lowered by a setting.
 - **Encrypted before it leaves.** The job holds only the public key; the
   private key (`AGE-SECRET-KEY-…`) is kept offline, printed and in a
   password manager, and never put in GitHub, Vercel, Neon or the bucket.
-  Without it the backups cannot be read, so keep two copies.
+  Without it the backups cannot be read, so keep two copies. Each file is
+  also encrypted to a key made for that run alone, so the script can check
+  the encrypted file decrypts to the dump before uploading it; that key is
+  never saved and is gone when the run ends.
 
 Each run writes a new file, named for the second it ran and the run's id.
 What the script cannot check, and setup has to get right: the storage
@@ -638,9 +654,20 @@ database, such as a fresh Neon branch or project, never over the one in use:
 
 ```bash
 age -d -i aerobook-backup.key aerobook-2026-10-01T071702Z-123456789.dump.age > aerobook.dump
-pg_restore --no-owner --no-privileges -d "postgres://…new database…" aerobook.dump
+pg_restore --exit-on-error --no-owner --no-privileges -d "postgres://…new database…" aerobook.dump
 ```
 
 `pg_restore --list aerobook.dump` shows what is inside, and `-t <table>` restores
 one table. Check the data, then point production's `DATABASE_URL` at the
 restored database and redeploy.
+
+### Testing it
+
+`npm run test:backup` runs `scripts/backup-db.test.sh` against a Postgres on
+this machine (`BACKUP_TEST_ADMIN_URL`, default
+`postgres://postgres:postgres@localhost:5432/postgres`) with the upload
+stubbed. It checks that good backups upload and restore, and that each
+refusal above happens with nothing uploaded: roles that can write, buckets
+without a 30-day COMPLIANCE lock, dumps cut short or damaged, a missing or
+empty accounts table, a wrong verification database, bad settings, and a
+failed upload.
