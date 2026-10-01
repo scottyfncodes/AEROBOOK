@@ -13,7 +13,7 @@ test measured, not targets.
 
 | What | Where it lives | What protects it | Restorable? |
 | --- | --- | --- | --- |
-| Records, history, sign-in, chat (all of Postgres) | Neon project `polished-fog-50218432` ("neon-rose-basket"), branch `main`, created through the Vercel Marketplace Neon integration on team `nocodo` | Neon's change history (instant restore / branching from the past) | **Yes, but only 6 hours back** — the Free plan's limit. No snapshots, no snapshot schedule, no `pg_dump` exports. |
+| Records, history, sign-in, chat (all of Postgres) | Neon project `polished-fog-50218432` ("neon-rose-basket"), branch `main`, created through the Vercel Marketplace Neon integration on team `nocodo` | Neon's change history (instant restore / branching from the past) | **Yes, but only 6 hours back** — the Free plan's limit. No snapshots or snapshot schedule. A nightly encrypted `pg_dump` off-site is in the repository ([README → Backups](../README.md#backups)), but makes no copies until it has been set up. |
 | Uploaded documents (the files) | Private Vercel Blob store `store_uXMjOtS8GAu1DmC5` (Production) | The app keeps a deleted document's file for 30 days (`app_file_trash`). Nothing else. | **No independent backup.** If the store or a file in it is lost, it is gone. |
 | Document *metadata* (name, type, what it is attached to, `blobPath`) | Postgres (`app_record`, collection `files`) | As Postgres | Yes, as Postgres |
 | Application code | GitHub `scottyfncodes/aerobook`, branch `main` | Git; Vercel keeps every past deployment | Yes |
@@ -97,8 +97,12 @@ history no longer reaches back far enough; fall back to the activity history
 
 1. Neon keeps deleted projects for a recovery period; check Neon Console
    (or Vercel → Storage) for a recoverable project first.
-2. If there is nothing to recover, there is **no copy of the database
-   anywhere else today**. Create a new Neon store in Vercel → Storage,
+2. If the nightly backup has been set up ([README → Backups](../README.md#backups)),
+   restore the latest file into a new Neon store as described there (README
+   → *Restoring*), run `scripts/dr/verify.sql` on it, and point Production's
+   `DATABASE_URL` at it. Uploaded documents' files are not in that backup.
+3. If there is nothing to recover and no backup, there is **no copy of the
+   database anywhere else**. Create a new Neon store in Vercel → Storage,
    connect it to the `aerobook` project for Production, apply
    `db/schema.sql` and `db/migrations/*.sql`, and use `SETUP_TOKEN` to create
    the first admin. Then restore the most recent in-app JSON export, if
@@ -207,9 +211,11 @@ it. It never writes to production. Takes about 20 minutes.
 
 1. **Six hours of history.** Damage noticed the next morning cannot be undone
    from Neon. Neon's Launch plan allows up to 7 days; Scale up to 30.
-2. **No copy outside Neon.** Losing the Neon project, or the Vercel team that
-   owns it, loses everything. A nightly `pg_dump` to storage OptiSky controls
-   would close this.
+2. **No copy outside Neon, until the nightly backup is set up.** Losing the
+   Neon project, or the Vercel team that owns it, loses everything. The
+   nightly encrypted `pg_dump` to separate, locked storage
+   ([README → Backups](../README.md#backups)) closes this once its bucket,
+   keys and GitHub environment exist; it covers the database, not documents.
 3. **Documents have no backup at all.**
 4. **Secrets cannot be read back from Vercel**, and losing
    `BETTER_AUTH_SECRET` disables two-step sign-in for everyone who uses it.
