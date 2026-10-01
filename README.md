@@ -601,3 +601,135 @@ Settings → Environment Variables. The guard is there for the time between:
 it stops a branch from touching production data by accident, but code on a
 branch could remove it, so the separate settings are what actually close
 the door.
+
+## Backups
+
+Every night at 07:17 UTC, `.github/workflows/backup.yml` runs
+`scripts/backup-db.sh`. It dumps the production database, restores the dump
+in full into an empty Postgres on the runner and checks it, encrypts it to an
+[age](https://age-encryption.org) public key, and uploads it to a Backblaze B2
+or AWS S3 bucket. Any failure fails the job, and GitHub emails about it;
+nothing is uploaded from a run that fails.
+
+The dump is every schema except `neon_auth`, which belongs to Neon Auth and
+which AEROBOOK does not use; all of AEROBOOK's tables are in `public`.
+
+**Uploaded documents are not backed up.** The files in Vercel Blob storage
+(everything attached under Documents) are not in these backups; only the
+database is. If the Blob store is deleted, the database restores with
+document records whose files are gone.
+
+It exists for the day one of our accounts is taken over. Someone holding the
+Vercel or Neon login can delete the database and Neon's six hours of
+history with it, so the copy lives somewhere that login cannot reach, under
+rules that login cannot change. Before each upload the script refuses to go
+on unless these hold, so a weakened setup stops the backups loudly instead
+of quietly:
+
+- **Read-only.** The database role cannot insert, update, delete or truncate
+  any table or column, cannot change a sequence, owns nothing and cannot
+  `SET ROLE` to anything that does, and is not a superuser or a member of
+  `neon_superuser` or `pg_write_all_data`.
+- **A whole, faithful copy.** Before the dump, every table is counted inside
+  a read-only transaction, and `pg_dump` dumps from that same snapshot. The
+  dump must then restore without a single error into the empty Postgres on
+  the runner (never anywhere else: the script accepts only an empty database
+  on localhost), every table's row count must match, and `public."user"`
+  must have at least one account. A dump cut short or damaged, an empty
+  database, or one missing the accounts table is refused.
+- **Locked.** The bucket has Object Lock on with a default retention of at
+  least 30 days in COMPLIANCE mode, which no one can shorten or lift, us
+  included. The 30-day minimum cannot be lowered by a setting.
+- **Encrypted before it leaves.** The job holds only the public key; the
+  private key (`AGE-SECRET-KEY-…`) is kept offline, printed and in a
+  password manager, and never put in GitHub, Vercel, Neon or the bucket.
+  Without it the backups cannot be read, so keep two copies. Each file is
+  also encrypted to a key made for that run alone, so the script can check
+  the encrypted file decrypts to the dump before uploading it; that key is
+  never saved and is gone when the run ends.
+
+Each run writes a new file, named for the second it ran and the run's id.
+What the script cannot check, and setup has to get right: the storage
+account is its own, under its own login with its own MFA (not signed in with
+GitHub, Google or Vercel); and its key can add files but not delete them.
+
+Nothing tells you if the job stops running altogether (GitHub pauses
+schedules in a repository with no commits for 60 days, emailing first), so
+glance at the bucket now and then.
+
+### Setting it up
+
+1. Make the key pair on your own computer: `age-keygen -o aerobook-backup.key`.
+   It prints the public key (`age1…`). Store the file offline as above.
+2. Create the bucket **with Object Lock on** (it can only be turned on when
+   the bucket is made), a default retention of 30 days in Compliance mode,
+   and a lifecycle rule removing files after a year. Then a key for this
+   bucket alone:
+   - B2: an application key with `writeFiles` and `readBucketRetentions`
+     only — not `deleteFiles`, `writeFileRetentions` or `bypassGovernance`.
+   - S3: a user whose only permissions are `s3:PutObject` on the bucket's
+     objects and `s3:GetBucketObjectLockConfiguration` on the bucket.
+3. Give the backup its own read-only database role. Run this in Neon's SQL
+   editor on the production branch (a role made from the Roles page could
+   write):
+
+   ```sql
+   create role aerobook_backup with login password '<long random string>';
+   grant pg_read_all_data to aerobook_backup;
+   ```
+
+   If Neon will not grant `pg_read_all_data`, grant it table by table instead:
+
+   ```sql
+   grant usage on schema public to aerobook_backup;
+   grant select on all tables in schema public to aerobook_backup;
+   grant select on all sequences in schema public to aerobook_backup;
+   alter default privileges for role neondb_owner in schema public
+     grant select on tables to aerobook_backup;
+   alter default privileges for role neondb_owner in schema public
+     grant select on sequences to aerobook_backup;
+   ```
+
+   Its connection string is production's **direct** one (the host without
+   `-pooler`) with this role and password.
+4. In GitHub → Settings → Environments, create an environment named `backup`.
+   Under Deployment branches choose **Selected branches** and allow `main`
+   only, so a workflow on any other branch cannot read these. Then add:
+
+   | Kind | Name | Value |
+   |---|---|---|
+   | secret | `BACKUP_DATABASE_URL` | the read-only, direct connection string |
+   | secret | `BACKUP_S3_KEY_ID` | the add-only key's id |
+   | secret | `BACKUP_S3_SECRET` | the add-only key's secret |
+   | variable | `BACKUP_AGE_RECIPIENT` | the `age1…` public key |
+   | variable | `BACKUP_S3_BUCKET` | the bucket name |
+   | variable | `BACKUP_S3_ENDPOINT` | B2's S3 endpoint, e.g. `https://s3.us-west-004.backblazeb2.com`; empty for AWS |
+   | variable | `BACKUP_S3_REGION` | e.g. `us-west-004` |
+
+5. Actions → Nightly database backup → Run workflow, and check a file
+   appears in the bucket. Then restore it once, as below, so you know it works.
+
+### Restoring
+
+Download the file you want from the bucket, then restore into a new, empty
+database, such as a fresh Neon branch or project, never over the one in use:
+
+```bash
+age -d -i aerobook-backup.key aerobook-2026-10-01T071702Z-123456789.dump.age > aerobook.dump
+pg_restore --exit-on-error --no-owner --no-privileges -d "postgres://…new database…" aerobook.dump
+```
+
+`pg_restore --list aerobook.dump` shows what is inside, and `-t <table>` restores
+one table. Check the data, then point production's `DATABASE_URL` at the
+restored database and redeploy.
+
+### Testing it
+
+`npm run test:backup` runs `scripts/backup-db.test.sh` against a Postgres on
+this machine (`BACKUP_TEST_ADMIN_URL`, default
+`postgres://postgres:postgres@localhost:5432/postgres`) with the upload
+stubbed. It checks that good backups upload and restore, and that each
+refusal above happens with nothing uploaded: roles that can write, buckets
+without a 30-day COMPLIANCE lock, dumps cut short or damaged, a missing or
+empty accounts table, a wrong verification database, bad settings, and a
+failed upload.
