@@ -473,7 +473,8 @@ button, input, select, textarea {
   color: var(--text-muted);
 }
 
-.empty svg { width: 40px; height: 40px; opacity: 0.4; }
+/* `>`: the empty state's own icon, not one inside its action button. */
+.empty > svg { width: 40px; height: 40px; opacity: 0.4; }
 .empty__title { font-size: 16px; font-weight: 640; color: var(--text-secondary); }
 .empty__body { font-size: 14px; max-width: 34ch; }
 
@@ -492,7 +493,7 @@ button, input, select, textarea {
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--surface) 55%, transparent);
 }
-.page > .empty svg {
+.page > .empty > svg {
   box-sizing: content-box;
   width: 30px;
   height: 30px;
