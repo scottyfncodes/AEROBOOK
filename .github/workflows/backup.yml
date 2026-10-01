@@ -20,11 +20,13 @@ jobs:
     environment: backup
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install pg_dump 18 and age
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-common age
+          sudo apt-get install -y -qq postgresql-common age jq
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y -qq postgresql-client-18
           echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
