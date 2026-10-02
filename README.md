@@ -749,6 +749,9 @@ glance at the bucket now and then.
 
 5. Actions → Nightly database backup → Run workflow, and check a file
    appears in the bucket. Then restore it once, as below, so you know it works.
+   GitHub Actions must be on for the repository (Settings → Actions →
+   General). If it was off when the workflow arrived on `main`, GitHub does
+   not list the workflow until the next commit to `main` after turning it on.
 
 ### Restoring
 
