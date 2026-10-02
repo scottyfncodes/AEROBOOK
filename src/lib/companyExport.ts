@@ -451,6 +451,9 @@ email-templates.csv       The email templates.
 imports.csv               The history of CSV imports.
 aerobook-backup.json      Every record above in one JSON file, with every link between them. An AEROBOOK
                           admin can restore it under Settings -> Restore from a full export.
+manifest.json             The SHA-256 and size of every other file here, to prove this copy is complete and
+                          unchanged: \`npm run verify:export -- <this zip>\` in the AEROBOOK repository, or
+                          any SHA-256 tool.
 
 How the files fit together
 --------------------------

@@ -17,6 +17,7 @@ import {
   buildCompanyExport, type DocumentContent, type ExportAuditEntry, type ExportComment, type ExportPerson,
 } from '../lib/companyExport';
 import { exportFilename, fullJson } from '../lib/export';
+import { withManifest } from '../lib/exportManifest';
 import { zip } from '../lib/zip';
 
 export type ExportStep = 'starting' | 'records' | 'audit' | 'documents' | 'packing';
@@ -126,9 +127,11 @@ export async function exportCompanyData(
     exportedAt: start.exportedAt,
     exportedBy: start.exportedBy,
   });
+  // The SHA-256 of every file, over the exact bytes zipped (lib/exportManifest.ts).
+  const packaged = await withManifest(entries, start.exportedAt);
   const missing = [...documents.values()].filter((d) => 'missing' in d).length;
   return {
-    blob: new Blob(zip(entries) as BlobPart[], { type: 'application/zip' }),
+    blob: new Blob(zip(packaged) as BlobPart[], { type: 'application/zip' }),
     filename: exportFilename('company-export', 'zip'),
     documents: records.files.length,
     documentsMissing: missing,

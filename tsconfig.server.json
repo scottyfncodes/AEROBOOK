@@ -22,6 +22,6 @@
   "include": [
     "server",
     "api",
-    "scripts/schema.ts"
+    "scripts/*.ts"
   ]
 }
