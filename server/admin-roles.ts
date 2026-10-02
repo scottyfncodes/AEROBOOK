@@ -23,12 +23,14 @@
  * the recovery code itself.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import { symmetricDecrypt, verifyPassword } from 'better-auth/crypto';
 import { createOTP } from '@better-auth/utils/otp';
 import { getAuth, type SessionUser } from './auth.js';
 import { ensureAppSchema, getPool } from './db.js';
 import { HttpError } from './http.js';
 import { recordSecurityEvent } from './security.js';
+import { WRITE_LOCK } from './sync.js';
 import { isAdmin, toRole, type Role } from '../src/lib/roles.js';
 
 /** Wrong passwords or codes before confirming is refused for a while, per person. */
@@ -105,6 +107,65 @@ export async function confirmIdentity(actor: Actor, proof: StepUp): Promise<void
   }
 }
 
+// ------------------------------------------------- deciding under the lock
+
+/**
+ * A person who may manage accounts right now: the admin or developer role
+ * (Better Auth may keep several, comma-separated), access on, not deleted.
+ */
+const ACTIVE_ADMIN = `string_to_array(replace(coalesce(u.role, ''), ' ', ''), ',') && array['admin', 'developer']
+  and not coalesce(u.banned, false)
+  and not exists (select 1 from app_deleted_user d where d.user_id = u.id)`;
+
+/**
+ * Starts the final decision. Every change here takes the same lock as every
+ * save and as deleting someone (deleteUser), so two of them never interleave,
+ * and then reads the actor again: the check made when the request arrived,
+ * before the slow password check, is not the one that counts. Someone whose
+ * role, access or account changed in the meantime is refused.
+ */
+async function lockAndRecheck(client: PoolClient, actor: Actor, want: 'admin' | 'not-admin'): Promise<{ role: Role }> {
+  await client.query('select pg_advisory_xact_lock($1)', [WRITE_LOCK]);
+  const { rows } = await client.query<{ role: string | null; active: boolean }>(
+    `select u.role, not coalesce(u.banned, false) and not exists (select 1 from app_deleted_user d where d.user_id = u.id) as active
+       from "user" u where u.id = $1 for update`,
+    [actor.id],
+  );
+  const me = rows[0];
+  if (!me || !me.active) throw new HttpError(401, 'Sign in first');
+  const role = toRole(me.role);
+  if (want === 'admin' && !isAdmin({ role })) throw new HttpError(403, 'Only an admin can do that');
+  if (want === 'not-admin' && isAdmin({ role })) throw new HttpError(409, 'You are already an admin');
+  return { role };
+}
+
+type Queryable = Pick<PoolClient, 'query'>;
+
+/**
+ * A recovery code stops working the moment whoever made it is no longer an
+ * active admin or developer — their role taken away, their access turned
+ * off, or their account deleted — so a removed admin can never use a code
+ * they made (or passed on) to undo their removal. Called by every path that
+ * can do that; redeemRecoveryCode checks it again before using a code.
+ * Deleted, not set aside: restoring the person later does not revive it.
+ * Returns whether a code was cancelled; the cancellation is in the audit log.
+ */
+export async function cancelCodeOfFormerAdmin(db: Queryable, by: { id: string; name: string } | null): Promise<boolean> {
+  const { rows } = await db.query<{ created_by: string | null }>(
+    `delete from app_admin_recovery r
+      where r.id = 1 and not exists (select 1 from "user" u where u.id = r.created_by and ${ACTIVE_ADMIN})
+      returning r.created_by`,
+  );
+  if (!rows[0]) return false;
+  await db.query(
+    `insert into app_audit (user_id, user_name, action, collection, record_id, summary)
+     values ($1, $2, 'admin-recovery-code-revoked', 'security', $3, $4)`,
+    [by?.id ?? null, by?.name ?? 'AEROBOOK', rows[0].created_by ?? '',
+      'Cancelled the admin recovery code: whoever made it is no longer an admin'],
+  );
+  return true;
+}
+
 // ----------------------------------------------------------- admin designation
 
 /**
@@ -124,6 +185,7 @@ export async function setAdminRole(actor: Actor, body: unknown): Promise<{ role:
   const client = await getPool().connect();
   try {
     await client.query('begin');
+    await lockAndRecheck(client, actor, 'admin');
     const { rows } = await client.query<{ role: string | null; banned: boolean | null; two_factor: boolean | null; deleted: boolean }>(
       `select u.role, u.banned, u."twoFactorEnabled" as two_factor,
               exists (select 1 from app_deleted_user d where d.user_id = u.id) as deleted
@@ -139,8 +201,14 @@ export async function setAdminRole(actor: Actor, body: unknown): Promise<{ role:
       if (was === 'admin') throw new HttpError(409, 'They are already an admin');
       if (target.banned) throw new HttpError(409, 'Give them their access back first');
       if (!target.two_factor) throw new HttpError(409, 'They need to turn on two-step sign-in first, under Settings → Account.');
-    } else if (was !== 'admin') {
-      throw new HttpError(409, 'They are not an admin');
+    } else {
+      if (was !== 'admin') throw new HttpError(409, 'They are not an admin');
+      // Never the last one: someone else who can manage accounts must remain.
+      const others = await client.query<{ n: number }>(
+        `select count(*)::int as n from "user" u where u.id <> $1 and ${ACTIVE_ADMIN}`,
+        [userId],
+      );
+      if (others.rows[0].n === 0) throw new HttpError(409, 'They are the last admin with access. Make someone else an admin first.');
     }
 
     const role: Role = admin ? 'admin' : 'user';
@@ -152,6 +220,7 @@ export async function setAdminRole(actor: Actor, body: unknown): Promise<{ role:
       summary: `Role changed from ${was} to ${role}`,
       before: { role: was },
     }, client);
+    if (!admin) await cancelCodeOfFormerAdmin(client, actor);
     await client.query('commit');
     return { role };
   } catch (e) {
@@ -210,6 +279,7 @@ export async function createRecoveryCode(actor: Actor, body: unknown): Promise<{
   const client = await getPool().connect();
   try {
     await client.query('begin');
+    await lockAndRecheck(client, actor, 'admin');
     await client.query(
       `insert into app_admin_recovery (id, code_hash, created_at, created_by, created_by_name)
        values (1, $1, now(), $2, $3)
@@ -231,9 +301,20 @@ export async function createRecoveryCode(actor: Actor, body: unknown): Promise<{
 export async function revokeRecoveryCode(actor: Actor, body: unknown): Promise<{ ok: true }> {
   if (!isAdmin(actor)) throw new HttpError(403, 'Only an admin can do that');
   await confirmIdentity(actor, (body ?? {}) as StepUp);
-  const { rowCount } = await getPool().query('delete from app_admin_recovery where id = 1');
-  if (!rowCount) throw new HttpError(404, 'There is no recovery code to cancel');
-  await recordSecurityEvent({ action: 'admin-recovery-code-revoked', userId: actor.id, userName: actor.name });
+  const client = await getPool().connect();
+  try {
+    await client.query('begin');
+    await lockAndRecheck(client, actor, 'admin');
+    const { rowCount } = await client.query('delete from app_admin_recovery where id = 1');
+    if (!rowCount) throw new HttpError(404, 'There is no recovery code to cancel');
+    await recordSecurityEvent({ action: 'admin-recovery-code-revoked', userId: actor.id, userName: actor.name }, client);
+    await client.query('commit');
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally {
+    client.release();
+  }
   return { ok: true };
 }
 
@@ -241,7 +322,9 @@ export async function revokeRecoveryCode(actor: Actor, body: unknown): Promise<{
  * Someone on the team becomes an admin with the recovery code. They must
  * already have an account with access, and two-step sign-in on, and confirm
  * it is them. The code is used up in the same transaction that makes them
- * an admin, so it can never be used twice.
+ * an admin, so it can never be used twice. Never by whoever made it, and
+ * never once its maker is no longer an admin (see cancelCodeOfFormerAdmin):
+ * the code is for when admins are missing, not for undoing a removal.
  */
 export async function redeemRecoveryCode(actor: Actor, body: unknown): Promise<{ role: Role }> {
   const { recoveryCode, password, code } = (body ?? {}) as { recoveryCode?: unknown } & StepUp;
@@ -257,18 +340,36 @@ export async function redeemRecoveryCode(actor: Actor, body: unknown): Promise<{
   await confirmIdentity(actor, { password, code });
 
   const given = Buffer.from(hashRecoveryCode(recoveryCode), 'hex');
+  const wrong = new HttpError(403, 'That recovery code is not right, or it has been used or replaced.');
   const client = await getPool().connect();
+  /** A refusal that is recorded: what the transaction did so far (a cancelled code) is kept. */
+  let refusal: { error: HttpError; summary?: string } | null = null;
   try {
     await client.query('begin');
-    const { rows } = await client.query<{ code_hash: string }>('select code_hash from app_admin_recovery where id = 1 for update');
+    await lockAndRecheck(client, actor, 'not-admin');
+    const { rows } = await client.query<{ code_hash: string; created_by: string | null }>(
+      'select code_hash, created_by from app_admin_recovery where id = 1 for update',
+    );
     const stored = rows[0] ? Buffer.from(rows[0].code_hash, 'hex') : null;
     if (!stored || stored.length !== given.length || !timingSafeEqual(stored, given)) {
-      await client.query('rollback');
-      await recordSecurityEvent({ action: 'admin-recovery-failed', userId: actor.id, userName: actor.name });
-      throw new HttpError(403, 'That recovery code is not right, or it has been used or replaced.');
+      refusal = { error: wrong };
+    } else if (rows[0].created_by === actor.id) {
+      // Whoever made the code was an admin then and is not now: someone removed them.
+      await cancelCodeOfFormerAdmin(client, actor);
+      refusal = {
+        error: new HttpError(403, 'You cannot use an admin recovery code you made yourself. Another admin has to restore your role.'),
+        summary: 'Tried to use the admin recovery code they made themselves; refused',
+      };
+    } else if (await cancelCodeOfFormerAdmin(client, actor)) {
+      refusal = { error: wrong, summary: 'Tried an admin recovery code whose maker is no longer an admin; refused' };
+    }
+    if (refusal) {
+      await recordSecurityEvent({ action: 'admin-recovery-failed', userId: actor.id, userName: actor.name, summary: refusal.summary }, client);
+      await client.query('commit');
+      throw refusal.error;
     }
     await client.query('delete from app_admin_recovery where id = 1');
-    const { rows: me } = await client.query<{ role: string | null }>('select role from "user" where id = $1 for update', [actor.id]);
+    const { rows: me } = await client.query<{ role: string | null }>('select role from "user" where id = $1', [actor.id]);
     const was = toRole(me[0]?.role);
     await client.query('update "user" set role = $2, "updatedAt" = now() where id = $1', [actor.id, 'admin']);
     await recordSecurityEvent({
@@ -281,7 +382,7 @@ export async function redeemRecoveryCode(actor: Actor, body: unknown): Promise<{
     await client.query('commit');
     return { role: 'admin' };
   } catch (e) {
-    await client.query('rollback').catch(() => undefined);
+    if (!refusal) await client.query('rollback').catch(() => undefined);
     throw e;
   } finally {
     client.release();
@@ -292,15 +393,25 @@ export async function redeemRecoveryCode(actor: Actor, body: unknown): Promise<{
 
 /** The Better Auth admin routes that can change someone's role, or remove someone who had one. */
 const ROLE_ROUTES = new Set(['set-role', 'update-user', 'create-user', 'remove-user']);
+/** The Better Auth admin routes that can end someone's being an active admin. */
+const ENDS_ADMIN = new Set(['set-role', 'update-user', 'remove-user', 'ban-user']);
 
 /**
  * Runs one of Better Auth's admin routes and, when it changed anyone's role,
  * writes that to the audit log: who, whose, from what to what. Developers
  * give roles this way, so without this their changes would leave no record.
+ * After any route that can end someone's being an admin (a role change,
+ * turning access off, removal), a recovery code its maker can no longer
+ * stand behind is cancelled.
  */
 export async function auditRoleChanges(request: Request, pathname: string, run: () => Promise<Response>): Promise<Response> {
   const action = pathname.slice('/api/auth/admin/'.length);
-  if (request.method !== 'POST' || !pathname.startsWith('/api/auth/admin/') || !ROLE_ROUTES.has(action)) return run();
+  if (request.method !== 'POST' || !pathname.startsWith('/api/auth/admin/')) return run();
+  if (!ROLE_ROUTES.has(action)) {
+    const response = await run();
+    if (response.ok && ENDS_ADMIN.has(action)) await cancelCodeOfFormerAdmin(getPool(), await actorOf(request).catch(() => null));
+    return response;
+  }
   const body = (await request.clone().json().catch(() => null)) as { userId?: unknown } | null;
   const targetId = typeof body?.userId === 'string' ? body.userId : null;
   const roleOf = async (id: string) => {
@@ -311,6 +422,7 @@ export async function auditRoleChanges(request: Request, pathname: string, run: 
   const response = await run();
   if (!response.ok) return response;
   const actor = await actorOf(request).catch(() => null);
+  if (ENDS_ADMIN.has(action)) await cancelCodeOfFormerAdmin(getPool(), actor);
   if (!actor) return response;
 
   if (action === 'create-user') {

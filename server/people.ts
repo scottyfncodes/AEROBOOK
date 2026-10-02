@@ -21,6 +21,7 @@ import { ensureAppSchema, getPool } from './db.js';
 import { HttpError } from './http.js';
 import { isAdmin, isDeveloper, toRole } from '../src/lib/roles.js';
 import { recordSecurityEvent } from './security.js';
+import { cancelCodeOfFormerAdmin } from './admin-roles.js';
 import { describe, WRITE_LOCK } from './sync.js';
 
 /** The address a deleted account is left with: unique, and never deliverable. */
@@ -134,6 +135,8 @@ export async function deleteUser(admin: SessionUser, body: unknown): Promise<{ o
       [userId, target.name, admin.id],
     );
     await recordSecurityEvent({ action: 'user-deleted', userId, actor: { id: admin.id, name: admin.name } }, client);
+    // An admin recovery code they made stops working with them.
+    await cancelCodeOfFormerAdmin(client, admin);
     await client.query('commit');
     return { ok: true };
   } catch (e) {

@@ -7,6 +7,8 @@
  * password, code or recovery code is ever stored or recorded in the clear.
  */
 import { createHmac } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { api, createUser, freshDatabase, signIn, TEST_DB } from './testing.js';
 import { getPool } from './db.js';
@@ -325,6 +327,150 @@ describe.skipIf(!TEST_DB)('admin contingency', () => {
       await setAdmin(alice, bob, true);
       const history = await (await api('/api/history', { cookie: carol.cookie })).json();
       expect(history.entries).toHaveLength(0);
+    });
+  });
+
+  describe('a recovery code and the admin who made it', () => {
+    // Bob plays the admin who makes the code and is later removed.
+    let code: string;
+    beforeEach(async () => {
+      await enroll(alice);
+      await enroll(bob);
+      await enroll(carol);
+      expect((await setAdmin(alice, bob, true)).status).toBe(200);
+      const made = await api('/api/team/recovery-code', { cookie: bob.cookie, body: proof(bob) });
+      expect(made.status).toBe(200);
+      code = (await made.json()).recoveryCode;
+    });
+    const redeem = (p: Person, recoveryCode = code) =>
+      api('/api/team/recovery-code/redeem', { cookie: p.cookie, body: { recoveryCode, ...proof(p) } });
+    const codeRows = async () => (await getPool().query('select created_by from app_admin_recovery')).rows;
+    const cancellations = async () => (await security()).filter((e) => e.action === 'admin-recovery-code-revoked');
+
+    it('stops working when its maker is removed, so the removed admin cannot restore themselves', async () => {
+      // 1–2. Bob made the code; Alice removes Bob's admin role.
+      expect((await setAdmin(alice, bob, false)).status).toBe(200);
+      // 8. The removal cancelled the code, and says so in the audit log.
+      expect(await codeRows()).toEqual([]);
+      expect(await cancellations()).toEqual([expect.objectContaining({
+        user_id: alice.id, record_id: bob.id, summary: 'Cancelled the admin recovery code: whoever made it is no longer an admin',
+      })]);
+      // 3–5. Bob tries his own code: refused, and he stays a user.
+      const tried = await redeem(bob);
+      expect(tried.status).toBe(403);
+      expect(await roleOf(bob)).toBe('user');
+      // 6. The attempt is recorded.
+      expect((await security()).filter((e) => e.action === 'admin-recovery-failed').map((e) => e.user_id)).toEqual([bob.id]);
+      // 7. Never again, by him or anyone, even after he is made an admin again and removed again.
+      expect((await redeem(bob)).status).toBe(403);
+      expect((await redeem(carol)).status).toBe(403);
+      expect((await setAdmin(alice, bob, true)).status).toBe(200);
+      expect(await (await api('/api/team/recovery-code', { cookie: bob.cookie })).json()).toEqual({ exists: false });
+      expect((await setAdmin(alice, bob, false)).status).toBe(200);
+      expect((await redeem(bob)).status).toBe(403);
+      expect(await roleOf(bob)).toBe('user');
+      expect(await roleOf(carol)).toBe('user');
+    });
+
+    it('is refused to its own maker on the server, even if the code was somehow left in place', async () => {
+      // Bob's role taken away outside every path that cancels the code.
+      await getPool().query(`update "user" set role = 'user' where id = $1`, [bob.id]);
+      expect(await codeRows()).toHaveLength(1);
+      const tried = await redeem(bob);
+      expect(tried.status).toBe(403);
+      expect((await tried.json()).error).toMatch(/made yourself/);
+      expect(await roleOf(bob)).toBe('user');
+      expect(await codeRows()).toEqual([]);
+      expect((await security()).find((e) => e.action === 'admin-recovery-failed')).toMatchObject({
+        user_id: bob.id, summary: 'Tried to use the admin recovery code they made themselves; refused',
+      });
+      expect((await redeem(bob)).status).toBe(403);
+      expect(await roleOf(bob)).toBe('user');
+    });
+
+    it('is refused to anyone once its maker is no longer an admin, however that happened', async () => {
+      await getPool().query(`update "user" set role = 'user' where id = $1`, [bob.id]);
+      const tried = await redeem(carol);
+      expect(tried.status).toBe(403);
+      expect(await roleOf(carol)).toBe('user');
+      expect(await codeRows()).toEqual([]);
+      expect((await security()).find((e) => e.action === 'admin-recovery-failed')).toMatchObject({
+        user_id: carol.id, summary: 'Tried an admin recovery code whose maker is no longer an admin; refused',
+      });
+    });
+
+    it.each([
+      ['a developer changes their role (Better Auth set-role)', () => api('/api/auth/admin/set-role', { cookie: dev.cookie, body: { userId: bob.id, role: 'user' } })],
+      ['an admin turns their access off (Better Auth ban-user)', () => api('/api/auth/admin/ban-user', { cookie: alice.cookie, body: { userId: bob.id } })],
+      ['an admin deletes them (Settings → Team → Delete)', () => api('/api/team/delete', { cookie: alice.cookie, body: { userId: bob.id } })],
+      ['a developer removes them (Better Auth remove-user)', () => api('/api/auth/admin/remove-user', { cookie: dev.cookie, body: { userId: bob.id } })],
+    ])('is cancelled when %s', async (_, end) => {
+      const r = await end();
+      expect(r.status).toBe(200);
+      expect(await codeRows()).toEqual([]);
+      expect(await cancellations()).toHaveLength(1);
+      expect((await redeem(carol)).status).toBe(403);
+      expect(await roleOf(carol)).toBe('user');
+    });
+
+    it('is cancelled when the database script takes their admin role away', async () => {
+      await promisify(execFile)('npx', ['tsx', 'scripts/admin-recover.ts', 'revoke', 'bob@example.com'], {
+        env: { ...process.env, DATABASE_URL: TEST_DB },
+      });
+      expect(await roleOf(bob)).toBe('user');
+      expect(await codeRows()).toEqual([]);
+      expect(await cancellations()).toEqual([expect.objectContaining({ user_id: null, record_id: bob.id })]);
+    }, 60_000);
+
+    it('keeps working when some other admin is removed', async () => {
+      await setAdmin(alice, carol, true);
+      expect((await setAdmin(alice, carol, false)).status).toBe(200);
+      expect(await codeRows()).toEqual([{ created_by: bob.id }]);
+      expect(await cancellations()).toEqual([]);
+      expect((await redeem(carol)).status).toBe(200);
+      expect(await roleOf(carol)).toBe('admin');
+    });
+  });
+
+  describe('at the same moment', () => {
+    beforeEach(async () => {
+      await enroll(alice);
+      await enroll(bob);
+      expect((await setAdmin(alice, bob, true)).status).toBe(200);
+      // Without the developer, so nobody else is left to keep the account manageable.
+      await getPool().query(`update "user" set role = 'user' where id = $1`, [dev.id]);
+    });
+    const managers = async () => (await getPool().query<{ id: string }>(
+      `select id from "user" where role in ('admin', 'developer') and not coalesce(banned, false) order by id`,
+    )).rows.map((r) => r.id);
+
+    it.each([1, 2, 3])('two admins removing each other leave exactly one admin (round %i)', async () => {
+      // Both requests start as admins, pass their password and code, then contend for the decision.
+      const [byAlice, byBob] = await Promise.all([setAdmin(alice, bob, false), setAdmin(bob, alice, false)]);
+      const statuses = [byAlice.status, byBob.status].sort();
+      expect(statuses).toEqual([200, 403]);
+      const winner = byAlice.status === 200 ? alice : bob;
+      const loser = winner === alice ? bob : alice;
+      // The loser was an admin when their request arrived, and is refused because they no longer are.
+      expect((await (winner === alice ? byBob : byAlice).json()).error).toBe('Only an admin can do that');
+      expect(await managers()).toEqual([winner.id]);
+      expect(await roleOf(loser)).toBe('user');
+      const revoked = (await security()).filter((e) => e.action === 'admin-revoked');
+      expect(revoked).toEqual([expect.objectContaining({ user_id: winner.id, record_id: loser.id, summary: 'Role changed from admin to user' })]);
+    });
+
+    it('two people redeeming one code: exactly one becomes an admin', async () => {
+      // Better Auth limits how often two-step sign-in can be set up; this test sets it up for more people at once.
+      await getPool().query('delete from "rateLimit"');
+      await enroll(carol);
+      const erin = await person('Erin', 'erin@example.com');
+      await enroll(erin);
+      const code = (await (await api('/api/team/recovery-code', { cookie: alice.cookie, body: proof(alice) })).json()).recoveryCode;
+      const results = await Promise.all([carol, erin].map((p) =>
+        api('/api/team/recovery-code/redeem', { cookie: p.cookie, body: { recoveryCode: code, ...proof(p) } })));
+      expect(results.map((r) => r.status).sort()).toEqual([200, 403]);
+      expect([await roleOf(carol), await roleOf(erin)].sort()).toEqual(['admin', 'user']);
+      expect((await security()).filter((e) => e.action === 'admin-recovered')).toHaveLength(1);
     });
   });
 });

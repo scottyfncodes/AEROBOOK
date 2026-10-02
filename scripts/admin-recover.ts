@@ -14,6 +14,7 @@
  */
 import { getPool, resetPool, ensureAppSchema } from '../server/db.js';
 import { toRole } from '../src/lib/roles.js';
+import { cancelCodeOfFormerAdmin } from '../server/admin-roles.js';
 
 const [command, email] = process.argv.slice(2);
 const pool = getPool();
@@ -51,6 +52,8 @@ async function change(admin: boolean): Promise<void> {
        values (null, 'Database (admin-recover script)', $1, 'security', $2, $3, $4)`,
       [admin ? 'admin-granted' : 'admin-revoked', target.id, `Role changed from ${was} to ${role}`, { role: was }],
     );
+    // A recovery code they made stops working with their admin role.
+    if (!admin) await cancelCodeOfFormerAdmin(client, null);
     await client.query('commit');
     console.log(`${target.name} is now ${admin ? 'an admin' : 'a user'}. Recorded in the audit log.`);
   } catch (e) {
