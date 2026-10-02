@@ -4,7 +4,7 @@
  * for good: their account goes, and their name stays on everything they
  * recorded, marked deleted.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { renderSVG } from 'uqr';
 
 import { IconCheck, IconPlus } from './Icons';
@@ -30,6 +30,7 @@ export function AccountSection() {
   const user = useCurrentUser();
   const session = useSession();
   const [changing, setChanging] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
 
   return (
     <section className="stack stack--sm">
@@ -50,7 +51,178 @@ export function AccountSection() {
       {changing ? <ChangePasswordSheet onClose={() => setChanging(false)} /> : null}
       <ProfileColorCard />
       <TwoFactorCard />
+      {!isAdmin(user) ? (
+        <button className="btn btn--ghost btn--block" onClick={() => setRedeeming(true)}>Use an admin recovery code</button>
+      ) : null}
+      {redeeming ? <RedeemRecoveryCodeSheet onClose={() => setRedeeming(false)} /> : null}
     </section>
+  );
+}
+
+/**
+ * Asks for your password and a current code from your authenticator app
+ * before one admin change. The server checks both; this only collects them.
+ */
+function StepUpSheet({
+  title, intro, actionLabel, danger, children, ready = true, onConfirm, onClose,
+}: {
+  title: string;
+  intro: ReactNode;
+  actionLabel: string;
+  danger?: boolean;
+  children?: ReactNode;
+  ready?: boolean;
+  onConfirm: (proof: auth.StepUp) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const confirm = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await onConfirm({ password, code });
+    } catch (e) {
+      setError((e as Error).message);
+      setCode('');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet
+      title={title}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button
+            className={`btn ${danger ? 'btn--danger' : 'btn--primary'}`}
+            disabled={busy || !ready || !password || code.replace(/\s/g, '').length !== 6}
+            onClick={() => void confirm()}
+          >
+            {actionLabel}
+          </button>
+        </>
+      }
+    >
+      <div className="stack">
+        <div className="small">{intro}</div>
+        {children}
+        <TextField label="Your password" value={password} onChange={setPassword} type="password" autoComplete="current-password" />
+        <TextField label="Code from your authenticator app" value={code} onChange={setCode} inputMode="numeric" autoComplete="one-time-code" />
+        <p className="xsmall muted">Needs two-step sign-in on for your account. This is recorded against your name.</p>
+        {error ? <Banner tone="danger">{error}</Banner> : null}
+      </div>
+    </Sheet>
+  );
+}
+
+/** Someone on the team becomes an admin with the one-time code the business keeps offline. */
+function RedeemRecoveryCodeSheet({ onClose }: { onClose: () => void }) {
+  const toast = useToast();
+  const [recoveryCode, setRecoveryCode] = useState('');
+  return (
+    <StepUpSheet
+      title="Use an admin recovery code"
+      intro={
+        <>
+          For when AEROBOOK has no admin left to make you one. The recovery code is kept offline by whoever your
+          company put in charge of it. It works once, and makes you an admin.
+        </>
+      }
+      actionLabel="Become an admin"
+      ready={recoveryCode.trim().length > 0}
+      onClose={onClose}
+      onConfirm={async (proof) => {
+        await auth.redeemRecoveryCode(recoveryCode, proof);
+        toast('You are now an admin. The recovery code is used up: make a new one under Settings → Team.');
+        // The role is read when the app starts.
+        setTimeout(() => window.location.reload(), 1500);
+      }}
+    >
+      <TextField label="Recovery code" value={recoveryCode} onChange={setRecoveryCode} autoComplete="off" verbatim />
+    </StepUpSheet>
+  );
+}
+
+/**
+ * The admin recovery code: made here by an admin, written down and kept
+ * offline, used only if there is ever no admin left.
+ */
+function RecoveryCodeCard() {
+  const [status, setStatus] = useState<auth.RecoveryStatus | null>(null);
+  const [sheet, setSheet] = useState<'make' | 'cancel' | null>(null);
+  const [shown, setShown] = useState<string | null>(null);
+  const toast = useToast();
+
+  const load = useCallback(() => {
+    auth.recoveryCodeStatus().then(setStatus, () => setStatus(null));
+  }, []);
+  useEffect(load, [load]);
+  if (status === null) return null;
+
+  return (
+    <div className="card stack stack--sm">
+      <div className="row row--between">
+        <div className="strong">Admin recovery code</div>
+        <Chip tone={status.exists ? 'success' : 'warn'}>{status.exists ? 'Made' : 'None'}</Chip>
+      </div>
+      <p className="small muted">
+        If AEROBOOK is ever left with no admin, someone on the team can use this one-time code to become one. Print it
+        or write it down and give it to the person your company has put in charge of it; keep it with your other
+        business-continuity records, not in AEROBOOK, email or chat.
+      </p>
+      {status.exists ? (
+        <p className="xsmall muted">
+          Made {status.createdAt ? new Date(status.createdAt).toLocaleDateString() : ''}{status.createdBy ? ` by ${status.createdBy}` : ''}.
+          It is stored only in a form that cannot be read back, so it cannot be shown again.
+        </p>
+      ) : null}
+      {shown ? (
+        <>
+          <Banner tone="warn">Write this down now. It is not shown again, and it replaces any earlier code.</Banner>
+          <div className="card mono strong" style={{ textAlign: 'center', wordBreak: 'break-all' }}>{shown}</div>
+          <button className="btn btn--primary" onClick={() => setShown(null)}>I’ve put it somewhere safe</button>
+        </>
+      ) : (
+        <div className="btn-group">
+          <button className="btn" onClick={() => setSheet('make')}>{status.exists ? 'Make a new code' : 'Make a code'}</button>
+          {status.exists ? <button className="btn" onClick={() => setSheet('cancel')}>Cancel the code</button> : null}
+        </div>
+      )}
+      {sheet === 'make' ? (
+        <StepUpSheet
+          title="Make an admin recovery code"
+          intro={status.exists ? 'The new code replaces the old one, which stops working.' : 'You will see the code once.'}
+          actionLabel="Make the code"
+          onClose={() => setSheet(null)}
+          onConfirm={async (proof) => {
+            setShown(await auth.createRecoveryCode(proof));
+            setSheet(null);
+            load();
+          }}
+        />
+      ) : null}
+      {sheet === 'cancel' ? (
+        <StepUpSheet
+          title="Cancel the admin recovery code"
+          intro="It stops working now. Until a new one is made, only an admin or a developer can make someone an admin."
+          actionLabel="Cancel the code"
+          danger
+          onClose={() => setSheet(null)}
+          onConfirm={async (proof) => {
+            await auth.revokeRecoveryCode(proof);
+            toast('The recovery code no longer works');
+            setSheet(null);
+            load();
+          }}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -436,6 +608,7 @@ export function TeamSection() {
           </button>
         ))}
       </div>
+      <RecoveryCodeCard />
       {adding ? <AddMemberSheet onClose={() => setAdding(false)} onAdded={load} /> : null}
       {editing ? (
         <MemberSheet member={editing} isMe={editing.id === me.id} onClose={() => setEditing(null)} onChanged={load} />
@@ -497,7 +670,7 @@ function AddMemberSheet({ onClose, onAdded }: { onClose: () => void; onAdded: ()
         {isDeveloper(me) ? (
           <SelectField label="Role" value={role} options={ROLE_OPTIONS} onChange={(v) => setRole(v as Role)} />
         ) : (
-          <p className="xsmall muted">They join as a user. Only a developer can make someone an admin.</p>
+          <p className="xsmall muted">They join as a user. Once they have two-step sign-in on, you can make them an admin.</p>
         )}
         {error ? <Banner tone="danger">{error}</Banner> : null}
       </div>
@@ -519,7 +692,9 @@ function MemberSheet({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  // Only a developer changes who is an admin, or touches a developer's account.
+  const [designating, setDesignating] = useState(false);
+  // A developer sets any role; an admin makes or unmakes admins with their
+  // password and a two-step code. Only a developer touches a developer's account.
   const canSetRole = isDeveloper(me);
   const canManage = isDeveloper(me) || member.role !== 'developer';
 
@@ -536,6 +711,27 @@ function MemberSheet({
       setBusy(false);
     }
   };
+
+  if (designating) {
+    const making = member.role !== 'admin';
+    return (
+      <StepUpSheet
+        title={making ? `Make ${member.name} an admin` : `Take away ${member.name}’s admin role`}
+        intro={making
+          ? `${member.name} will be able to manage everyone’s accounts, including making other admins. They keep their own password and two-step sign-in.`
+          : `${member.name} keeps their access and their work, as a user.`}
+        actionLabel={making ? 'Make an admin' : 'Take it away'}
+        danger={!making}
+        onClose={() => setDesignating(false)}
+        onConfirm={async (proof) => {
+          await auth.setAdminRole(member.id, making, proof);
+          toast(making ? `${member.name} is now an admin` : `${member.name} is now a user`);
+          onChanged();
+          onClose();
+        }}
+      />
+    );
+  }
 
   if (deleting) {
     return (
@@ -569,7 +765,17 @@ function MemberSheet({
                 onChange={(v) => void run(() => auth.setRole(member.id, v as Role), `${member.name} is now ${withArticle(v as Role)}`)}
               />
             ) : (
-              <p className="xsmall muted">{member.name} is {withArticle(member.role)}. Only a developer can change who is an admin.</p>
+              <>
+                <p className="xsmall muted">
+                  {member.name} is {withArticle(member.role)}.
+                  {member.role === 'user' && !member.twoFactor ? ' To be made an admin, they first turn on two-step sign-in.' : ''}
+                </p>
+                {member.role === 'admin' || member.twoFactor ? (
+                  <button className="btn btn--block" disabled={busy || member.banned} onClick={() => setDesignating(true)}>
+                    {member.role === 'admin' ? 'Take away the admin role…' : 'Make an admin…'}
+                  </button>
+                ) : null}
+              </>
             )}
             <TextField
               label="Set a new password"

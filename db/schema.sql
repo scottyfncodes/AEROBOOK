@@ -224,3 +224,13 @@ create table if not exists app_deleted_user (
   deleted_by text not null
 );
 
+-- The admin recovery code: one at a time, stored only as a SHA-256 hash of a
+-- 160-bit random code that an admin made and the business keeps offline.
+-- Redeeming it deletes the row, so it works once; making a new one replaces it.
+create table if not exists app_admin_recovery (
+  id smallint primary key check (id = 1),
+  code_hash text not null,
+  created_at timestamptz not null default now(),
+  created_by text,
+  created_by_name text
+);

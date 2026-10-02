@@ -191,3 +191,45 @@ export async function deleteMember(userId: string) {
 export async function resetTwoFactor(userId: string) {
   await call('/api/team/reset-two-factor', { userId });
 }
+
+// ------------------------------------------------- naming admins without a developer
+
+/** Your password and the code your authenticator app shows now, for one admin change. */
+export interface StepUp {
+  password: string;
+  code: string;
+}
+
+/** An admin makes someone an admin, or takes it away. Never the developer role. */
+export async function setAdminRole(userId: string, admin: boolean, proof: StepUp): Promise<void> {
+  await call('/api/team/admin-role', { userId, admin, ...proof, code: proof.code.replace(/\s/g, '') });
+}
+
+export interface RecoveryStatus {
+  exists: boolean;
+  createdAt?: string;
+  createdBy?: string;
+}
+
+export async function recoveryCodeStatus(): Promise<RecoveryStatus> {
+  return call('/api/team/recovery-code');
+}
+
+/** A new admin recovery code, shown once. Any earlier one stops working. */
+export async function createRecoveryCode(proof: StepUp): Promise<string> {
+  return (await call<{ recoveryCode: string }>('/api/team/recovery-code', { ...proof, code: proof.code.replace(/\s/g, '') })).recoveryCode;
+}
+
+export async function revokeRecoveryCode(proof: StepUp): Promise<void> {
+  await call('/api/team/recovery-code/revoke', { ...proof, code: proof.code.replace(/\s/g, '') });
+}
+
+/** Become an admin with the recovery code; it is used up. */
+export async function redeemRecoveryCode(recoveryCode: string, proof: StepUp): Promise<void> {
+  await call('/api/team/recovery-code/redeem', { recoveryCode, ...proof, code: proof.code.replace(/\s/g, '') });
+}
+
+/** Every aircraft comment, for the complete archive. Admins only. */
+export async function exportComments(): Promise<import('../lib/export').ExportedComment[]> {
+  return (await call<{ comments: import('../lib/export').ExportedComment[] }>('/api/export/comments')).comments;
+}

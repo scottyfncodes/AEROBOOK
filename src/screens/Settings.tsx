@@ -10,11 +10,11 @@ import { NotificationSettings } from '../components/NotificationSettings';
 import { AccountSection, TeamSection } from '../components/team';
 import { useCurrentUser } from '../data/session';
 import { useDatabase } from '../data/useStore';
-import { sendDigestNow } from '../data/auth';
-import { eraseEverything, flush, replaceDatabase, updateSettings } from '../data/store';
+import { exportComments, listPeople, sendDigestNow } from '../data/auth';
+import { eraseEverything, flush, getFile, replaceDatabase, updateSettings } from '../data/store';
 import { isAdmin as canManageAccounts } from '../lib/roles';
 import {
-  aircraftCsv, contactsCsv, downloadText, exportFilename, fullJson, opportunitiesCsv, parseFullJson,
+  activitiesCsv, aircraftCsv, contactsCsv, downloadBlob, downloadText, exportFilename, fullJson, opportunitiesCsv, parseFullJson,
   policiesCsv,
 } from '../lib/export';
 
@@ -27,6 +27,8 @@ export default function Settings() {
   const [importError, setImportError] = useState('');
   const [sending, setSending] = useState(false);
   const [digestError, setDigestError] = useState('');
+  const [archiving, setArchiving] = useState<string | null>(null);
+  const [archiveProblems, setArchiveProblems] = useState<string[]>([]);
 
   const s = db.settings;
 
@@ -51,6 +53,36 @@ export default function Settings() {
     await flush();
     downloadText(exportFilename('backup', 'json'), 'application/json', fullJson(db));
     toast('Full backup exported');
+  };
+
+  /** Everything, documents included, in one ZIP; see lib/archive.ts. */
+  const exportArchive = async () => {
+    setArchiving('Getting ready…');
+    setArchiveProblems([]);
+    try {
+      await flush();
+      // Loaded only when wanted: most sessions never make an archive.
+      const { buildArchive } = await import('../lib/archive');
+      const [comments, people] = await Promise.all([exportComments(), listPeople()]);
+      const { zip, manifest } = await buildArchive({
+        db,
+        comments,
+        people,
+        exportedBy: me.name,
+        readFile: async (f) => {
+          const blob = await getFile(f.id);
+          return blob ? new Uint8Array(await blob.arrayBuffer()) : undefined;
+        },
+        onProgress: (done, total) => setArchiving(`Adding documents… ${done} of ${total}`),
+      });
+      downloadBlob(exportFilename('complete-archive', 'zip'), new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' }));
+      setArchiveProblems(manifest.problems);
+      toast(manifest.problems.length ? 'Archive exported, but it is not complete' : 'Complete archive exported');
+    } catch (e) {
+      setArchiveProblems([(e as Error).message]);
+    } finally {
+      setArchiving(null);
+    }
   };
 
   const restore = async (file: File | undefined) => {
@@ -186,15 +218,35 @@ export default function Settings() {
             <button className="btn" onClick={() => exportCsv('insurance', policiesCsv(db))}>
               <IconDownload /> Export insurance
             </button>
+            <button className="btn" onClick={() => exportCsv('activities-and-notes', activitiesCsv(db))}>
+              <IconDownload /> Export notes &amp; activities
+            </button>
             <button className="btn btn--primary" onClick={() => void exportAll()}>
               <IconDownload /> Export everything
             </button>
           </div>
           <p className="xsmall muted">
             CSV opens in any spreadsheet. The full export is JSON and carries every record and every link between
-            them. It lists attached documents but not the files themselves, which stay in AEROBOOK's private
-            document storage. Keep originals of anything that matters.
+            them. It lists attached documents but not the files themselves; the complete archive below carries those
+            too.
           </p>
+
+          {isAdmin ? (
+            <>
+              <button className="btn btn--primary btn--block" disabled={archiving !== null} onClick={() => void exportArchive()}>
+                <IconDownload /> {archiving ?? 'Export complete archive, with documents (.zip)'}
+              </button>
+              <p className="xsmall muted">
+                For keeping a copy of the business’s data outside AEROBOOK: every record, every note and comment, and
+                every document file, with a manifest to check it by. Admins only.
+              </p>
+              {archiveProblems.length ? (
+                <Banner tone="danger">
+                  The archive is not complete: {archiveProblems.join(' ')}
+                </Banner>
+              ) : null}
+            </>
+          ) : null}
 
           {isAdmin ? (
             <button className="btn btn--ghost btn--block" onClick={() => fileInput.current?.click()}>
