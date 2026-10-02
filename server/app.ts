@@ -15,6 +15,9 @@ import { checkWrite, error, HttpError, json, readJson } from './http.js';
 import { isMessagingPath, messaging } from './messaging.js';
 import { pruneNotifications } from './notify.js';
 import { deletedIds, deleteUser, isDeleted, setProfileColor } from './people.js';
+import {
+  actorOf, auditRoleChanges, createRecoveryCode, recoveryStatus, redeemRecoveryCode, revokeRecoveryCode, setAdminRole,
+} from './admin-roles.js';
 import { companyAuditPage, startCompanyExport } from './export.js';
 import { isAdmin, isDeveloper, PRIVILEGED_ROLES, toRole, type Role } from '../src/lib/roles.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
@@ -357,6 +360,29 @@ async function resetTwoFactorRoute(request: Request): Promise<Response> {
 }
 
 /**
+ * Naming admins without a developer, and the admin recovery code. Every one
+ * of these needs the person's password and a current two-step code; see
+ * admin-roles.ts.
+ */
+async function adminRoleRoute(request: Request, pathname: string): Promise<Response> {
+  const actor = await actorOf(request);
+  if (pathname === '/api/team/recovery-code' && request.method === 'GET') {
+    if (!actor) return error(401, 'Sign in first');
+    return json(await recoveryStatus(actor));
+  }
+  if (request.method !== 'POST') return error(405, 'Method not allowed');
+  const refused = checkWrite(request);
+  if (refused) return refused;
+  if (!actor) return error(401, 'Sign in first');
+  const body = await readJson(request);
+  if (pathname === '/api/team/admin-role') return json(await setAdminRole(actor, body));
+  if (pathname === '/api/team/recovery-code') return json(await createRecoveryCode(actor, body));
+  if (pathname === '/api/team/recovery-code/revoke') return json(await revokeRecoveryCode(actor, body));
+  if (pathname === '/api/team/recovery-code/redeem') return json(await redeemRecoveryCode(actor, body));
+  return error(404, 'Not found');
+}
+
+/**
  * Better Auth's routes. It checks the password before it notices an account
  * whose access was turned off, and says so in a reply of its own; that would
  * tell someone guessing a former colleague's password when they got it right.
@@ -367,7 +393,7 @@ async function authRoute(request: Request, pathname: string): Promise<Response> 
   if (deleted) return deleted;
   const outranked = await refuseOutranked(request, pathname);
   if (outranked) return outranked;
-  const response = await getAuth().handler(request);
+  const response = await auditRoleChanges(request, pathname, () => getAuth().handler(request));
   const signIn = pathname === '/api/auth/sign-in/email';
   // Access turned off between the password and the two-step code.
   const secondStep = pathname === '/api/auth/two-factor/verify-totp' || pathname === '/api/auth/two-factor/verify-backup-code';
@@ -428,6 +454,9 @@ export async function handle(request: Request): Promise<Response> {
     if (pathname === '/api/team/reset-two-factor') return await resetTwoFactorRoute(request);
     if (pathname === '/api/team/delete') return await deleteUserRoute(request);
     if (pathname === '/api/team/color') return await profileColorRoute(request);
+    if (pathname === '/api/team/admin-role' || pathname.startsWith('/api/team/recovery-code')) {
+      return await adminRoleRoute(request, pathname);
+    }
     if (pathname === '/api/export/company') {
       // A POST, not a link: it is recorded, and it cannot be set off from another site.
       if (request.method !== 'POST') return error(405, 'Method not allowed');

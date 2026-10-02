@@ -34,7 +34,15 @@ export type SecurityAction =
   | 'two-factor-backup-code-used'
   | 'two-factor-reset'
   | 'user-deleted'
-  | 'company-export';
+  | 'company-export'
+  | 'admin-granted'
+  | 'admin-revoked'
+  | 'role-changed'
+  | 'admin-recovery-code-created'
+  | 'admin-recovery-code-revoked'
+  | 'admin-recovered'
+  | 'admin-recovery-failed'
+  | 'step-up-failed';
 
 const SUMMARY: Record<SecurityAction, string> = {
   'two-factor-setup-started': 'Started setting up two-step sign-in',
@@ -48,6 +56,14 @@ const SUMMARY: Record<SecurityAction, string> = {
   'two-factor-reset': 'Reset two-step sign-in',
   'user-deleted': 'Deleted the account',
   'company-export': 'Exported all company data: records, documents, comments, users and the audit log',
+  'admin-granted': 'Made an admin',
+  'admin-revoked': 'Took away the admin role',
+  'role-changed': 'Changed the role',
+  'admin-recovery-code-created': 'Made a new admin recovery code',
+  'admin-recovery-code-revoked': 'Cancelled the admin recovery code',
+  'admin-recovered': 'Became an admin with the admin recovery code',
+  'admin-recovery-failed': 'Entered an admin recovery code that is not right',
+  'step-up-failed': 'Entered a wrong password or code to confirm an admin change',
 };
 
 export interface SecurityEvent {
@@ -58,6 +74,10 @@ export interface SecurityEvent {
   actor?: { id: string; name: string };
   /** The account owner's name, when they are the one acting. */
   userName?: string;
+  /** Says exactly what changed ("Role changed from user to admin"), in place of the stock wording. */
+  summary?: string;
+  /** What was there before (a role, never a secret), kept with the entry. */
+  before?: Record<string, unknown>;
 }
 
 export async function recordSecurityEvent(event: SecurityEvent, client?: PoolClient): Promise<void> {
@@ -65,9 +85,9 @@ export async function recordSecurityEvent(event: SecurityEvent, client?: PoolCli
   const actorId = event.actor?.id ?? event.userId;
   const actorName = event.actor?.name ?? event.userName ?? null;
   await (client ?? getPool()).query(
-    `insert into app_audit (user_id, user_name, action, collection, record_id, summary)
-     values ($1, $2, $3, $4, $5, $6)`,
-    [actorId, actorName, event.action, SECURITY, event.userId, SUMMARY[event.action]],
+    `insert into app_audit (user_id, user_name, action, collection, record_id, summary, before)
+     values ($1, $2, $3, $4, $5, $6, $7)`,
+    [actorId, actorName, event.action, SECURITY, event.userId, event.summary ?? SUMMARY[event.action], event.before ?? null],
   );
 }
 

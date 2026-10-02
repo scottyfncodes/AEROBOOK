@@ -17,9 +17,11 @@
     "db:schema": "tsx scripts/schema.ts --print",
     "test:backup": "bash scripts/backup-db.test.sh",
     "dr:smoke": "node scripts/dr/smoke.mjs",
-    "test:server": "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgres://postgres:postgres@localhost:5432/aerobook_test} vitest run server"
+    "test:server": "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgres://postgres:postgres@localhost:5432/aerobook_test} vitest run server",
+    "admin:recover": "tsx scripts/admin-recover.ts"
   },
   "dependencies": {
+    "@better-auth/utils": "0.4.2",
     "@fontsource-variable/montserrat": "^5.3.0",
     "@vercel/blob": "^2.8.0",
     "better-auth": "^1.7.6",

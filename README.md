@@ -102,10 +102,33 @@ guessed password is never confirmed. Sign-in attempts are rate-limited.
 There are three roles, each with everything the one below has: a **user**
 works with all the data; an **admin** also manages people's accounts; a
 **developer** also decides who is an admin or a developer. Only a developer
-can give or take away the admin or developer role, and only a developer can
-change anything about a developer's account (password, access, sessions,
-two-step sign-in, deleting). The server enforces this on Better Auth's admin
-routes (`refuseOutranked` in `server/app.ts`), not just in the app. To make an
+can give or take away the developer role, and only a developer can change
+anything about a developer's account (password, access, sessions, two-step
+sign-in, deleting). The server enforces this on Better Auth's admin routes
+(`refuseOutranked` in `server/app.ts`), not just in the app.
+
+So that the business never depends on its developer to name an admin
+(`server/admin-roles.ts`; see also docs/disaster-recovery.md):
+
+- **An admin can make someone an admin**, or take it away, under Settings →
+  Team → their name. Both people must have two-step sign-in on, and the admin
+  confirms with their password and a current authenticator code; a session
+  left open, or one an admin is impersonating, cannot do it. Never yourself,
+  never a developer, never the developer role. Better Auth's own `set-role`
+  stays developer-only, because it has no such check.
+- **The admin recovery code** is for when no admin is left. An admin makes it
+  (Settings → Team → Admin recovery code, with the same confirmation) and
+  hands it to whoever the business puts in charge of it. Someone on the team
+  with two-step sign-in redeems it under Settings → Account, with their own
+  password and code, and becomes an admin. It is 160 random bits, stored
+  only as a SHA-256 hash, works once, and making a new one cancels the old.
+- **`npm run admin:recover`** does the same from the database, for whoever
+  holds it, when there is no admin and no code.
+- Five wrong passwords or codes in fifteen minutes lock these actions for
+  that person. Every grant, removal, role change (including a developer's,
+  through Better Auth), recovery code made, cancelled or used, and failed
+  attempt goes in `app_audit` under `security` — never a password, a code or
+  the recovery code. To make an
 existing account a developer by hand:
 
 ```sql
