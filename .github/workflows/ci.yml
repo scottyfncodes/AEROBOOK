@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [claude/aerobook-master-build-mm3z27]
   pull_request:
 
 concurrency:
