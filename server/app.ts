@@ -15,6 +15,9 @@ import { checkWrite, error, HttpError, json, readJson } from './http.js';
 import { isMessagingPath, messaging } from './messaging.js';
 import { pruneNotifications } from './notify.js';
 import { deletedIds, deleteUser, isDeleted, setProfileColor } from './people.js';
+import {
+  actorOf, auditRoleChanges, createRecoveryCode, recoveryStatus, redeemRecoveryCode, revokeRecoveryCode, setAdminRole,
+} from './admin-roles.js';
 import { isAdmin, isDeveloper, PRIVILEGED_ROLES, toRole, type Role } from '../src/lib/roles.js';
 import { buildDigests, EmailError, emailEnabled, isEmptyDigest, renderDigest, runDigest, sendEmail } from './digest.js';
 
@@ -331,6 +334,64 @@ async function resetTwoFactorRoute(request: Request): Promise<Response> {
 }
 
 /**
+ * Every aircraft comment, for the complete archive (see src/lib/archive.ts).
+ * Admins only: anyone signed in can read each aircraft's comments, but taking
+ * all of them out at once is the administrative export. Deleted comments, and
+ * comments on deleted aircraft, are left out, as they are in the app.
+ */
+async function exportComments(request: Request): Promise<Response> {
+  if (request.method !== 'GET') return error(405, 'Method not allowed');
+  const user = await sessionUser(request);
+  if (!user) return error(401, 'Sign in first');
+  if (!isAdmin(user)) return error(403, 'Only an admin can do that');
+  await ensureAppSchema();
+  const { rows } = await getPool().query<{
+    id: string; aircraft_id: string; author_id: string; author_name: string | null; body: string; created_at: Date; edited_at: Date | null;
+  }>(
+    `select c.id, c.aircraft_id, c.author_id, u.name as author_name, c.body, c.created_at, c.edited_at
+       from app_aircraft_comment c
+       join app_record r on r.collection = 'aircraft' and r.id = c.aircraft_id and r.data is not null
+       left join "user" u on u.id = c.author_id
+      where c.deleted_at is null
+      order by c.id`,
+  );
+  return json({
+    comments: rows.map((r) => ({
+      id: Number(r.id),
+      aircraftId: r.aircraft_id,
+      authorId: r.author_id,
+      authorName: r.author_name ?? 'Someone',
+      body: r.body,
+      createdAt: r.created_at.toISOString(),
+      editedAt: r.edited_at?.toISOString() ?? null,
+    })),
+  });
+}
+
+/**
+ * Naming admins without a developer, and the admin recovery code. Every one
+ * of these needs the person's password and a current two-step code; see
+ * admin-roles.ts.
+ */
+async function adminRoleRoute(request: Request, pathname: string): Promise<Response> {
+  const actor = await actorOf(request);
+  if (pathname === '/api/team/recovery-code' && request.method === 'GET') {
+    if (!actor) return error(401, 'Sign in first');
+    return json(await recoveryStatus(actor));
+  }
+  if (request.method !== 'POST') return error(405, 'Method not allowed');
+  const refused = checkWrite(request);
+  if (refused) return refused;
+  if (!actor) return error(401, 'Sign in first');
+  const body = await readJson(request);
+  if (pathname === '/api/team/admin-role') return json(await setAdminRole(actor, body));
+  if (pathname === '/api/team/recovery-code') return json(await createRecoveryCode(actor, body));
+  if (pathname === '/api/team/recovery-code/revoke') return json(await revokeRecoveryCode(actor, body));
+  if (pathname === '/api/team/recovery-code/redeem') return json(await redeemRecoveryCode(actor, body));
+  return error(404, 'Not found');
+}
+
+/**
  * Better Auth's routes. It checks the password before it notices an account
  * whose access was turned off, and says so in a reply of its own; that would
  * tell someone guessing a former colleague's password when they got it right.
@@ -341,7 +402,7 @@ async function authRoute(request: Request, pathname: string): Promise<Response> 
   if (deleted) return deleted;
   const outranked = await refuseOutranked(request, pathname);
   if (outranked) return outranked;
-  const response = await getAuth().handler(request);
+  const response = await auditRoleChanges(request, pathname, () => getAuth().handler(request));
   const signIn = pathname === '/api/auth/sign-in/email';
   // Access turned off between the password and the two-step code.
   const secondStep = pathname === '/api/auth/two-factor/verify-totp' || pathname === '/api/auth/two-factor/verify-backup-code';
@@ -397,6 +458,10 @@ export async function handle(request: Request): Promise<Response> {
     if (pathname === '/api/team/reset-two-factor') return await resetTwoFactorRoute(request);
     if (pathname === '/api/team/delete') return await deleteUserRoute(request);
     if (pathname === '/api/team/color') return await profileColorRoute(request);
+    if (pathname === '/api/export/comments') return await exportComments(request);
+    if (pathname === '/api/team/admin-role' || pathname.startsWith('/api/team/recovery-code')) {
+      return await adminRoleRoute(request, pathname);
+    }
     if (isMessagingPath(pathname)) {
       const user = await sessionUser(request);
       if (!user) return error(401, 'Sign in first');

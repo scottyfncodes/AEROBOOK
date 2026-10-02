@@ -21,6 +21,10 @@ must never go in at all. [docs/data-handling-policy.md](docs/data-handling-polic
 says what is permitted, what belongs only in approved systems, and what to do
 when something prohibited is entered.
 
+**Getting it back.** [docs/DISASTER_RECOVERY.md](docs/DISASTER_RECOVERY.md) says
+what is backed up and what is not, who holds which access, how to name a new
+admin when nobody who used to can, and how to restore and check everything.
+
 ## Running it
 
 Everything needs a Postgres database. Put these in `.env.local`:
@@ -35,7 +39,7 @@ SETUP_TOKEN=...                        # only needed to create the first account
 npm install
 npm run db:migrate   # create the tables
 npm run dev          # app and API together on one port
-npm test             # 523 tests; the 210 API, sync and messaging tests also need:
+npm test             # 580 tests; the 256 API, sync, messaging and recovery tests also need:
 npm run test:server  #   TEST_DATABASE_URL (a throwaway database — it is wiped)
 npm run build        # production build into dist/
 npm run serve        # serve the build and the API the way Vercel does
@@ -55,6 +59,7 @@ the brand script below, which is not part of the build.
 api/index.ts      the one Vercel Function; every /api path lands here
 server/           the API: sign-in, sync, first-time setup
   auth.ts         Better Auth — invite-only email and password, admin/user
+  admin-roles.ts  naming admins without a developer; the admin recovery code
   sync.ts         pull and push of records, with versions and history
   app.ts          routing, and who may do what
   chat.ts         conversations and groups, members only
@@ -107,11 +112,36 @@ guessed password is never confirmed. Sign-in attempts are rate-limited.
 There are three roles, each with everything the one below has: a **user**
 works with all the data; an **admin** also manages people's accounts; a
 **developer** also decides who is an admin or a developer. Only a developer
-can give or take away the admin or developer role, and only a developer can
-change anything about a developer's account (password, access, sessions,
-two-step sign-in, deleting). The server enforces this on Better Auth's admin
-routes (`refuseOutranked` in `server/app.ts`), not just in the app. To make an
-existing account a developer by hand:
+can give or take away the developer role, and only a developer can change
+anything about a developer's account (password, access, sessions, two-step
+sign-in, deleting). The server enforces this on Better Auth's admin routes
+(`refuseOutranked` in `server/app.ts`), not just in the app.
+
+So that the business never depends on its developer to name an admin
+(`server/admin-roles.ts`):
+
+- **An admin can make someone an admin**, or take it away, under Settings →
+  Team → their name. Both people must have two-step sign-in on, and the admin
+  confirms with their password and a current authenticator code; a session
+  left open, or one an admin is impersonating, cannot do it. Never yourself,
+  never a developer, never the developer role. Better Auth's own `set-role`
+  stays developer-only, because it has no such check.
+- **The admin recovery code** is for when no admin is left. An admin makes it
+  (Settings → Team → Admin recovery code, with the same confirmation) and
+  hands it to whoever the business puts in charge of it. Someone on the team
+  with two-step sign-in redeems it under Settings → Account, with their own
+  password and code, and becomes an admin. It is 160 random bits, stored
+  only as a SHA-256 hash, works once, and making a new one cancels the old.
+- **`npm run admin:recover`** does the same from the database, for whoever
+  holds it, when there is no admin and no code (see the recovery document).
+- Wrong passwords or codes are counted: five in fifteen minutes lock these
+  actions for that person. Every grant, removal, role change (including a
+  developer's, through Better Auth), recovery code made, cancelled or used,
+  and failed attempt goes in `app_audit` under `security`, saying who, whose,
+  and from which role to which — never a password, a code or the recovery
+  code.
+
+To make an existing account a developer by hand:
 
 ```sql
 update "user" set role = 'developer' where email = 'someone@example.com';
@@ -429,6 +459,17 @@ it opens.
 **Documents** are records like the rest, with the file itself in private
 cloud storage (see Documents).
 
+**Exports.** Under Settings → Data, anyone can export contacts, aircraft,
+opportunities, insurance and notes as CSV (each row ends with its ID and the
+IDs it links to), or everything as JSON. An admin can export the **complete
+archive**: one ZIP with the JSON, every CSV (follow-ups, documents and
+aircraft comments too), every document file, and a manifest of counts, ID
+fingerprints and SHA-256s. It is built in the browser, one document at a
+time through `/api/files/content`, so no file size limit of a function
+applies; `/api/export/comments` gives it the comments, admins only.
+`npm run verify:archive -- <file>` checks one, without AEROBOOK
+(`src/lib/archive.ts`).
+
 A device that used AEROBOOK before accounts shows a one-time **Upload** banner
 while the account is still empty, and sends everything it held.
 
@@ -444,8 +485,9 @@ while the account is still empty, and sends everything it held.
 - **It never silently overwrites.** An import that would replace an existing
   value shows the conflict and waits for a decision.
 - **It never makes a document public.** Files sit in private storage and are
-  only ever read through the app, by someone signed in. The JSON backup
-  carries the list of them, not the files, and the screens say so.
+  only ever read through the app, by someone signed in. The JSON export
+  carries the list of them, not the files; the complete archive, which only
+  an admin can make, carries the files too.
 - **Its notifications never say what was written.** A push says who, and
   where — "New message from Scott", "New comment on N123AB from Scott" — and
   the words stay inside the app. Follow-up reminders are still in-app, on the

@@ -41,7 +41,11 @@ which makes a mistake harder to undo:
   removes them.
 - **Copies leave the server.** Every device caches the full dataset in its
   browser. Follow-up notes go out in the daily email. Anyone on the team can
-  export everything as CSV files or a full JSON file.
+  export everything as CSV files or a full JSON file, and admins can export a
+  complete archive that also contains every document file.
+- **Backups keep it too.** The database host keeps restorable copies of the
+  whole database (see section 7), so removing something from AEROBOOK does
+  not remove it from a backup taken before.
 
 **The rule:** if information is not in the "Permitted" column of section 3,
 it does not go into AEROBOOK, in any field, note, comment, chat message,
@@ -218,11 +222,17 @@ directly into the approved system, or ask them to send it there.
 ### Exports and backups
 
 The **Export** buttons under Settings, which anyone can use, produce files
-with the full dataset. Store them only
+with the full dataset. The **complete archive**, which only admins can make,
+also contains every document file, and is how the business keeps its own
+copy of its data (see `docs/DISASTER_RECOVERY.md`). Store all of them only
 in _[approved location]_, never in personal email or personal cloud storage.
 Delete them when they are no longer needed. Restoring an old full export, which only admins can do,
 also brings back anything that has since been purged, so check it with the
 policy owner first.
+
+The **admin recovery code** (Settings → Team) is a credential, not customer
+information. Keep it offline with the person the company has put in charge of
+it, never in AEROBOOK, email or chat.
 
 ## 6. Training
 
@@ -276,9 +286,14 @@ promptly is expected and is not a disciplinary matter.**
      entered.
    - **Devices:** cached copies refresh by themselves at the next sync once
      the record is fixed. Confirm everyone has opened AEROBOOK since then.
-   - **Database host backups:** the hosted database keeps point-in-time
-     history for _[N days, per the plan]_. Note the date that history will
-     have aged past the incident.
+   - **Database host backups:** the hosted database (Neon) keeps
+     point-in-time history for 6 hours on the current plan; note when that
+     will have aged past the incident. Snapshots and restored copies
+     (branches) keep everything until someone deletes them: list them in the
+     Neon console and delete, or record a reason to keep, each one made
+     since the item was entered.
+   - **Complete archives:** identify and delete any made since the item was
+     entered, like other exports.
 7. **Assess whether it must be reported.** Entering data into an internal
    system that only authorized staff can access is usually not a breach. If
    the information was exported, emailed, shared outside the team, or seen by
@@ -389,3 +404,8 @@ delete from app_file_trash where path = '<path>';
 Then run the first `select` queries again and confirm they return nothing.
 Record in the incident log that the purge is complete, without the value
 itself.
+
+The database's own backups are not changed by this procedure. Point-in-time
+history ages out by itself (6 hours on the current plan). Snapshots and
+restored branches made since the item was entered still hold it until they
+are deleted in the Neon console (section 7, step 6).
