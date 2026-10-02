@@ -17,6 +17,7 @@ import { CloudSync, type CloudUser } from '../src/data/cloud';
 import { exportCompanyData } from '../src/data/companyExport';
 import { parseCsv } from '../src/lib/csv';
 import { unzip } from '../src/lib/zip';
+import { verifyCompanyExport } from '../src/lib/exportVerify';
 
 function deviceFetch(cookie: string): typeof fetch {
   return (input, init) => {
@@ -139,7 +140,7 @@ describe.skipIf(!TEST_DB)('company data export', () => {
     expect([...byName.keys()].filter((n) => !n.startsWith('documents/')).sort()).toEqual([
       'README.txt', 'activities.csv', 'aerobook-backup.json', 'aircraft-comments.csv', 'aircraft-ownership.csv',
       'aircraft.csv', 'audit-log.csv', 'contacts.csv', 'documents.csv', 'email-templates.csv', 'imports.csv',
-      'insurance-policies.csv', 'notes.csv', 'opportunities.csv', 'tasks.csv', 'users.csv',
+      'insurance-policies.csv', 'manifest.json', 'notes.csv', 'opportunities.csv', 'tasks.csv', 'users.csv',
     ]);
 
     // Customers and contacts, with special characters exactly as typed.
@@ -212,6 +213,14 @@ describe.skipIf(!TEST_DB)('company data export', () => {
     expect(backup.app).toBe('AEROBOOK');
     expect(backup.contacts.map((c: { id: string }) => c.id).sort()).toEqual(['con_acme', 'con_renee']);
     expect(textOf('README.txt')).toMatch(/Contact ID\s+contacts\.csv/);
+
+    // The whole package checks out against its own SHA-256 manifest, as the verifier reads it.
+    const report = await verifyCompanyExport(new Uint8Array(await result.blob.arrayBuffer()), {
+      expected: { counts: { contacts: 2, aircraft: 2, files: 1 }, documents: [{ id: file.id, size: file.size }] },
+    });
+    expect(report.problems).toEqual([]);
+    expect(report.manifest).toBe('verified');
+    expect(report.documents.map((d) => d.status)).toEqual(['ok']);
   });
 
   it('records the export in the audit log, without the data', async () => {
